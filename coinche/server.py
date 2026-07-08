@@ -182,6 +182,7 @@ async def _handle_play_result(table: Table, result: dict) -> None:
             "card": _card_to_wire(result["card"]),
             "current_trick": _trick_to_wire(result["current_trick"]),
             "next_to_act": _seat_to_str(next_actor) if next_actor is not None else None,
+            "belote_announcement": result.get("belote_announcement"),
         },
     )
 

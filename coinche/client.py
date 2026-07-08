@@ -220,6 +220,11 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
         played_seat = Seat(payload["seat"])
         who = state.players.get(played_seat, played_seat.value)
         state.last_action = f"{who} a joué {payload['card']}"
+        announcement = payload.get("belote_announcement")
+        if announcement == "belote":
+            state.last_action += " — Belote !"
+        elif announcement == "rebelote":
+            state.last_action += " — Rebelote !"
         next_to_act = payload.get("next_to_act")
         state.whose_turn = Seat(next_to_act) if next_to_act is not None else None
         if played_seat == state.seat and payload["card"] in state.hand:

@@ -79,6 +79,8 @@ class RoundState:
     trick_history: list[dict] = field(default_factory=list)
     captured_points: dict[str, int] = field(default_factory=lambda: {"NS": 0, "EW": 0})
     belote_holder: str | None = None
+    belote_seat: Seat | None = None
+    belote_announced: int = 0  # 0=none yet, 1="Belote" said, 2="Rebelote" said
     tricks_played: int = 0
 
 
@@ -266,6 +268,7 @@ class Game:
         for seat, hand in self.round_state.dealt_hands.items():
             ranks = {c.rank for c in hand if c.suit == trump_suit}
             if {"R", "D"}.issubset(ranks):
+                self.round_state.belote_seat = seat
                 return TEAM_OF[seat]
         return None
 
@@ -318,6 +321,20 @@ class Game:
         rs.hands[seat].remove(card)
         rs.current_trick.append((seat, card))
 
+        # Belote/Rebelote (A11): the holder of both K+Q of trump announces
+        # "Belote" when playing the first of the two and "Rebelote" when
+        # playing the second; the +20 point bonus itself is credited
+        # unconditionally at round scoring via `rs.belote_holder`.
+        belote_announcement: str | None = None
+        if (
+            rs.belote_seat == seat
+            and rs.trump is not None
+            and card.suit == rs.trump
+            and card.rank in ("R", "D")
+        ):
+            rs.belote_announced += 1
+            belote_announcement = "belote" if rs.belote_announced == 1 else "rebelote"
+
         if len(rs.current_trick) < 4:
             self.next_to_act = seat.next()
             return {
@@ -326,9 +343,12 @@ class Game:
                 "card": card,
                 "current_trick": list(rs.current_trick),
                 "next_to_act": self.next_to_act,
+                "belote_announcement": belote_announcement,
             }
 
-        return self._resolve_trick(seat, card)
+        result = self._resolve_trick(seat, card)
+        result["belote_announcement"] = belote_announcement
+        return result
 
     def _resolve_trick(self, seat: Seat, card: Card) -> dict:
         assert self.round_state is not None

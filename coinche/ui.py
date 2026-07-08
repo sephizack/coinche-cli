@@ -270,7 +270,8 @@ _BID_CARD_WIDTH = 18
 def _bid_choice_card(token: str, label: str) -> Panel:
     """One small rectangular "card" for a stage-1 bid choice: just the number and
     the action, no free-typing needed to pick it."""
-    content = Text.assemble((f"{token}) ", "bold yellow"), (label, "bold white"))
+    label_style = "bold red3" if label in RED_SUITS else "bold white"
+    content = Text.assemble((f"{token}) ", "bold yellow"), (label, label_style))
     return Panel(Align.center(content), width=_BID_CARD_WIDTH, padding=(0, 1), border_style="grey50")
 
 

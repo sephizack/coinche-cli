@@ -1,5 +1,6 @@
 """Tests for coinche.game: auction, trick play, scoring, redeal, snapshot_for."""
 
+from coinche.cards import Card
 from coinche.game import TEAM_OF, Game, Seat
 
 
@@ -118,6 +119,54 @@ def test_a13_tie_break_sudden_death_then_resolves():
     assert result["winning_team"] == attacking_team2
     assert game.game_over is True
     assert game.winning_team == attacking_team2
+
+
+def test_belote_then_rebelote_announced_once_each_holding_king_and_queen():
+    game = Game(initial_dealer=Seat.N)
+    _finalize_simple_contract(game, trump="♠", points=80)
+    rs = game.round_state
+    holder = rs.leader  # the round's first leader (forced belote holder below)
+    rs.belote_seat = holder
+    rs.belote_holder = TEAM_OF[holder]
+
+    # Force the holder's hand to contain both trump King and Queen so the
+    # announcement can actually fire (keeps the original hand size of 8).
+    other_cards = [c for c in rs.hands[holder] if not (c.suit == "♠" and c.rank in ("R", "D"))]
+    rs.hands[holder] = [Card("R", "♠"), Card("D", "♠")] + other_cards[:6]
+
+    assert game.next_to_act == holder
+    king_result = game.submit_card(holder, Card("R", "♠"))
+    assert king_result["belote_announcement"] == "belote"
+
+    # Simulate the holder leading a later trick to play the Queen.
+    rs.current_trick = []
+    game.next_to_act = holder
+    queen_result = game.submit_card(holder, Card("D", "♠"))
+    assert queen_result["belote_announcement"] == "rebelote"
+
+    # A further, unrelated play must not trigger any announcement.
+    rs.current_trick = []
+    game.next_to_act = holder
+    other_card = rs.hands[holder][0]
+    other_result = game.submit_card(holder, other_card)
+    assert other_result["belote_announcement"] is None
+
+
+def test_no_belote_announcement_without_both_king_and_queen():
+    game = Game(initial_dealer=Seat.N)
+    _finalize_simple_contract(game, trump="♠", points=80)
+    rs = game.round_state
+    holder = rs.leader
+    rs.belote_seat = None  # nobody holds both trump King and Queen
+    rs.belote_holder = None
+
+    king_of_trump = next(
+        (c for c in rs.hands[holder] if c.suit == "♠" and c.rank == "R"),
+        None,
+    )
+    card_to_play = king_of_trump or rs.hands[holder][0]
+    result = game.submit_card(holder, card_to_play)
+    assert result["belote_announcement"] is None
 
 
 def test_snapshot_for_mid_bidding():
