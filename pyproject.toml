@@ -1,0 +1,19 @@
+[project]
+name = "coinche-cli"
+version = "0.1.0"
+description = "Networked terminal Coinche (belote coinchée) card game"
+requires-python = ">=3.10"
+dependencies = [
+    "rich>=13.7",
+]
+
+[project.scripts]
+coinche-server = "coinche.server:cli"
+coinche-client = "coinche.client:cli"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["coinche*"]
