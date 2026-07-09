@@ -12,10 +12,8 @@ name or chat message.
 
 from __future__ import annotations
 
-import io
-
 from rich.align import Align
-from rich.console import Console, Group
+from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -254,8 +252,16 @@ def build_table_view(
     contract_bidder_name: str | None = None,
     last_trick: dict[Seat, str] | None = None,
     dealer_seat: Seat | None = None,
+    bid_menu: Group | Text | None = None,
 ) -> Group:
-    """Compose the whole table view into one root renderable for rich.live.Live."""
+    """Compose the whole table view into one root renderable for rich.live.Live.
+
+    `bid_menu`, when given, is the current bidding-turn prompt (either the
+    stage-1 choice grid from `render_bid_menu` or the stage-2 point-value
+    prompt from `render_bid_value_prompt`) rendered inline as part of the
+    persistent live view, right below the hand -- instead of being printed
+    as a separate block above the live region.
+    """
     table_layout = build_table_layout(
         local_seat,
         players,
@@ -269,13 +275,17 @@ def build_table_view(
     waiting = waiting_for_text(whose_turn, players, team_of, local_seat)
     contract = contract_text(trump, contract_points, contract_bidder_name)
     last_trick_panel = last_trick_grid(local_seat, last_trick or {})
-    return Group(
+    blocks: list[RenderableType] = [
         Align.center(table_layout),
         Text(""),
         Align.center(build_hand(hand, legal_cards)),
-        Text(""),
-        build_footer(cumulative_scores, local_team, last_action, waiting, contract, last_trick_panel),
-    )
+    ]
+    if bid_menu is not None:
+        blocks.append(Text(""))
+        blocks.append(Align.center(bid_menu))
+    blocks.append(Text(""))
+    blocks.append(build_footer(cumulative_scores, local_team, last_action, waiting, contract, last_trick_panel))
+    return Group(*blocks)
 
 
 _BID_CARD_WIDTH = 18
@@ -311,7 +321,7 @@ def render_bid_menu(
     can_coinche: bool = False,
     can_surcoinche: bool = False,
     cards_per_row: int = 3,
-) -> tuple[str, dict[str, dict]]:
+) -> tuple[Group, dict[str, dict]]:
     """Stage-1 bid menu: Passer / Annoncer <trump> / Coinche / Surcoinche, laid out
     as a grid of small numbered cards (`cards_per_row` per line) instead of a
     plain vertical list.
@@ -327,6 +337,14 @@ def render_bid_menu(
     either). The point value itself is a separate stage 2 the player types by
     hand — see `render_bid_value_prompt` — instead of enumerating every single
     point level as its own card.
+
+    Returns a plain Rich renderable (a `Group`, not a pre-rendered string), so
+    the caller can embed it directly into the persistent `rich.live.Live` view
+    (e.g. via `build_table_view`'s `bid_menu` param) instead of baking it into
+    an ANSI-escaped string via a throwaway `Console` and printing it above the
+    live region -- that round trip previously caused the raw ANSI codes to be
+    corrupted when the string was fed back through another `Console.print`'s
+    markup parser (the "[38;5;244m"-as-literal-text display bug).
     """
     entries: list[tuple[str, str]] = []
     tokens: dict[str, dict] = {}
@@ -364,20 +382,16 @@ def render_bid_menu(
         header = f"Enchère actuelle : {cur_points} {cur_trump}"
 
     grid = _cards_grid(entries, cards_per_row)
-    render_width = cards_per_row * (_BID_CARD_WIDTH + 4)
-    buffer = io.StringIO()
-    console = Console(file=buffer, width=render_width, force_terminal=True)
-    console.print(Text(header, style="grey70"))
-    console.print(grid)
-    menu_text = buffer.getvalue().rstrip("\n")
-    return menu_text, tokens
+    menu = Group(Text(header, style="grey70"), grid)
+    return menu, tokens
 
 
-def render_bid_value_prompt(trump: str, legal_actions: list[dict]) -> tuple[str, list[int | str]]:
+def render_bid_value_prompt(trump: str, legal_actions: list[dict]) -> tuple[Text, list[int | str]]:
     """Stage-2 prompt: player types the point value by hand for the chosen `trump`.
 
-    Returns the prompt text plus the sorted list of legal values (ints, and
-    "capot" if it's still an option) so the caller can validate the typed input.
+    Returns the prompt text (a `Text` renderable, embeddable directly in the
+    live view) plus the sorted list of legal values (ints, and "capot" if it's
+    still an option) so the caller can validate the typed input.
     """
     trump_label = trump
     points_for_trump = [bid["points"] for bid in legal_actions if bid["trump"] == trump]
@@ -390,7 +404,7 @@ def render_bid_value_prompt(trump: str, legal_actions: list[dict]) -> tuple[str,
     if has_capot:
         range_parts.append("'capot'")
 
-    prompt = f"Valeur de l'annonce pour {trump_label} ({' ou '.join(range_parts)}) : "
+    prompt = Text(f"Valeur de l'annonce pour {trump_label} ({' ou '.join(range_parts)}) : ", style="bold gold3")
     valid_points: list[int | str] = list(numeric_points)
     if has_capot:
         valid_points.append("capot")

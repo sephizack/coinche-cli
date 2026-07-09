@@ -74,6 +74,15 @@ class ClientState:
     last_action: str = ""
     pending_bid_request: dict | None = None
     pending_play_request: dict | None = None
+    # The bid request currently being answered, kept around (unlike
+    # `pending_bid_request` above, which is consumed/cleared as soon as
+    # `input_loop` picks it up) so `redraw()` can keep showing the stage-1
+    # choice grid inline in the live view for as long as we're waiting on a
+    # keypress. `active_bid_value_prompt` is (trump, legal_actions) once the
+    # player has picked a trump and stage 2 (typing the point value) is on
+    # screen instead; only one of the two is shown at a time.
+    active_bid_request: dict | None = None
+    active_bid_value_prompt: tuple[str, list] | None = None
     joined_once: bool = False
     game_over: bool = False
     # Populated on GAME_OVER (final cumulative scores/winner) and by the last
@@ -411,6 +420,18 @@ async def run_session(
             # (each seat's last bid action) is shown at the same table
             # position a played card would occupy.
             table_marks = state.bid_marks or state.current_trick
+            # Stage-2 (typing the point value) takes priority over stage-1
+            # (the choice grid) when both are technically set, since a trump
+            # has already been picked at that point.
+            bid_menu = None
+            if state.active_bid_value_prompt is not None:
+                trump, legal_actions = state.active_bid_value_prompt
+                bid_menu, _ = ui.render_bid_value_prompt(trump, legal_actions)
+            elif state.active_bid_request is not None:
+                req = state.active_bid_request
+                bid_menu, _ = ui.render_bid_menu(
+                    req["legal_actions"], req["current_highest_bid"], req["can_coinche"], req["can_surcoinche"]
+                )
             view = ui.build_table_view(
                 state.seat,
                 state.players,
@@ -432,6 +453,7 @@ async def run_session(
                 contract_bidder_name=contract_bidder_name,
                 last_trick=state.last_trick,
                 dealer_seat=state.dealer_seat,
+                bid_menu=bid_menu,
             )
             live.update(view)
         live.refresh()
@@ -477,29 +499,34 @@ async def run_session(
             if state.pending_bid_request is not None:
                 req = state.pending_bid_request
                 state.pending_bid_request = None
-                # Print the menu via `live.console` (not a bare `print()` after
-                # `live.stop()`): Live's console hooks interleaved prints so they're
-                # inserted permanently above the live-rendered table region, and the
-                # live region itself keeps updating in place on the next redraw().
-                # Stopping/restarting Live here instead baked in a full extra copy of
-                # the table on every bid prompt, which is why the previous table
-                # never seemed to get cleared (each bid left a stale frame behind).
-                menu_text, tokens = ui.render_bid_menu(
+                # Show the menu inline as part of the persistent live table
+                # view (via `state.active_bid_request`/`redraw()`) instead of
+                # printing a separately-baked-ANSI block above the live
+                # region: printing that pre-rendered string through
+                # `live.console.print` fed it back through Rich's markup
+                # parser, which corrupted the raw ANSI codes into literal
+                # "[38;5;244m"-style garbage text on screen.
+                state.active_bid_request = req
+                redraw()
+                _, tokens = ui.render_bid_menu(
                     req["legal_actions"], req["current_highest_bid"], req["can_coinche"], req["can_surcoinche"]
                 )
-                live.console.print(menu_text)
                 choice = await _prompt_key_choice(tokens)
 
                 bid_payload: dict | None = None
                 if choice is not None and choice["action"] == "select_trump":
                     trump = choice["trump"]
-                    prompt_text, valid_points = ui.render_bid_value_prompt(trump, req["legal_actions"])
-                    live.console.print(prompt_text)
+                    state.active_bid_value_prompt = (trump, req["legal_actions"])
+                    redraw()
+                    _, valid_points = ui.render_bid_value_prompt(trump, req["legal_actions"])
                     points = await _prompt_bid_value(valid_points)
                     bid_payload = {"action": "bid", "trump": trump, "points": points}
                 elif choice is not None:
                     bid_payload = choice
 
+                state.active_bid_request = None
+                state.active_bid_value_prompt = None
+                redraw()
                 if bid_payload is None:
                     continue
                 try:

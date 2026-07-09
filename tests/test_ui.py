@@ -7,6 +7,8 @@ string, only ever wrapped via the plain rich.text.Text(value) constructor.
 
 from __future__ import annotations
 
+import io
+
 from rich.console import Console
 from rich.text import Text
 
@@ -26,6 +28,13 @@ from coinche.ui import (
 )
 
 MALICIOUS_NAME = "[bold red]INJECTED[/bold red]"
+
+
+def _plain(renderable) -> str:
+    """Render any Rich renderable to plain text for substring assertions."""
+    buffer = io.StringIO()
+    Console(file=buffer, width=120, no_color=True, force_terminal=False).print(renderable)
+    return buffer.getvalue()
 
 
 # --- Rich-markup-injection mitigation -----------------------------------------
@@ -87,15 +96,15 @@ def test_card_text_none_renders_card_back_glyph():
 
 def test_render_bid_menu_always_offers_pass_first():
     legal_actions = [{"trump": "♠", "points": 80}, {"trump": "♥", "points": 80}]
-    menu_text, tokens = render_bid_menu(legal_actions, current_highest_bid=None)
+    menu, tokens = render_bid_menu(legal_actions, current_highest_bid=None)
     assert tokens["1"] == {"action": "pass"}
-    assert "Passer" in menu_text
+    assert "Passer" in _plain(menu)
 
 
 def test_render_bid_menu_includes_coinche_and_surcoinche_tokens_when_allowed():
     legal_actions: list[dict] = []
     current = {"trump": "♠", "points": 90}
-    menu_text, tokens = render_bid_menu(
+    menu, tokens = render_bid_menu(
         legal_actions, current_highest_bid=current, can_coinche=True, can_surcoinche=False
     )
     assert any(choice.get("action") == "coinche" for choice in tokens.values())
@@ -108,7 +117,7 @@ def test_render_bid_menu_offers_one_select_trump_entry_per_distinct_trump():
         {"trump": "♠", "points": 90},
         {"trump": "♥", "points": 80},
     ]
-    menu_text, tokens = render_bid_menu(legal_actions, current_highest_bid=None)
+    menu, tokens = render_bid_menu(legal_actions, current_highest_bid=None)
     select_trump_tokens = [c for c in tokens.values() if c.get("action") == "select_trump"]
     # One entry per distinct trump, not one per point level: 2 entries, not 3.
     assert select_trump_tokens == [
@@ -116,8 +125,9 @@ def test_render_bid_menu_offers_one_select_trump_entry_per_distinct_trump():
         {"action": "select_trump", "trump": "♥"},
     ]
     # Point values are never enumerated in this stage-1 menu.
-    assert "80" not in menu_text
-    assert "Capot" not in menu_text
+    plain = _plain(menu)
+    assert "80" not in plain
+    assert "Capot" not in plain
 
 
 def test_render_bid_menu_suit_tokens_are_stable_regardless_of_coinche_surcoinche():
@@ -149,8 +159,9 @@ def test_render_bid_value_prompt_lists_range_and_capot_for_chosen_trump():
         {"trump": "♠", "points": "capot"},
         {"trump": "♥", "points": 80},
     ]
-    prompt_text, valid_points = render_bid_value_prompt("♠", legal_actions)
+    prompt, valid_points = render_bid_value_prompt("♠", legal_actions)
     assert valid_points == [80, 90, "capot"]
+    prompt_text = _plain(prompt)
     assert "80" in prompt_text and "90" in prompt_text and "capot" in prompt_text
     # Only the chosen trump's values are considered.
     assert render_bid_value_prompt("♥", legal_actions)[1] == [80]
