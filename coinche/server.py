@@ -234,12 +234,18 @@ async def _handle_play_result(table: Table, result: dict) -> None:
     )
 
     next_actor = result.get("next_to_act")
+    # When this card completes the trick, `result["current_trick"]` is
+    # already `[]` (game.py resets it as soon as the trick is resolved) --
+    # broadcast `completed_trick` (the full 4 cards) instead so the client
+    # still shows all four cards on the table during the post-trick pause,
+    # rather than clearing them the instant the 4th card lands.
+    trick_for_broadcast = result["completed_trick"] if result["trick_complete"] else result["current_trick"]
     await table.broadcast(
         protocol.CARD_PLAYED,
         {
             "seat": _seat_to_str(result["seat"]),
             "card": _card_to_wire(result["card"]),
-            "current_trick": _trick_to_wire(result["current_trick"]),
+            "current_trick": _trick_to_wire(trick_for_broadcast),
             "next_to_act": _seat_to_str(next_actor) if next_actor is not None else None,
             "belote_announcement": belote,
         },

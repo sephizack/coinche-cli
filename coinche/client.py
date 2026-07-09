@@ -46,6 +46,14 @@ class ClientState:
     legal_cards: list[str] = field(default_factory=list)
     current_trick: dict[Seat, str] = field(default_factory=dict)
     last_trick: dict[Seat, str] = field(default_factory=dict)
+    # Holds the just-completed trick between TRICK_RESULT and the next
+    # message that actually starts a fresh trick (PLAY_REQUEST). Kept out of
+    # `last_trick` until then so the "Dernier pli" corner panel doesn't
+    # update in lockstep with the main table -- while the completed trick's
+    # 4 cards are still shown big on the main table during the post-trick
+    # pause, the corner keeps showing the trick before that; both flip over
+    # together only once the new trick actually begins.
+    pending_last_trick: dict[Seat, str] | None = None
     whose_turn: Seat | None = None
     # Seat that dealt the current round, shown as a "(D)" marker on the table
     # so players can tell at a glance who bids first (dealer.next()) once the
@@ -227,6 +235,7 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
         state.legal_cards = []
         state.current_trick = {}
         state.last_trick = {}
+        state.pending_last_trick = None
         state.trump = None
         state.contract_points = None
         state.contract_bidder = None
@@ -278,6 +287,12 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
         state.legal_cards = _sort_hand(payload["legal_cards"], payload["trump"])
         state.trump = payload["trump"]
         state.current_trick = _trick_from_wire(payload["current_trick"])
+        # A new trick is actually starting now: promote the previously-held
+        # completed trick into `last_trick` at the same moment the main
+        # table's `current_trick` moves on, so both panels flip together.
+        if state.pending_last_trick is not None:
+            state.last_trick = state.pending_last_trick
+            state.pending_last_trick = None
         state.whose_turn = state.seat
         action_event.set()
 
@@ -297,14 +312,17 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
             state.hand.remove(payload["card"])
 
     elif msg_type == protocol.TRICK_RESULT:
-        # Deliberately do NOT clear `current_trick` here: the server holds
-        # off sending the next PLAY_REQUEST for `trick_pause_seconds` after
+        # Deliberately do NOT clear `current_trick` here (it already holds
+        # all 4 cards, via CARD_PLAYED's `completed_trick` broadcast below)
+        # and do NOT update `last_trick` yet either: the server holds off
+        # sending the next PLAY_REQUEST for `trick_pause_seconds` after
         # broadcasting this message specifically so players can see the
-        # completed trick on the table during that pause. The four played
-        # cards stay visible until the next message that actually carries a
-        # fresh `current_trick` (the next PLAY_REQUEST, or CARD_PLAYED)
-        # overwrites it, or a new DEAL clears it for the next round.
-        state.last_trick = _trick_from_wire(payload["trick"])
+        # completed trick big on the main table during that pause. Stash it
+        # in `pending_last_trick` instead -- it's promoted to `last_trick`
+        # only once the next trick actually starts (see PLAY_REQUEST above),
+        # so the "Dernier pli" corner doesn't jump to this trick while it's
+        # still on display in the middle of the table.
+        state.pending_last_trick = _trick_from_wire(payload["trick"])
         winner = Seat(payload["winner_seat"])
         who = state.players.get(winner, winner.value)
         state.last_action = f"Pli remporté par {who} (+{payload['points_won']} pts)"
@@ -340,6 +358,7 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
         state.hand = _sort_hand(payload["hand"], state.trump)
         state.legal_cards = []
         state.current_trick = _trick_from_wire(payload["current_trick"])
+        state.pending_last_trick = None
         state.cumulative_scores = payload["cumulative_scores"]
         state.server_version = payload.get("server_version")
         if state.seat not in state.players:
