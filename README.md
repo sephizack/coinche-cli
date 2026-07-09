@@ -1,7 +1,7 @@
 # coinche-cli
 
 A networked, terminal-based Coinche (belote coinchée) card game: an asyncio
-TCP server hosting multiple 4-player tables, and a `rich`-based CLI client
+WebSocket server hosting multiple 4-player tables, and a `rich`-based CLI client
 that joins a table by host/port, table key, and player name, then plays a
 full game (deal → bid → trick play → score → repeat until the target score
 is reached).
@@ -79,3 +79,11 @@ If a client's connection drops mid-game, relaunching it with the same
 ```bash
 python -m pytest
 ```
+
+## Writing a new client
+
+Want to build a different client (a web app, a bot, another CLI)? See
+[`PROTOCOL.md`](PROTOCOL.md) for the full WebSocket message protocol — every
+message type, payload shape, error code, and the join/reconnect flow — so
+you can implement one without reading `coinche/client.py`'s `rich`-based UI
+code at all.

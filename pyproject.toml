@@ -5,6 +5,7 @@ description = "Networked terminal Coinche (belote coinchée) card game"
 requires-python = ">=3.10"
 dependencies = [
     "rich>=13.7",
+    "websockets>=12.0",
 ]
 
 [project.scripts]
