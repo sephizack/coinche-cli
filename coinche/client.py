@@ -357,7 +357,11 @@ async def run_session(
                 local_team,
                 state.last_action,
                 connection_status=state.connection_status,
-                legal_cards=state.legal_cards or None,
+                # Number every card in hand while a play is pending (not just
+                # the legal ones) so every card has a clickable-by-number
+                # button; illegal choices are rejected locally with a warning
+                # instead of being hidden.
+                legal_cards=state.hand if state.legal_cards else None,
                 trump=display_trump,
                 contract_points=display_points,
                 contract_bidder_name=contract_bidder_name,
@@ -422,19 +426,31 @@ async def run_session(
 
             elif state.pending_play_request is not None:
                 state.pending_play_request = None
-                # Use state.legal_cards (already sorted to match the hand
-                # display order) so menu numbers line up with build_hand's.
-                _, tokens = ui.render_play_menu(state.legal_cards)
-                choice = await _prompt_key_choice(tokens)
-                state.legal_cards = []
-                redraw()
-                if choice is None:
-                    continue
-                try:
-                    writer.write(protocol.encode(protocol.PLAY_CARD, {"card": choice}))
-                    await writer.drain()
-                except (ConnectionError, OSError):
-                    return
+                legal_cards = state.legal_cards
+                # Every card in hand gets a number (see redraw()'s
+                # legal_cards=state.hand above), so the player can attempt to
+                # play any card. An illegal choice is never sent to the
+                # server: it's rejected right here with a warning, and the
+                # same menu is shown again without a new server round trip.
+                while True:
+                    _, tokens = ui.render_play_menu(state.hand)
+                    choice = await _prompt_key_choice(tokens)
+                    if choice is None:
+                        state.legal_cards = []
+                        redraw()
+                        break
+                    if choice not in legal_cards:
+                        state.last_action = f"⚠ Impossible de jouer {choice} maintenant (carte non autorisée)."
+                        redraw()
+                        continue
+                    state.legal_cards = []
+                    redraw()
+                    try:
+                        writer.write(protocol.encode(protocol.PLAY_CARD, {"card": choice}))
+                        await writer.drain()
+                    except (ConnectionError, OSError):
+                        return
+                    break
 
     try:
         redraw()
