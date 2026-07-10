@@ -493,7 +493,15 @@ async def run_session(
     state = ClientState()
 
     try:
-        websocket = await connect(f"ws://{host}:{port}")
+        # proxy=None: se connecter en direct, sans jamais passer par un proxy
+        # HTTP. Depuis websockets 14, connect() lit par défaut les variables
+        # d'environnement (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY), ce que
+        # l'ancien transport TCP brut ne faisait pas. Sur un poste
+        # d'entreprise/VPN où ces variables sont définies, le client tentait
+        # sinon un CONNECT vers l'IP privée du serveur via le proxy de la
+        # boîte, qui répond par une page d'erreur ("did not receive a valid
+        # HTTP response") au lieu de router la connexion.
+        websocket = await connect(f"ws://{host}:{port}", proxy=None)
     except (OSError, WebSocketException) as exc:
         print(f"Impossible de se connecter à {host}:{port} ({exc})")
         return "not_joined"
