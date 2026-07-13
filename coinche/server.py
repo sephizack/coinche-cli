@@ -1,4 +1,4 @@
-"""Coinche WebSocket server: asyncio connection handling, join/reconnect, and dispatch.
+"""Coinche TCP server: asyncio connection handling, join/reconnect, and dispatch.
 
 Run with: python -m coinche.server [--host HOST] [--port PORT] [--target-score N]
 """
@@ -9,9 +9,6 @@ import argparse
 import asyncio
 import logging
 import re
-
-from websockets.asyncio.server import ServerConnection, serve
-from websockets.exceptions import ConnectionClosed
 
 from coinche import __version__, protocol, rules
 from coinche.cards import Card, Seat
@@ -25,12 +22,6 @@ from coinche.table import (
 )
 
 TABLE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9]{4,12}$")
-
-# Max size (bytes) of a single incoming WebSocket message. Mirrors the ~64 KiB
-# limit asyncio's StreamReader.readline() used to enforce on the old raw-TCP
-# transport: oversized/malformed input is rejected by the websockets library
-# itself (RFC 6455 close code 1009) before it ever reaches our decode logic.
-MAX_MESSAGE_SIZE = 65536
 
 # Dedicated "game log" logger (per user request): records who bid/played what
 # and which team took each trick/round/game, so results can be double-checked
@@ -98,10 +89,11 @@ def _snapshot_to_wire(snapshot: dict, table_key: str, table: Table) -> dict:
     }
 
 
-async def _send_error(websocket: ServerConnection, code: str, message: str) -> None:
+async def _send_error(writer: asyncio.StreamWriter, code: str, message: str) -> None:
     try:
-        await websocket.send(protocol.encode(protocol.ERROR, {"code": code, "message": message}))
-    except (ConnectionClosed, OSError):
+        writer.write(protocol.encode(protocol.ERROR, {"code": code, "message": message}))
+        await writer.drain()
+    except (ConnectionError, OSError):
         pass
 
 
@@ -398,24 +390,29 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
 
 
 async def _resolve_join(
-    websocket: ServerConnection,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
     target_score: int,
     trick_pause_seconds: float,
     round_pause_seconds: float,
 ) -> tuple[Table, Seat] | None:
     try:
-        message = await websocket.recv()
-    except ConnectionClosed:
+        line = await reader.readline()
+    except ValueError:
+        # Line exceeded the StreamReader's length limit (oversized/malformed input).
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "Message too large")
+        return None
+    if not line:
         return None
 
     try:
-        msg_type, payload = protocol.decode(message)
+        msg_type, payload = protocol.decode(line)
     except protocol.ProtocolError:
-        await _send_error(websocket, protocol.MALFORMED_MESSAGE, "Expected a join message")
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "Expected a join message")
         return None
 
     if msg_type != protocol.JOIN:
-        await _send_error(websocket, protocol.MALFORMED_MESSAGE, "First message must be 'join'")
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "First message must be 'join'")
         return None
 
     table_key = str(payload["table_key"]).lower()
@@ -423,10 +420,10 @@ async def _resolve_join(
     team_name = str(payload["team_name"]).strip() if payload.get("team_name") else None
 
     if not TABLE_KEY_PATTERN.match(table_key):
-        await _send_error(websocket, protocol.MALFORMED_MESSAGE, "table_key must be 4-12 alphanumeric characters")
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "table_key must be 4-12 alphanumeric characters")
         return None
     if not player_name:
-        await _send_error(websocket, protocol.MALFORMED_MESSAGE, "player_name must not be empty")
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "player_name must not be empty")
         return None
 
     table = get_or_create_table(
@@ -442,7 +439,7 @@ async def _resolve_join(
         if reconnect_seat is not None:
             seat = reconnect_seat
             logger.info("[%s] RECONNEXION %s (%s)", table_key, player_name, _seat_to_str(seat))
-            snapshot = table.reconnect(seat, websocket)
+            snapshot = table.reconnect(seat, writer)
             await table.send_to(seat, protocol.RESYNC, _snapshot_to_wire(snapshot, table_key, table))
             await table.broadcast(
                 protocol.CONNECTION_STATUS,
@@ -460,15 +457,15 @@ async def _resolve_join(
             return table, seat
 
         try:
-            seat = table.add_player(player_name, websocket, team_name=team_name)
+            seat = table.add_player(player_name, writer, team_name=team_name)
         except NameTakenError:
-            await _send_error(websocket, protocol.NAME_TAKEN, f"Name already taken: {player_name}")
+            await _send_error(writer, protocol.NAME_TAKEN, f"Name already taken: {player_name}")
             return None
         except GameInProgressError:
-            await _send_error(websocket, protocol.GAME_IN_PROGRESS, "Game already in progress")
+            await _send_error(writer, protocol.GAME_IN_PROGRESS, "Game already in progress")
             return None
         except TableFullError:
-            await _send_error(websocket, protocol.TABLE_FULL, "Table is full")
+            await _send_error(writer, protocol.TABLE_FULL, "Table is full")
             return None
 
         logger.info(
@@ -503,7 +500,8 @@ async def _resolve_join(
 
 
 async def handle_connection(
-    websocket: ServerConnection,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
     target_score: int,
     trick_pause_seconds: float = 2.5,
     round_pause_seconds: float = 4.0,
@@ -511,26 +509,31 @@ async def handle_connection(
     table: Table | None = None
     seat: Seat | None = None
     try:
-        joined = await _resolve_join(websocket, target_score, trick_pause_seconds, round_pause_seconds)
+        joined = await _resolve_join(reader, writer, target_score, trick_pause_seconds, round_pause_seconds)
         if joined is None:
             return
         table, seat = joined
 
         while True:
             try:
-                message = await websocket.recv()
-            except ConnectionClosed:
+                line = await reader.readline()
+            except ValueError:
+                # Line exceeded the StreamReader's length limit (oversized/malformed
+                # input) -- reject and drop the connection rather than crash the task.
+                await _send_error(writer, protocol.MALFORMED_MESSAGE, "Message too large")
+                break
+            if not line:
                 break
             try:
-                msg_type, payload = protocol.decode(message)
+                msg_type, payload = protocol.decode(line)
             except protocol.ProtocolError as exc:
-                await _send_error(websocket, protocol.MALFORMED_MESSAGE, str(exc))
+                await _send_error(writer, protocol.MALFORMED_MESSAGE, str(exc))
                 continue
 
             async with table.lock:
                 await _dispatch(table, seat, msg_type, payload)
 
-    except ConnectionClosed:
+    except (ConnectionError, asyncio.IncompleteReadError):
         pass
     finally:
         if table is not None and seat is not None:
@@ -549,8 +552,10 @@ async def handle_connection(
                         protocol.CONNECTION_STATUS,
                         {"seat": _seat_to_str(seat), "name": name, "status": "disconnected"},
                     )
-        # No explicit close needed: `websockets.serve` closes the connection
-        # for us once this handler coroutine returns.
+        try:
+            writer.close()
+        except Exception:
+            pass
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -605,15 +610,16 @@ async def main(argv: list[str] | None = None) -> None:
         handlers=handlers,
     )
 
-    async def _handler(websocket: ServerConnection) -> None:
+    async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         await handle_connection(
-            websocket,
+            reader,
+            writer,
             args.target_score,
             trick_pause_seconds=args.trick_pause,
             round_pause_seconds=args.round_pause,
         )
 
-    server = await serve(_handler, args.host, args.port, max_size=MAX_MESSAGE_SIZE)
+    server = await asyncio.start_server(_handler, args.host, args.port)
     bound = server.sockets[0].getsockname() if server.sockets else (args.host, args.port)
     print(f"Coinche server listening on {bound[0]}:{bound[1]} (target score {args.target_score})")
     async with server:

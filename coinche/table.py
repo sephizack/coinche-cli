@@ -5,9 +5,6 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from websockets.asyncio.server import ServerConnection
-from websockets.exceptions import ConnectionClosed
-
 from coinche import protocol, rules
 from coinche.game import PARTNER_OF, Game, Seat
 
@@ -34,7 +31,7 @@ class GameInProgressError(TableError):
 class ClientSession:
     seat: Seat
     name: str
-    websocket: ServerConnection | None
+    writer: asyncio.StreamWriter | None
     connected: bool = True
     team_name: str | None = None
 
@@ -65,7 +62,7 @@ class Table:
         self.game: Game | None = None
 
     def add_player(
-        self, name: str, websocket: ServerConnection | None, team_name: str | None = None
+        self, name: str, writer: asyncio.StreamWriter | None, team_name: str | None = None
     ) -> Seat:
         """Seat a new player (A14/A15). Raises TableError subclasses on rejection.
 
@@ -94,7 +91,7 @@ class Table:
                     partner_seat = PARTNER_OF[seat]
                     if self.seats[partner_seat] is None:
                         self.seats[partner_seat] = ClientSession(
-                            seat=partner_seat, name=name, websocket=websocket, connected=True, team_name=team_name
+                            seat=partner_seat, name=name, writer=writer, connected=True, team_name=team_name
                         )
                         if all(s is not None for s in self.seats.values()):
                             self.game = Game(target_score=self.target_score)
@@ -103,7 +100,7 @@ class Table:
 
         for seat in SEAT_ORDER:
             if self.seats[seat] is None:
-                self.seats[seat] = ClientSession(seat=seat, name=name, websocket=websocket, connected=True, team_name=team_name)
+                self.seats[seat] = ClientSession(seat=seat, name=name, writer=writer, connected=True, team_name=team_name)
                 if all(s is not None for s in self.seats.values()):
                     self.game = Game(target_score=self.target_score)
                 return seat
@@ -129,11 +126,11 @@ class Table:
         session.connected = False
         return session.name
 
-    def reconnect(self, seat: Seat, new_websocket: ServerConnection | None) -> dict:
-        """Re-attach a new websocket connection to a disconnected seat and return a resync snapshot (A16)."""
+    def reconnect(self, seat: Seat, new_writer: asyncio.StreamWriter | None) -> dict:
+        """Re-attach a new writer to a disconnected seat and return a resync snapshot (A16)."""
         session = self.seats[seat]
         assert session is not None
-        session.websocket = new_websocket
+        session.writer = new_writer
         session.connected = True
         assert self.game is not None
         return self.game.snapshot_for(seat)
@@ -154,23 +151,25 @@ class Table:
     async def broadcast(self, msg_type: str, payload: dict, exclude: Seat | None = None) -> None:
         data = protocol.encode(msg_type, payload)
         for seat, session in list(self.seats.items()):
-            if session is None or not session.connected or session.websocket is None:
+            if session is None or not session.connected or session.writer is None:
                 continue
             if exclude is not None and seat == exclude:
                 continue
             try:
-                await session.websocket.send(data)
-            except (ConnectionClosed, OSError):
+                session.writer.write(data)
+                await session.writer.drain()
+            except (ConnectionError, OSError):
                 self.mark_disconnected(seat)
 
     async def send_to(self, seat: Seat, msg_type: str, payload: dict) -> None:
         session = self.seats.get(seat)
-        if session is None or session.websocket is None:
+        if session is None or session.writer is None:
             return
         data = protocol.encode(msg_type, payload)
         try:
-            await session.websocket.send(data)
-        except (ConnectionClosed, OSError):
+            session.writer.write(data)
+            await session.writer.drain()
+        except (ConnectionError, OSError):
             self.mark_disconnected(seat)
 
 

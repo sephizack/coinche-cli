@@ -1,8 +1,7 @@
-"""JSON message protocol for Coinche client<->server, carried over WebSocket.
+"""Newline-delimited JSON ("JSON Lines") protocol for Coinche client<->server.
 
-Every message is one JSON object `{"type": "<msg_type>", "payload": {...}}`,
-UTF-8 encoded and sent as a single WebSocket frame (no extra delimiter needed:
-WebSocket framing already gives us one message per `send()`/`recv()`).
+Every message is one JSON object `{"type": "<msg_type>", "payload": {...}}`
+followed by "\\n", UTF-8 encoded.
 """
 
 from __future__ import annotations
@@ -91,14 +90,14 @@ class ProtocolError(Exception):
 
 
 def encode(msg_type: str, payload: dict) -> bytes:
-    """Encode a message as one UTF-8 JSON WebSocket frame."""
-    return json.dumps({"type": msg_type, "payload": payload}).encode("utf-8")
+    """Encode a message as one line of newline-terminated UTF-8 JSON."""
+    return (json.dumps({"type": msg_type, "payload": payload}) + "\n").encode("utf-8")
 
 
-def decode(message: bytes | str) -> tuple[str, dict]:
-    """Decode one WebSocket message into (msg_type, payload). Raises ProtocolError on failure."""
+def decode(line: bytes) -> tuple[str, dict]:
+    """Decode one line into (msg_type, payload). Raises ProtocolError on failure."""
     try:
-        text = message.decode("utf-8").strip() if isinstance(message, bytes) else message.strip()
+        text = line.decode("utf-8").strip()
     except UnicodeDecodeError as exc:
         raise ProtocolError("Invalid UTF-8 in message") from exc
 

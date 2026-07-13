@@ -1,4 +1,4 @@
-"""Coinche WebSocket client: connection, live-redraw table view, keyboard-menu prompts.
+"""Coinche TCP client: connection, live-redraw table view, keyboard-menu prompts.
 
 Run with: python -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
                                     [--team TEAM_NAME]
@@ -18,8 +18,6 @@ from typing import Callable
 
 from rich.live import Live
 from rich.text import Text
-from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from coinche import __version__, protocol, ui
 from coinche.cards import Seat
@@ -493,19 +491,20 @@ async def run_session(
     state = ClientState()
 
     try:
-        websocket = await connect(f"ws://{host}:{port}")
-    except (OSError, WebSocketException) as exc:
+        reader, writer = await asyncio.open_connection(host, port)
+    except OSError as exc:
         print(f"Impossible de se connecter à {host}:{port} ({exc})")
         return "not_joined"
 
     try:
-        await websocket.send(
+        writer.write(
             protocol.encode(
                 protocol.JOIN,
                 {"table_key": table_key, "player_name": player_name, "team_name": team_name},
             )
         )
-    except (ConnectionClosed, OSError):
+        await writer.drain()
+    except (ConnectionError, OSError):
         return "not_joined"
 
     action_event = asyncio.Event()
@@ -602,12 +601,11 @@ async def run_session(
     async def receiver_loop() -> None:
         try:
             while True:
-                try:
-                    message = await websocket.recv()
-                except ConnectionClosed:
+                line = await reader.readline()
+                if not line:
                     break
                 try:
-                    msg_type, payload = protocol.decode(message)
+                    msg_type, payload = protocol.decode(line)
                 except protocol.ProtocolError:
                     continue
                 _apply_message(state, msg_type, payload, action_event)
@@ -624,17 +622,18 @@ async def run_session(
                 choice = await _prompt_game_over_screen(live, state)
                 if choice != "rematch":
                     try:
-                        await websocket.close()
+                        writer.close()
                     except Exception:
                         pass
                     return
                 state.game_over = False
                 try:
-                    await websocket.send(protocol.encode(protocol.REMATCH, {}))
-                except (ConnectionClosed, OSError):
+                    writer.write(protocol.encode(protocol.REMATCH, {}))
+                    await writer.drain()
+                except (ConnectionError, OSError):
                     return
                 continue
-            if websocket.close_code is not None:
+            if reader.at_eof():
                 return
 
             if state.pending_bid_request is not None:
@@ -671,8 +670,9 @@ async def run_session(
                 if bid_payload is None:
                     continue
                 try:
-                    await websocket.send(protocol.encode(protocol.BID, bid_payload))
-                except (ConnectionClosed, OSError):
+                    writer.write(protocol.encode(protocol.BID, bid_payload))
+                    await writer.drain()
+                except (ConnectionError, OSError):
                     return
 
             elif state.pending_play_request is not None:
@@ -697,8 +697,9 @@ async def run_session(
                     state.legal_cards = []
                     redraw()
                     try:
-                        await websocket.send(protocol.encode(protocol.PLAY_CARD, {"card": choice}))
-                    except (ConnectionClosed, OSError):
+                        writer.write(protocol.encode(protocol.PLAY_CARD, {"card": choice}))
+                        await writer.drain()
+                    except (ConnectionError, OSError):
                         return
                     break
 
@@ -708,7 +709,8 @@ async def run_session(
     finally:
         live.stop()
         try:
-            await websocket.close()
+            writer.close()
+            await writer.wait_closed()
         except Exception:
             pass
 
@@ -860,7 +862,7 @@ def cli() -> None:
     """Entry point. Catches Ctrl+C at the top level so the player gets a clean
     "Au revoir" message instead of a raw asyncio KeyboardInterrupt traceback.
 
-    `run_session`'s own `try`/`finally` (`live.stop()`, closing the websocket) still
+    `run_session`'s own `try`/`finally` (`live.stop()`, closing the writer) still
     runs first: `asyncio.run()` reacts to a KeyboardInterrupt raised while the
     event loop is waiting by cancelling the still-suspended `main()` task in its
     own `finally` block, which unwinds through `run_session`'s `finally` (a
