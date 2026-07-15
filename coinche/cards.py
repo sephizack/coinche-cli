@@ -25,7 +25,7 @@ class Seat(Enum):
     S = "S"
     W = "W"
 
-    def next(self) -> "Seat":
+    def next(self) -> Seat:
         order = (Seat.N, Seat.W, Seat.S, Seat.E)
         idx = order.index(self)
         return order[(idx + 1) % 4]

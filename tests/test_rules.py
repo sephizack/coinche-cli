@@ -13,7 +13,6 @@ from coinche.rules import (
     trick_winner,
 )
 
-
 # --- card_points / point tables (A7) -----------------------------------------
 
 

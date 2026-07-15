@@ -143,16 +143,8 @@ class Game:
                 "can_surcoinche": False,
             }
         current = bid.current_highest_bid
-        can_coinche = (
-            current is not None
-            and bid.coinche_level == 1
-            and TEAM_OF[seat] != current["team"]
-        )
-        can_surcoinche = (
-            current is not None
-            and bid.coinche_level == 2
-            and TEAM_OF[seat] == current["team"]
-        )
+        can_coinche = current is not None and bid.coinche_level == 1 and TEAM_OF[seat] != current["team"]
+        can_surcoinche = current is not None and bid.coinche_level == 2 and TEAM_OF[seat] == current["team"]
         # Once a coinche is on the table (coinche_level >= 2), the auction is
         # closed to new point bids: the only moves left are passing or
         # surcoinching (A6). Offering fresh bids would let the auction climb
@@ -242,7 +234,12 @@ class Game:
         assert self.round_state is not None
         self.dealer = self.dealer.next()
         event = self.start_round()
-        return {"outcome": "redeal", "dealer_seat": event["dealer_seat"], "first_bidder_seat": event["first_bidder_seat"], "round_number": event["round_number"]}
+        return {
+            "outcome": "redeal",
+            "dealer_seat": event["dealer_seat"],
+            "first_bidder_seat": event["first_bidder_seat"],
+            "round_number": event["round_number"],
+        }
 
     def _finalize_contract(self) -> dict:
         assert self.bid_state is not None
@@ -333,12 +330,7 @@ class Game:
         # playing the second; the +20 point bonus itself is credited
         # unconditionally at round scoring via `rs.belote_holder`.
         belote_announcement: str | None = None
-        if (
-            rs.belote_seat == seat
-            and rs.trump is not None
-            and card.suit == rs.trump
-            and card.rank in ("R", "D")
-        ):
+        if rs.belote_seat == seat and rs.trump is not None and card.suit == rs.trump and card.rank in ("R", "D"):
             rs.belote_announced += 1
             belote_announcement = "belote" if rs.belote_announced == 1 else "rebelote"
 
@@ -363,9 +355,7 @@ class Game:
 
         led_suit = rs.current_trick[0][1].suit
         winner_seat = rules.trick_winner(rs.current_trick, rs.trump, led_suit)
-        points_won = sum(
-            rules.card_points(c, rs.trump) for _, c in rs.current_trick
-        )
+        points_won = sum(rules.card_points(c, rs.trump) for _, c in rs.current_trick)
         rs.tricks_played += 1
         is_last_trick = rs.tricks_played == 8
         if is_last_trick:
@@ -410,9 +400,7 @@ class Game:
         assert contract is not None
 
         attacking_team = contract["team"]
-        attacker_tricks = sum(
-            1 for t in rs.trick_history if TEAM_OF[t["winner_seat"]] == attacking_team
-        )
+        attacker_tricks = sum(1 for t in rs.trick_history if TEAM_OF[t["winner_seat"]] == attacking_team)
         capot_result: bool | None = None
         if contract["points"] == rules.CAPOT:
             capot_result = attacker_tricks == len(rs.trick_history)

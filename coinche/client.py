@@ -14,8 +14,8 @@ import argparse
 import asyncio
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from rich.live import Live
 from rich.text import Text
@@ -493,9 +493,7 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
         state.last_action = f"Erreur : {text}"
 
 
-async def run_session(
-    host: str, port: int, table_key: str, player_name: str, team_name: str | None = None
-) -> str:
+async def run_session(host: str, port: int, table_key: str, player_name: str, team_name: str | None = None) -> str:
     """Run one connection attempt end-to-end.
 
     `team_name`, if given, is a free-text label (e.g. "A"/"B") shared with a
@@ -800,9 +798,7 @@ async def _prompt_game_over_screen(live: Live, state: ClientState) -> str:
     "Quitter". Returns "rematch" or "quit" (also "quit" if stdin closes)."""
     local_team = state.team_of.get(state.seat, "NS") if state.seat is not None else "NS"
     contract = _build_last_round_contract(state)
-    screen = ui.render_game_over(
-        state.final_scores, state.winning_team or "", local_team, contract, state.team_names
-    )
+    screen = ui.render_game_over(state.final_scores, state.winning_team or "", local_team, contract, state.team_names)
     live.console.print(screen)
     choice = await _prompt_key_choice({"1": "rematch", "2": "quit"})
     return "rematch" if choice == "rematch" else "quit"

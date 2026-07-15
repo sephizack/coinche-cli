@@ -64,6 +64,7 @@ def round_to_nearest_ten(points: int) -> int:
     .5 rounds up): 94 -> 90, 68 -> 70, 46 -> 50, 45 -> 50, 44 -> 40."""
     return (points + 5) // 10 * 10
 
+
 DEFAULT_TARGET_SCORE = 1000  # A12
 
 
@@ -160,9 +161,7 @@ def legal_cards_to_play(
 
     if led_suit == trump_suit:
         if same_suit_cards:
-            return _apply_overtrump_rule(
-                same_suit_cards, current_trick, trump_suit, partner_seat
-            )
+            return _apply_overtrump_rule(same_suit_cards, current_trick, trump_suit, partner_seat)
         return list(hand)
 
     if same_suit_cards:
@@ -172,9 +171,7 @@ def legal_cards_to_play(
     # already master of the trick (whether by holding the highest card of
     # the led suit with no trump played yet, or the highest trump played so
     # far) — the player may "pisser" (discard any card freely).
-    if partner_seat is not None and trick_winner(
-        current_trick, trump_suit, led_suit
-    ) == partner_seat:
+    if partner_seat is not None and trick_winner(current_trick, trump_suit, led_suit) == partner_seat:
         return list(hand)
 
     trump_cards = [c for c in hand if c.suit == trump_suit]
@@ -194,18 +191,12 @@ def _apply_overtrump_rule(
     if not trumps_in_trick:
         return candidate_cards
 
-    highest_seat, highest_card = max(
-        trumps_in_trick, key=lambda sc: TRUMP_ORDER.index(sc[1].rank)
-    )
+    highest_seat, highest_card = max(trumps_in_trick, key=lambda sc: TRUMP_ORDER.index(sc[1].rank))
 
     if partner_seat is not None and highest_seat == partner_seat:
         return candidate_cards  # under-trump exception: no need to overtrump
 
-    higher_trumps = [
-        c
-        for c in candidate_cards
-        if TRUMP_ORDER.index(c.rank) > TRUMP_ORDER.index(highest_card.rank)
-    ]
+    higher_trumps = [c for c in candidate_cards if TRUMP_ORDER.index(c.rank) > TRUMP_ORDER.index(highest_card.rank)]
     if higher_trumps:
         return higher_trumps
 
@@ -223,9 +214,7 @@ def trick_winner(
 
     trump_plays = [(s, c) for s, c in trick if c.suit == trump_suit]
     if trump_plays:
-        winner_seat, _ = max(
-            trump_plays, key=lambda sc: TRUMP_ORDER.index(sc[1].rank)
-        )
+        winner_seat, _ = max(trump_plays, key=lambda sc: TRUMP_ORDER.index(sc[1].rank))
         return winner_seat
 
     led_plays = [(s, c) for s, c in trick if c.suit == led_suit]
@@ -304,17 +293,13 @@ def score_round(
             attacker_realized = CAPOT_POINTS
             capot_bonus[attacking_team] = CAPOT_POINTS
         else:
-            attacker_realized = round_to_nearest_ten(
-                captured_points_by_team.get(attacking_team, 0)
-            )
+            attacker_realized = round_to_nearest_ten(captured_points_by_team.get(attacking_team, 0))
         attacking_base = attacker_realized + announced
         # Defenders keep their rounded card points (nothing on a made capot).
         if is_capot_bid or attacker_made_capot:
             defending_base = 0
         else:
-            defending_base = round_to_nearest_ten(
-                captured_points_by_team.get(defending_team, 0)
-            )
+            defending_base = round_to_nearest_ten(captured_points_by_team.get(defending_team, 0))
         contract_result = "capot_achieved" if is_capot_bid else "made"
         winning_team = attacking_team
     else:

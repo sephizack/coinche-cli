@@ -134,9 +134,7 @@ def build_hand(cards: list[str], legal_cards: list[str] | None = None) -> Panel:
         # (server-side, unsorted-hand) ordering.
         token_by_card = {card: i for i, card in enumerate(legal_cards, start=1)}
         number_cells: list[Text] = [
-            Text(str(token_by_card[card]), style="bold yellow", justify="center")
-            if card in token_by_card
-            else Text("")
+            Text(str(token_by_card[card]), style="bold yellow", justify="center") if card in token_by_card else Text("")
             for card in cards
         ]
         row.add_row(*number_cells)
@@ -524,9 +522,7 @@ def render_round_score(
         contract_line.append(f"{points_label} {contract['trump']}", style=f"bold {TEAM_COLORS[camp]}")
         contract_line.append(" par ", style="grey70")
         contract_line.append(contract["bidder_name"], style="bold white")
-        result_text, result_style = _CONTRACT_RESULT_LABELS.get(
-            contract["result"], (contract["result"], "bold white")
-        )
+        result_text, result_style = _CONTRACT_RESULT_LABELS.get(contract["result"], (contract["result"], "bold white"))
         blocks.append(Text(""))
         blocks.append(Align.center(contract_line))
         blocks.append(Align.center(Text(result_text, style=result_style)))
@@ -572,7 +568,8 @@ def render_game_over(
         Align.center(Text(result_label, style=style)),
         Align.center(
             Text(
-                f"Score final — {local_label} : {final_scores[local_team]}   {other_label} : {final_scores[other_team]}",
+                f"Score final — {local_label} : {final_scores[local_team]}"
+                f"   {other_label} : {final_scores[other_team]}",
                 style="bold white",
             )
         ),
@@ -585,9 +582,7 @@ def render_game_over(
         contract_line.append(f"{points_label} {contract['trump']}", style=f"bold {TEAM_COLORS[camp]}")
         contract_line.append(" par ", style="grey70")
         contract_line.append(contract["bidder_name"], style="bold white")
-        result_text, result_style = _CONTRACT_RESULT_LABELS.get(
-            contract["result"], (contract["result"], "bold white")
-        )
+        result_text, result_style = _CONTRACT_RESULT_LABELS.get(contract["result"], (contract["result"], "bold white"))
         blocks.append(Text(""))
         blocks.append(Align.center(contract_line))
         blocks.append(Align.center(Text(result_text, style=result_style)))

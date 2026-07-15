@@ -13,7 +13,7 @@ def test_deal_gives_each_player_8_cards():
     deck = build_deck()
     hands = deal(deck, Seat.N)
     assert set(hands.keys()) == {Seat.N, Seat.E, Seat.S, Seat.W}
-    for seat, hand in hands.items():
+    for _seat, hand in hands.items():
         assert len(hand) == 8
 
 
