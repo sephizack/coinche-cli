@@ -79,3 +79,9 @@ If a client's connection drops mid-game, relaunching it with the same
 ```bash
 python -m pytest
 ```
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the setup, the lint/format/test
+loop, and the pull-request expectations. Agents should also read
+[`AGENTS.md`](AGENTS.md).
