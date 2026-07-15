@@ -153,9 +153,14 @@ class Game:
             and bid.coinche_level == 2
             and TEAM_OF[seat] == current["team"]
         )
+        # Once a coinche is on the table (coinche_level >= 2), the auction is
+        # closed to new point bids: the only moves left are passing or
+        # surcoinching (A6). Offering fresh bids would let the auction climb
+        # past the coinche, which isn't allowed.
+        legal_actions = rules.legal_bid_actions(current) if bid.coinche_level == 1 else []
         return {
             "current_highest_bid": current,
-            "legal_actions": rules.legal_bid_actions(current),
+            "legal_actions": legal_actions,
             "can_coinche": can_coinche,
             "can_surcoinche": can_surcoinche,
         }
@@ -188,6 +193,8 @@ class Game:
             return {"outcome": "continue", "seat": seat, "action": "pass", "next_to_act": bid.next_to_act}
 
         if action == "bid":
+            if bid.coinche_level != 1:
+                raise IllegalBidError("Cannot bid once a coinche has been declared")
             new_bid = {"trump": trump, "points": points}
             if not rules.is_valid_bid(new_bid, bid.current_highest_bid):
                 raise IllegalBidError(f"Illegal bid: {new_bid} over {bid.current_highest_bid}")
@@ -225,9 +232,9 @@ class Game:
             bid.coinche_level = 4
             bid.pass_streak = 0
             bid.history.append({"seat": seat, "action": "surcoinche"})
-            bid.next_to_act = seat.next()
-            self.next_to_act = bid.next_to_act
-            return {"outcome": "continue", "seat": seat, "action": "surcoinche", "next_to_act": bid.next_to_act}
+            # A surcoinche ends the auction immediately: nothing outranks it,
+            # so play starts right away with the surcoinched contract.
+            return self._finalize_contract()
 
         raise IllegalBidError(f"Unknown bid action: {action!r}")
 

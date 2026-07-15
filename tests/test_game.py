@@ -1,7 +1,9 @@
 """Tests for coinche.game: auction, trick play, scoring, redeal, snapshot_for."""
 
+import pytest
+
 from coinche.cards import Card
-from coinche.game import TEAM_OF, Game, Seat
+from coinche.game import TEAM_OF, Game, IllegalBidError, Seat
 
 
 def _finalize_simple_contract(game: Game, trump: str = "♠", points: int = 80) -> dict:
@@ -78,6 +80,48 @@ def test_coinched_contract_doubles_final_multiplier():
     final_result = _play_full_round(game)
     assert final_result["round_score"]["NS"]["multiplier"] == 2
     assert final_result["round_score"]["EW"]["multiplier"] == 2
+
+
+def test_no_new_bids_offered_once_coinched():
+    game = Game(initial_dealer=Seat.N)
+    bidder = game.next_to_act
+    game.submit_bid(bidder, "bid", trump="♠", points=80)
+    opponent_seat = bidder.next()
+    coinche_result = game.submit_bid(opponent_seat, "coinche")
+
+    # The bidding team may now only pass or surcoinche — no fresh point bids.
+    partner_of_bidder = coinche_result["next_to_act"]
+    options = game.bid_options_for(partner_of_bidder)
+    assert options["legal_actions"] == []
+    assert options["can_surcoinche"] is True
+
+
+def test_bid_after_coinche_is_rejected():
+    game = Game(initial_dealer=Seat.N)
+    bidder = game.next_to_act
+    game.submit_bid(bidder, "bid", trump="♠", points=80)
+    opponent_seat = bidder.next()
+    coinche_result = game.submit_bid(opponent_seat, "coinche")
+
+    seat = coinche_result["next_to_act"]
+    with pytest.raises(IllegalBidError):
+        game.submit_bid(seat, "bid", trump="♥", points=90)
+
+
+def test_surcoinche_ends_bidding_and_starts_play():
+    game = Game(initial_dealer=Seat.N)
+    bidder = game.next_to_act
+    game.submit_bid(bidder, "bid", trump="♠", points=80)
+    opponent_seat = bidder.next()
+    coinche_result = game.submit_bid(opponent_seat, "coinche")
+
+    surcoincher = coinche_result["next_to_act"]  # bidder's team can surcoinche
+    result = game.submit_bid(surcoincher, "surcoinche")
+
+    # No further passes needed: play begins right away with a ×4 contract.
+    assert result["outcome"] == "contract"
+    assert result["coinche_level"] == 4
+    assert game.phase == "trick_play"
 
 
 def test_a13_tie_break_sudden_death_then_resolves():

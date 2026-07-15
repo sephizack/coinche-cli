@@ -18,6 +18,7 @@ from coinche.ui import (
     build_table_layout,
     card_text,
     center_panel,
+    contract_text,
     player_panel,
     render_bid_menu,
     render_bid_value_prompt,
@@ -89,6 +90,17 @@ def test_card_text_red_suits_styled_differently_from_black():
 def test_card_text_none_renders_card_back_glyph():
     back = card_text(None)
     assert back.plain == "🂠"
+
+
+def test_contract_text_shows_coinche_badge_when_doubled():
+    plain = contract_text("♥", 90, "Paul", coinche_level=1).plain
+    assert "Coinché" not in plain and "Surcoinché" not in plain
+
+    coinched = contract_text("♥", 90, "Paul", coinche_level=2).plain
+    assert "Coinché" in coinched and "×2" in coinched
+
+    surcoinched = contract_text("♥", 90, "Paul", coinche_level=4).plain
+    assert "Surcoinché" in surcoinched and "×4" in surcoinched
 
 
 # --- Numbered menus (no raw card-string typing) -------------------------------

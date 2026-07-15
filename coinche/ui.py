@@ -166,10 +166,18 @@ def waiting_for_text(
     return text
 
 
-def contract_text(trump: str | None, points: str | int | None, bidder_name: str | None) -> Text:
+def contract_text(
+    trump: str | None,
+    points: str | int | None,
+    bidder_name: str | None,
+    coinche_level: int = 1,
+) -> Text:
     """'Annonce en cours' line (e.g. "Annonce : 90 Cœur (Paul)"). `bidder_name`
     is untrusted and always appended via Text.append(), never markup-formatted.
-    Returns empty text while no contract has been settled yet."""
+    Returns empty text while no contract has been settled yet.
+
+    `coinche_level` (2 = coinché, 4 = surcoinché) appends a coloured badge
+    after the annonce so players can see the stakes were doubled/quadrupled."""
     if not trump or points is None:
         return Text("")
     trump_label = trump
@@ -180,6 +188,10 @@ def contract_text(trump: str | None, points: str | int | None, bidder_name: str 
         text.append(" (", style="grey70")
         text.append(bidder_name, style="bold white")
         text.append(")", style="grey70")
+    if coinche_level == 2:
+        text.append("  Coinché ×2 ", style="bold white on red3")
+    elif coinche_level >= 4:
+        text.append("  Surcoinché ×4 ", style="bold white on dark_red")
     return text
 
 
@@ -257,6 +269,7 @@ def build_table_view(
     trump: str | None = None,
     contract_points: str | int | None = None,
     contract_bidder_name: str | None = None,
+    coinche_level: int = 1,
     last_trick: dict[Seat, str] | None = None,
     dealer_seat: Seat | None = None,
     bid_menu: Group | Text | None = None,
@@ -285,7 +298,7 @@ def build_table_view(
         dealer_seat=dealer_seat,
     )
     waiting = waiting_for_text(whose_turn, players, team_of, local_seat)
-    contract = contract_text(trump, contract_points, contract_bidder_name)
+    contract = contract_text(trump, contract_points, contract_bidder_name, coinche_level)
     last_trick_panel = last_trick_grid(local_seat, last_trick or {})
     blocks: list[RenderableType] = [
         Align.center(table_layout),

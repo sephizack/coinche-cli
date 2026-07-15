@@ -63,6 +63,11 @@ class ClientState:
     trump: str | None = None
     contract_points: str | int | None = None
     contract_bidder: Seat | None = None
+    # Coinche multiplier of the settled contract (1 = none, 2 = coinche,
+    # 4 = surcoinche), shown next to the "Annonce : ..." reminder during play
+    # so everyone can see the stakes were doubled/quadrupled. Set at
+    # BIDDING_RESULT, reset each DEAL.
+    coinche_level: int = 1
     # Highest bid still standing *while bidding is ongoing* (distinct from
     # `trump`/`contract_points`/`contract_bidder` above, which only get set
     # once bidding has settled into a final contract at BIDDING_RESULT).
@@ -299,6 +304,7 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
         state.trump = None
         state.contract_points = None
         state.contract_bidder = None
+        state.coinche_level = 1
         state.current_bid_trump = None
         state.current_bid_points = None
         state.current_bid_seat = None
@@ -338,6 +344,7 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
             state.hand = _sort_hand(state.hand, state.trump)
             state.contract_points = payload["points"]
             state.contract_bidder = Seat(payload["seat"])
+            state.coinche_level = payload.get("coinche_level", 1)
             who = state.players.get(Seat(payload["seat"]), payload["seat"])
             points = "Capot" if payload["points"] == "capot" else payload["points"]
             state.last_action = f"Contrat retenu : {points} {_trump_label(payload['trump'])} par {who}"
@@ -599,6 +606,7 @@ async def run_session(
                 trump=display_trump,
                 contract_points=display_points,
                 contract_bidder_name=contract_bidder_name,
+                coinche_level=state.coinche_level,
                 last_trick=state.last_trick,
                 dealer_seat=state.dealer_seat,
                 bid_menu=bid_menu,
