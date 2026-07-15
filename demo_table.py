@@ -11,7 +11,6 @@ Lancement :
 
 from rich.align import Align
 from rich.console import Console, Group
-from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -106,9 +105,13 @@ def main() -> None:
     console.print()
 
     hand = [
-        "7♠", "8♠", "A♠",
-        "9♥", "V♥",
-        "D♦", "R♦",
+        "7♠",
+        "8♠",
+        "A♠",
+        "9♥",
+        "V♥",
+        "D♦",
+        "R♦",
         "10♣",
     ]
     console.print(Align.center(build_hand(hand)))

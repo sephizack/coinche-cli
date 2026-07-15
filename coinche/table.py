@@ -61,9 +61,7 @@ class Table:
         self.seats: dict[Seat, ClientSession | None] = {seat: None for seat in SEAT_ORDER}
         self.game: Game | None = None
 
-    def add_player(
-        self, name: str, writer: asyncio.StreamWriter | None, team_name: str | None = None
-    ) -> Seat:
+    def add_player(self, name: str, writer: asyncio.StreamWriter | None, team_name: str | None = None) -> Seat:
         """Seat a new player (A14/A15). Raises TableError subclasses on rejection.
 
         `team_name` is a free-text, optional label (e.g. "A"/"B" or any name) shared
@@ -100,7 +98,9 @@ class Table:
 
         for seat in SEAT_ORDER:
             if self.seats[seat] is None:
-                self.seats[seat] = ClientSession(seat=seat, name=name, writer=writer, connected=True, team_name=team_name)
+                self.seats[seat] = ClientSession(
+                    seat=seat, name=name, writer=writer, connected=True, team_name=team_name
+                )
                 if all(s is not None for s in self.seats.values()):
                     self.game = Game(target_score=self.target_score)
                 return seat
