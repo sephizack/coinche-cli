@@ -80,21 +80,27 @@ class Table:
 
         normalized_team = team_name.strip().lower() if team_name else None
         if normalized_team:
-            for seat, session in self.seats.items():
-                if (
-                    session is not None
-                    and session.team_name is not None
-                    and session.team_name.strip().lower() == normalized_team
-                ):
-                    partner_seat = PARTNER_OF[seat]
-                    if self.seats[partner_seat] is None:
-                        self.seats[partner_seat] = ClientSession(
-                            seat=partner_seat, name=name, writer=writer, connected=True, team_name=team_name
-                        )
-                        if all(s is not None for s in self.seats.values()):
-                            self.game = Game(target_score=self.target_score)
-                        return partner_seat
-                    break
+            team_count = sum(
+                1
+                for s in self.seats.values()
+                if s is not None and s.team_name is not None and s.team_name.strip().lower() == normalized_team
+            )
+            if team_count < 2:
+                for seat, session in self.seats.items():
+                    if (
+                        session is not None
+                        and session.team_name is not None
+                        and session.team_name.strip().lower() == normalized_team
+                    ):
+                        partner_seat = PARTNER_OF[seat]
+                        if self.seats[partner_seat] is None:
+                            self.seats[partner_seat] = ClientSession(
+                                seat=partner_seat, name=name, writer=writer, connected=True, team_name=team_name
+                            )
+                            if all(s is not None for s in self.seats.values()):
+                                self.game = Game(target_score=self.target_score)
+                            return partner_seat
+                        break
 
         for seat in SEAT_ORDER:
             if self.seats[seat] is None:

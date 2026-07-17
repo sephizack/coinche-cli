@@ -749,3 +749,172 @@ def test_disconnect_and_reconnect_during_bidding_phase():
             await srv.wait_closed()
 
     asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# LIST_TABLES / TABLE_LISTING tests
+# ---------------------------------------------------------------------------
+
+
+def test_list_tables_returns_lobby_and_in_progress_tables():
+    """Two tables: one still in the lobby, one with a started game.  LIST_TABLES
+    reports both with the correct in_progress / seats_filled / players fields."""
+    srv_lock = None
+
+    async def scenario():
+        srv, port = await _start_server()
+        nonlocal srv_lock
+        srv_lock = srv
+        try:
+            # Create a lobby table (2 players, no game yet)
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "lobby1", "player_name": "Alice"})
+            p = await _read_until(r1, protocol.JOINED)
+            assert p["table_key"] == "lobby1"
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.JOIN, {"table_key": "lobby1", "player_name": "Bob"})
+            p = await _read_until(r2, protocol.JOINED)
+            assert p["table_key"] == "lobby1"
+
+            # Create an in-progress table (4 players, game auto-starts)
+            conns_ip = await _join_all(port, "full1")
+            # Game is now started on "full1"
+
+            # Query LIST_TABLES on a fresh connection
+            rl, wl = await _connect(port)
+            await _send(wl, protocol.LIST_TABLES, {})
+            listing_payload = await _read_until(rl, protocol.TABLE_LISTING)
+            tables = listing_payload["tables"]
+            assert isinstance(tables, list)
+
+            lobby = next(t for t in tables if t["table_key"] == "lobby1")
+            full = next(t for t in tables if t["table_key"] == "full1")
+
+            assert lobby["in_progress"] is False
+            assert lobby["seats_filled"] == 2
+            assert len(lobby["players"]) == 2
+            lobby_names = {p["name"] for p in lobby["players"]}
+            assert lobby_names == {"Alice", "Bob"}
+
+            assert full["in_progress"] is True
+            assert full["seats_filled"] == 4
+            full_names = {p["name"] for p in full["players"]}
+            assert full_names == {"Alice", "Bob", "Carol", "Dave"}
+        finally:
+            wl.close()
+            w1.close()
+            w2.close()
+            for _r, w in conns_ip.values():
+                w.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_list_tables_before_join_on_same_connection():
+    """A client may send LIST_TABLES followed by JOIN on the same connection;
+    _resolve_join loops over LIST_TABLES and only proceeds once JOIN arrives."""
+
+    async def scenario():
+        srv, port = await _start_server()
+        try:
+            # Seed a lobby table
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "seed1", "player_name": "Alice"})
+            p = await _read_until(r1, protocol.JOINED)
+            assert p["table_key"] == "seed1"
+
+            # New client: LIST_TABLES then JOIN on the same connection
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.LIST_TABLES, {})
+            listing_payload = await _read_until(r2, protocol.TABLE_LISTING)
+            assert any(t["table_key"] == "seed1" for t in listing_payload["tables"])
+
+            # Now JOIN on the same connection
+            await _send(w2, protocol.JOIN, {"table_key": "seed1", "player_name": "Bob"})
+            joined_payload = await _read_until(r2, protocol.JOINED)
+            assert joined_payload["table_key"] == "seed1"
+            assert joined_payload["seat"] in ("N", "E", "S", "W")
+        finally:
+            w1.close()
+            w2.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_list_tables_shows_team_names_per_player():
+    """Players who join with a team_name have it reflected in TABLE_LISTING."""
+
+    async def scenario():
+        srv, port = await _start_server()
+        try:
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "teams1", "player_name": "Alice", "team_name": "Equipe 1"})
+            await _read_until(r1, protocol.JOINED)
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.JOIN, {"table_key": "teams1", "player_name": "Bob", "team_name": "Equipe 2"})
+            await _read_until(r2, protocol.JOINED)
+
+            rl, wl = await _connect(port)
+            await _send(wl, protocol.LIST_TABLES, {})
+            listing_payload = await _read_until(rl, protocol.TABLE_LISTING)
+            table = next(t for t in listing_payload["tables"] if t["table_key"] == "teams1")
+            by_name = {p["name"]: p["team_name"] for p in table["players"]}
+            assert by_name["Alice"] == "Equipe 1"
+            assert by_name["Bob"] == "Equipe 2"
+        finally:
+            w1.close()
+            w2.close()
+            wl.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_chat_works_in_lobby():
+    """CHAT messages are delivered while fewer than 4 players are seated.
+
+    Regression: _dispatch used to early-return on game-is-None, silently
+    dropping all CHAT messages before the table was full.
+    """
+
+    async def scenario():
+        srv, port = await _start_server()
+        try:
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "chat0", "player_name": "Alice"})
+            joined1 = await _read_until(r1, protocol.JOINED)
+            seat1 = joined1["seat"]
+
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.JOIN, {"table_key": "chat0", "player_name": "Bob"})
+            await _read_until(r2, protocol.JOINED)
+
+            # Drain LOBBY_UPDATE broadcast from r1
+            while True:
+                mtype, _ = await _recv(r1)
+                if mtype == protocol.LOBBY_UPDATE:
+                    break
+
+            # Alice sends a chat
+            await _send(w1, protocol.CHAT, {"text": "hello from lobby"})
+
+            # Both players receive it
+            chat1 = await _read_until(r1, protocol.CHAT)
+            assert chat1["seat"] == seat1
+            assert chat1["text"] == "hello from lobby"
+
+            chat2 = await _read_until(r2, protocol.CHAT)
+            assert chat2["seat"] == seat1
+            assert chat2["text"] == "hello from lobby"
+        finally:
+            w1.close()
+            w2.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())

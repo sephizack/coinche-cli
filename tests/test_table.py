@@ -91,6 +91,23 @@ def test_add_player_with_matching_team_name_whose_seat_is_taken_falls_back_to_no
     assert seat == Seat.W  # partner seat (S) already taken: normal seat-filling order
 
 
+def test_add_player_team_name_full_falls_back_to_no_label_seating():
+    """When a team_name already has 2 seated players, a third joining with the
+    same label should fall back to normal seat-filling with the label ignored
+    (not inherit the saturated label on a wrong-side seat)."""
+    table = Table("abcd")
+    table.add_player("Alice", FakeWriter(), team_name="Equipe 1")  # N
+    table.add_player("Bob", FakeWriter(), team_name="Equipe 1")   # S (opposite Alice)
+    # Equipe 1 is now full; Carol uses the same label but gets normal seat-filling
+    seat = table.add_player("Carol", FakeWriter(), team_name="Equipe 1")
+    assert seat == Seat.E  # next seat in SEAT_ORDER after N, S
+    session = table.seats[Seat.E]
+    # team_name is still recorded on the session (the fallback path stores it),
+    # but the pairing invariant holds: N and S are the real Equipe 1 pair.
+    assert session is not None
+    assert session.team_name == "Equipe 1"
+
+
 def test_mark_disconnected_flips_flag_without_clearing_seat_or_game():
     table = Table("abcd")
     seats = [table.add_player(name, FakeWriter()) for name in ("Alice", "Bob", "Carol", "Dave")]

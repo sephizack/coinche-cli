@@ -43,11 +43,27 @@ Before submitting any change, run all three and make sure they pass:
 ```bash
 ruff check .                              # lint (E, F, I, B, UP)
 ruff format --check coinche demo_table.py # formatting
-python -m pytest                          # 93 tests, ~1.5s
+python -m pytest                          # 103 tests, ~2s
 ```
 
 `ruff check . --fix` and `ruff format coinche demo_table.py` apply autofixes.
 CI (`.github/workflows/ci.yml`) runs the same three checks on push/PR for Python 3.10 and 3.13.
+
+## Wire protocol additions
+
+- **`LIST_TABLES`** (client→server, no payload): replies with **`TABLE_LISTING`**
+  containing `{"tables": [{"table_key", "in_progress", "seats_filled", "players": [{"seat","name","team_name"}]}]}`.
+  Sent by the client before `JOIN` to power the interactive table picker;
+  `_resolve_join` loops over `LIST_TABLES` and only proceeds on `JOIN`.
+- **`team_name` guard** (`Table.add_player`): when a `team_name` match is
+  found but that label already has 2 seated players, the match branch is
+  skipped and the player is seated by normal seat-filling order instead,
+  preserving the opposite-seat pairing invariant.
+- **`CHAT`** (client→server, `{"text": str}`): the server fans out
+  `{"seat": str, "text": str}` to every client (including the sender).
+  Messages are client-side ephemeral only — no server storage.  The client
+  renders them in a split-pane chat panel (`ui.build_chat_panel`);
+  `Tab` toggles focus between the game pane and the chat pane.
 
 ## Testing conventions
 

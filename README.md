@@ -37,24 +37,31 @@ python -m coinche.server --port 8765 --target-score 1000
 
 ```bash
 python -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
+                         [--team TEAM]
 ```
 
 - `--host` — server address (defaults to an interactive prompt, `127.0.0.1`)
 - `--port` — server port (defaults to an interactive prompt, `8765`)
-- `--table` — table key: 4–12 alphanumeric characters, shared by all 4 players
-  at the same table; the first player to use a key creates that table
-  (defaults to an interactive prompt)
 - `--name` — player name, must be unique among currently-connected players at
   that table (defaults to an interactive prompt)
+- `--table` — table key: 4–12 alphanumeric characters; skips the interactive
+  table picker (useful for scripting)
+- `--team` — team label (`Equipe 1` or `Equipe 2`); skips the interactive
+  team picker
 
-Any flag you omit falls back to an interactive prompt at startup.
+When `--table` and `--team` are omitted, the client connects, queries the
+server for existing tables (`LIST_TABLES`), displays an interactive numbered
+picker (with player names per table, in-progress tables shown but locked), and
+then lets you choose **Equipe 1** or **Equipe 2** (showing which players are
+already on each side). You can also pick **Créer une nouvelle table** at any
+time to create a new table with a custom key.
 
 Alternatively, `./run_client.sh` creates the `.venv` if it doesn't exist,
 activates it, installs/updates `requirements.txt` when needed, then launches
 the client — passing through any arguments you give it:
 
 ```bash
-./run_client.sh --host 127.0.0.1 --port 8765 --table demo1 --name Alice
+./run_client.sh --host 127.0.0.1 --port 8765
 ```
 
 To play a full 4-player game, start the server once, then run the client

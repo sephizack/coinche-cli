@@ -17,8 +17,9 @@ BID = "bid"
 PLAY_CARD = "play_card"
 CHAT = "chat"
 REMATCH = "rematch"
+LIST_TABLES = "list_tables"
 
-CLIENT_MESSAGE_TYPES = {JOIN, BID, PLAY_CARD, CHAT, REMATCH}
+CLIENT_MESSAGE_TYPES = {JOIN, BID, PLAY_CARD, CHAT, REMATCH, LIST_TABLES}
 
 # --- Server -> Client message types -------------------------------------------
 
@@ -37,6 +38,7 @@ GAME_OVER = "game_over"
 NEW_GAME = "new_game"
 RESYNC = "resync"
 CONNECTION_STATUS = "connection_status"
+TABLE_LISTING = "table_listing"
 ERROR = "error"
 
 SERVER_MESSAGE_TYPES = {
@@ -55,6 +57,7 @@ SERVER_MESSAGE_TYPES = {
     NEW_GAME,
     RESYNC,
     CONNECTION_STATUS,
+    TABLE_LISTING,
     ERROR,
     CHAT,  # chat is also broadcast server -> client
 }
@@ -77,6 +80,7 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
     BID: {"action"},
     PLAY_CARD: {"card"},
     CHAT: {"text"},
+    LIST_TABLES: set(),
 }
 # JOIN also accepts an optional "team_name" field (a free-text label, e.g. "A"/"B",
 # shared with a teammate to try to be seated on the same team, best-effort; see

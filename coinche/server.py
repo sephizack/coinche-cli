@@ -16,6 +16,7 @@ from coinche import __version__, protocol, rules
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
+    TABLES,
     GameInProgressError,
     NameTakenError,
     Table,
@@ -61,6 +62,30 @@ def _players_summary(table: Table) -> list[dict]:
         for seat, session in table.seats.items()
         if session is not None
     ]
+
+
+def _tables_listing() -> list[dict]:
+    """Snapshot of every table's lobby state (pre-join query).
+
+    Read-only snapshot without locking -- data may be slightly stale
+    (e.g. a player joined moments ago) but that's fine for the picker.
+    """
+    listing: list[dict] = []
+    for _key, table in list(TABLES.items()):
+        seats_filled = sum(1 for s in table.seats.values() if s is not None)
+        listing.append(
+            {
+                "table_key": table.table_key,
+                "in_progress": table.game is not None,
+                "seats_filled": seats_filled,
+                "players": [
+                    {"seat": _seat_to_str(seat), "name": s.name, "team_name": s.team_name}
+                    for seat, s in table.seats.items()
+                    if s is not None
+                ],
+            }
+        )
+    return listing
 
 
 def _bid_to_wire(bid: dict | None) -> dict | None:
@@ -340,6 +365,12 @@ async def _handle_play_result(table: Table, result: dict) -> None:
 
 
 async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> None:
+    # Chat works in the lobby as well as mid-game; handle it before the
+    # game-is-None guard that otherwise drops all game-phase messages.
+    if msg_type == protocol.CHAT:
+        await table.broadcast(protocol.CHAT, {"seat": _seat_to_str(seat), "text": payload["text"]})
+        return
+
     game = table.game
     if game is None:
         return  # ignore game-phase messages while still in the lobby
@@ -373,9 +404,6 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
             return
         await _handle_play_result(table, result)
 
-    elif msg_type == protocol.CHAT:
-        await table.broadcast(protocol.CHAT, {"seat": _seat_to_str(seat), "text": payload["text"]})
-
     elif msg_type == protocol.REMATCH:
         # Only meaningful once the previous game has actually ended; a stray/
         # duplicate rematch request (e.g. several players pressing it, or one
@@ -398,24 +426,39 @@ async def _resolve_join(
     trick_pause_seconds: float,
     round_pause_seconds: float,
 ) -> tuple[Table, Seat] | None:
-    try:
-        line = await reader.readline()
-    except ValueError:
-        # Line exceeded the StreamReader's length limit (oversized/malformed input).
-        await _send_error(writer, protocol.MALFORMED_MESSAGE, "Message too large")
-        return None
-    if not line:
-        return None
+    """Read messages from a fresh client connection until a JOIN arrives.
 
-    try:
-        msg_type, payload = protocol.decode(line)
-    except protocol.ProtocolError:
-        await _send_error(writer, protocol.MALFORMED_MESSAGE, "Expected a join message")
-        return None
+    LIST_TABLES is served inline (TABLE_LISTING reply) and the loop continues
+    so the same connection can then send JOIN -- no extra round trip needed.
+    """
+    while True:
+        try:
+            line = await reader.readline()
+        except ValueError:
+            await _send_error(writer, protocol.MALFORMED_MESSAGE, "Message too large")
+            return None
+        if not line:
+            return None
 
-    if msg_type != protocol.JOIN:
-        await _send_error(writer, protocol.MALFORMED_MESSAGE, "First message must be 'join'")
-        return None
+        try:
+            msg_type, payload = protocol.decode(line)
+        except protocol.ProtocolError:
+            await _send_error(writer, protocol.MALFORMED_MESSAGE, "Expected a join message")
+            return None
+
+        if msg_type == protocol.LIST_TABLES:
+            try:
+                writer.write(protocol.encode(protocol.TABLE_LISTING, {"tables": _tables_listing()}))
+                await writer.drain()
+            except (ConnectionError, OSError):
+                return None
+            continue
+
+        if msg_type != protocol.JOIN:
+            await _send_error(writer, protocol.MALFORMED_MESSAGE, "First message must be 'join'")
+            return None
+
+        break
 
     table_key = str(payload["table_key"]).lower()
     player_name = str(payload["player_name"]).strip()
@@ -657,11 +700,15 @@ async def main(argv: list[str] | None = None) -> None:
     public_ip = await loop.run_in_executor(None, _detect_public_ip)
     if lan_ip:
         print(f"  LAN (same network) : {lan_ip}:{port}")
+        print(f"    -> ./run_client.sh --host {lan_ip} --port {port}")
     if public_ip:
         print(f"  Internet (public)  : {public_ip}:{port}")
+        print(f"    -> ./run_client.sh --host {public_ip} --port {port}")
         print("  (forward this port on your router for remote players)")
     elif not lan_ip:
         print("  (could not detect a network address)")
+    if not lan_ip and not public_ip:
+        print(f"  (clients can connect with: ./run_client.sh --host <IP> --port {port})")
     async with server:
         await server.serve_forever()
 

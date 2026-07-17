@@ -2,10 +2,11 @@
 
 Run with: python -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
                                     [--team TEAM_NAME]
-Any omitted value falls back to an interactive input() prompt. `--team` is
-optional: it's a free-text label (e.g. "A"/"B") shared with a teammate to try
-to be seated on the same team (best-effort; the server falls back to normal
-seating if that isn't possible).
+When --table and --team are omitted, the client connects, queries the server
+for existing tables (LIST_TABLES), shows an interactive picker with player
+names per table (in-progress tables are shown but locked), lets the player
+choose Equipe 1 or Equipe 2 (showing members already on each side), and
+joins.  --table/--team flags still bypass every interactive step (back-compat).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import argparse
 import asyncio
 import sys
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -100,7 +102,7 @@ class ClientState:
     active_bid_value_prompt: tuple[str, list] | None = None
     # Point value typed so far for the stage-2 prompt above, echoed inline by
     # `redraw()` instead of via the terminal's own line-input echo (see
-    # `_prompt_bid_value`): raw terminal echo happens outside Live's tracked
+    # `_handle_bid_value_key`): raw terminal echo happens outside Live's tracked
     # console and desyncs its cursor-position bookkeeping, which is what
     # caused stale table content to linger on screen.
     bid_value_buffer: str = ""
@@ -138,6 +140,11 @@ class ClientState:
     # if any (see `_team_names_from_wire`); shown in place of "Nous"/"Eux"
     # wherever a team is displayed.
     team_names: dict[str, str] = field(default_factory=dict)
+    # Chat: split-pane state.
+    active_pane: str = "game"  # "game" or "chat"
+    chat_messages: deque[tuple[str, str, str | None]] = field(default_factory=lambda: deque(maxlen=20))
+    chat_buffer: str = ""
+    chat_error: bool = False
 
 
 def _players_from_wire(entries: list[dict]) -> dict[Seat, str]:
@@ -485,7 +492,8 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
     elif msg_type == protocol.CHAT:
         seat = Seat(payload["seat"])
         who = state.players.get(seat, seat.value)
-        state.last_action = f"[chat] {who}: {payload['text']}"
+        team = state.team_of.get(seat)
+        state.chat_messages.append((who, payload["text"], team))
 
     elif msg_type == protocol.ERROR:
         text = payload.get("message") or payload.get("code") or "Erreur inconnue"
@@ -525,7 +533,7 @@ async def run_session(host: str, port: int, table_key: str, player_name: str, te
         return "not_joined"
 
     action_event = asyncio.Event()
-    live = Live(auto_refresh=False, screen=False)
+    live = Live(auto_refresh=False, screen=True)
     live.start()
 
     def redraw() -> None:
@@ -582,7 +590,7 @@ async def run_session(host: str, port: int, table_key: str, player_name: str, te
                     req["legal_actions"], req["current_highest_bid"], req["can_coinche"], req["can_surcoinche"]
                 )
             if isinstance(bid_menu, Text) and state.active_bid_value_prompt is not None:
-                # Echo the point value typed so far (see `_prompt_bid_value`)
+                # Echo the point value typed so far (see `_handle_bid_value_key`)
                 # right inside the same Live-tracked renderable instead of
                 # relying on the terminal's own line-input echo.
                 bid_menu.append(state.bid_value_buffer, style="bold white")
@@ -613,7 +621,24 @@ async def run_session(host: str, port: int, table_key: str, player_name: str, te
                 bid_menu=bid_menu,
                 team_names=state.team_names,
             )
-            live.update(view)
+            game_focused = state.active_pane == "game"
+            left_border = "bold cyan" if game_focused else "grey50"
+            left_panel = ui.Panel(
+                view,
+                title=state.table_key or "",
+                title_align="left",
+                border_style=left_border,
+                expand=True,
+            )
+            local_team = state.team_of.get(state.seat, "NS") if state.seat else None
+            chat = ui.build_chat_panel(
+                state.chat_messages,
+                state.chat_buffer,
+                active=not game_focused,
+                error=state.chat_error,
+                local_team=local_team,
+            )
+            live.update(ui.build_split_view(left_panel, chat, state.active_pane, height=live.console.size.height))
         live.refresh()
 
     async def receiver_loop() -> None:
@@ -633,9 +658,6 @@ async def run_session(host: str, port: int, table_key: str, player_name: str, te
 
     async def input_loop() -> None:
         while True:
-            await action_event.wait()
-            action_event.clear()
-
             if state.game_over:
                 choice = await _prompt_game_over_screen(live, state)
                 if choice != "rematch":
@@ -651,86 +673,55 @@ async def run_session(host: str, port: int, table_key: str, player_name: str, te
                 except (ConnectionError, OSError):
                     return
                 continue
-            if reader.at_eof():
-                return
 
-            # End-of-round recap: hold it on screen until the local player
-            # presses any key (ROUND_SCORE woke us here). The next round may
-            # already have been dealt underneath it (state advanced silently,
-            # the recap stayed up), so once dismissed we fall through -- not
-            # `continue` -- to handle any pending bid/play request that arrived
-            # while the recap was showing.
+            # Race key read against action_event (session teardown signals EOF).
+            done, _ = await asyncio.wait(
+                [
+                    asyncio.ensure_future(asyncio.to_thread(_read_single_key)),
+                    asyncio.ensure_future(action_event.wait()),
+                ],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for t in done:
+                t.cancel()
+            if action_event.is_set():
+                action_event.clear()
+                if reader.at_eof():
+                    return
+                continue
+            key = done.pop().result()
+
+            if not key:
+                return
             if state.round_over_screen:
-                await asyncio.to_thread(_read_single_key)
                 state.round_over_screen = False
                 redraw()
-
-            if state.pending_bid_request is not None:
+                continue
+            if key == "\t":
+                state.active_pane = "chat" if state.active_pane == "game" else "game"
+                redraw()
+                continue
+            if state.active_pane == "chat":
+                await _handle_chat_key(state, key, writer)
+                redraw()
+                continue
+            # Game pane: bid/play key dispatch.
+            if state.active_bid_request is not None:
+                if await _handle_bid_key(state, key, writer, redraw):
+                    continue
+            elif state.active_bid_value_prompt is not None:
+                if await _handle_bid_value_key(state, key, writer, redraw):
+                    continue
+            elif state.pending_bid_request is not None:
                 req = state.pending_bid_request
                 state.pending_bid_request = None
-                # Show the menu inline as part of the persistent live table
-                # view (via `state.active_bid_request`/`redraw()`) instead of
-                # printing a separately-baked-ANSI block above the live
-                # region: printing that pre-rendered string through
-                # `live.console.print` fed it back through Rich's markup
-                # parser, which corrupted the raw ANSI codes into literal
-                # "[38;5;244m"-style garbage text on screen.
                 state.active_bid_request = req
                 redraw()
-                _, tokens = ui.render_bid_menu(
-                    req["legal_actions"], req["current_highest_bid"], req["can_coinche"], req["can_surcoinche"]
-                )
-                choice = await _prompt_key_choice(tokens)
-
-                bid_payload: dict | None = None
-                if choice is not None and choice["action"] == "select_trump":
-                    trump = choice["trump"]
-                    state.active_bid_value_prompt = (trump, req["legal_actions"])
-                    redraw()
-                    _, valid_points = ui.render_bid_value_prompt(trump, req["legal_actions"])
-                    points = await _prompt_bid_value(state, redraw, valid_points)
-                    bid_payload = {"action": "bid", "trump": trump, "points": points}
-                elif choice is not None:
-                    bid_payload = choice
-
-                state.active_bid_request = None
-                state.active_bid_value_prompt = None
-                redraw()
-                if bid_payload is None:
-                    continue
-                try:
-                    writer.write(protocol.encode(protocol.BID, bid_payload))
-                    await writer.drain()
-                except (ConnectionError, OSError):
-                    return
-
             elif state.pending_play_request is not None:
                 state.pending_play_request = None
-                legal_cards = state.legal_cards
-                # Every card in hand gets a number (see redraw()'s
-                # legal_cards=state.hand above), so the player can attempt to
-                # play any card. An illegal choice is never sent to the
-                # server: it's rejected right here with a warning, and the
-                # same menu is shown again without a new server round trip.
-                while True:
-                    _, tokens = ui.render_play_menu(state.hand)
-                    choice = await _prompt_key_choice(tokens)
-                    if choice is None:
-                        state.legal_cards = []
-                        redraw()
-                        break
-                    if choice not in legal_cards:
-                        state.last_action = f"⚠ Impossible de jouer {choice} maintenant (carte non autorisée)."
-                        redraw()
-                        continue
-                    state.legal_cards = []
-                    redraw()
-                    try:
-                        writer.write(protocol.encode(protocol.PLAY_CARD, {"card": choice}))
-                        await writer.drain()
-                    except (ConnectionError, OSError):
-                        return
-                    break
+                redraw()
+            elif state.legal_cards:
+                await _handle_play_key(state, key, writer, redraw)
 
     try:
         redraw()
@@ -782,99 +773,297 @@ def _read_single_key() -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-async def _prompt_key_choice(tokens: dict[str, object]) -> object | None:
-    """Read single keystrokes (no Enter) until a valid numbered token is pressed."""
-    while True:
-        key = await asyncio.to_thread(_read_single_key)
-        if not key:
-            return None
-        if key in tokens:
-            return tokens[key]
-
-
 async def _prompt_game_over_screen(live: Live, state: ClientState) -> str:
-    """Print the end-of-game screen (final scores, whether the last contract was
-    honored, winner) and wait for the player to pick "Nouvelle partie" or
-    "Quitter". Returns "rematch" or "quit" (also "quit" if stdin closes)."""
+    """Print the end-of-game screen and wait for the player to pick "1" (rematch) or "2" (quit).
+
+    This is the only remaining blocking prompt: game-over is full-screen and
+    doesn't participate in the split-pane Tab/Chat dispatch.  Returns
+    ``"rematch"`` or ``"quit"`` (also ``"quit"`` if stdin closes)."""
     local_team = state.team_of.get(state.seat, "NS") if state.seat is not None else "NS"
     contract = _build_last_round_contract(state)
     screen = ui.render_game_over(state.final_scores, state.winning_team or "", local_team, contract, state.team_names)
     live.console.print(screen)
-    choice = await _prompt_key_choice({"1": "rematch", "2": "quit"})
-    return "rematch" if choice == "rematch" else "quit"
+    while True:
+        key = await asyncio.to_thread(_read_single_key)
+        if not key:
+            return "quit"
+        if key == "1":
+            return "rematch"
+        if key == "2":
+            return "quit"
 
 
-async def _prompt_bid_value(state: ClientState, redraw: Callable[[], None], valid_points: list[int | str]) -> int | str:
-    """Read the announced point value typed by hand (Enter submits), re-prompting on an
-    invalid value.
+_MAX_CHAT_LEN = 256
 
-    Reads raw keystrokes one at a time (cbreak mode via `_read_single_key`, same as
-    `_prompt_key_choice` — no terminal echo) and echoes the typed buffer back through
-    `state.bid_value_buffer`/`redraw()` (rendered inline by the bid-value prompt in
-    `redraw()`), instead of using `input()`. `input()`'s own prompt/line-echo writes
-    straight to the terminal outside of Live's tracked console, which desyncs its
-    cursor-position bookkeeping and leaves stale table content on screen — the same
-    class of bug fixed for the "invalid value" message below.
-    """
-    valid_tokens = {str(p) for p in valid_points}
-    state.bid_value_buffer = ""
-    state.bid_value_error = False
-    try:
-        while True:
-            key = await asyncio.to_thread(_read_single_key)
-            if not key:
-                # EOF (e.g. piped/closed stdin): fall back to the lowest legal value
-                # rather than looping forever.
-                return valid_points[0]
-            if key in ("\r", "\n"):
-                token = state.bid_value_buffer.strip().lower()
-                if token in valid_tokens:
-                    return int(token) if token.isdigit() else token
-                state.bid_value_error = True
-                state.bid_value_buffer = ""
-            elif key in ("\x7f", "\x08"):  # Backspace/Delete
-                state.bid_value_buffer = state.bid_value_buffer[:-1]
-                state.bid_value_error = False
-            elif key.isprintable():
-                state.bid_value_buffer += key
-                state.bid_value_error = False
-            redraw()
-    finally:
+
+async def _handle_chat_key(state: ClientState, key: str, writer: asyncio.StreamWriter) -> None:
+    """Per-key dispatch for the chat pane (called from input_loop)."""
+    if key in ("\r", "\n"):
+        text = state.chat_buffer.strip()
+        if text:
+            try:
+                writer.write(protocol.encode(protocol.CHAT, {"text": text}))
+                await writer.drain()
+            except (ConnectionError, OSError):
+                pass
+        state.chat_buffer = ""
+        state.chat_error = False
+    elif key in ("\x7f", "\x08"):
+        state.chat_buffer = state.chat_buffer[:-1]
+        state.chat_error = False
+    elif key.isprintable() and len(state.chat_buffer) < _MAX_CHAT_LEN:
+        state.chat_buffer += key
+        state.chat_error = False
+    elif key.isprintable():
+        state.chat_error = True
+
+
+async def _handle_bid_key(
+    state: ClientState, key: str, writer: asyncio.StreamWriter, redraw: Callable[[], None]
+) -> bool:
+    """Per-key dispatch for stage-1 bid menu. Returns True if the key was consumed."""
+    req = state.active_bid_request
+    if req is None:
+        return False
+    _, tokens = ui.render_bid_menu(
+        req["legal_actions"], req["current_highest_bid"], req["can_coinche"], req["can_surcoinche"]
+    )
+    if key not in tokens:
+        return False
+    choice = tokens[key]
+    bid_payload: dict | None = None
+    if choice["action"] == "select_trump":
+        trump = choice["trump"]
+        state.active_bid_value_prompt = (trump, req["legal_actions"])
         state.bid_value_buffer = ""
         state.bid_value_error = False
+        redraw()
+        return True
+    bid_payload = choice
+    state.active_bid_request = None
+    state.active_bid_value_prompt = None
+    redraw()
+    if bid_payload is not None:
+        try:
+            writer.write(protocol.encode(protocol.BID, bid_payload))
+            await writer.drain()
+        except (ConnectionError, OSError):
+            pass
+    return True
 
 
-def _prompt_missing(args: argparse.Namespace) -> tuple[str, int, str, str, str | None]:
+async def _handle_bid_value_key(
+    state: ClientState, key: str, writer: asyncio.StreamWriter, redraw: Callable[[], None]
+) -> bool:
+    """Per-key dispatch for stage-2 bid value prompt. Returns True if the key was consumed."""
+    if state.active_bid_value_prompt is None:
+        return False
+    trump, legal_actions = state.active_bid_value_prompt
+    _, valid_points = ui.render_bid_value_prompt(trump, legal_actions)
+    valid_tokens = {str(p) for p in valid_points}
+    if key in ("\r", "\n"):
+        token = state.bid_value_buffer.strip().lower()
+        if token in valid_tokens:
+            points = int(token) if token.isdigit() else token
+            bid_payload = {"action": "bid", "trump": trump, "points": points}
+            state.active_bid_request = None
+            state.active_bid_value_prompt = None
+            redraw()
+            try:
+                writer.write(protocol.encode(protocol.BID, bid_payload))
+                await writer.drain()
+            except (ConnectionError, OSError):
+                pass
+            return True
+        state.bid_value_error = True
+        state.bid_value_buffer = ""
+        redraw()
+        return True
+    if key in ("\x7f", "\x08"):
+        state.bid_value_buffer = state.bid_value_buffer[:-1]
+        state.bid_value_error = False
+        redraw()
+        return True
+    if key.isprintable():
+        state.bid_value_buffer += key
+        state.bid_value_error = False
+        redraw()
+        return True
+    return False
+
+
+async def _handle_play_key(
+    state: ClientState, key: str, writer: asyncio.StreamWriter, redraw: Callable[[], None]
+) -> None:
+    """Per-key dispatch for play card selection."""
+    _, tokens = ui.render_play_menu(state.hand)
+    if key not in tokens:
+        return
+    choice = tokens[key]
+    if choice not in state.legal_cards:
+        state.last_action = f"⚠ Impossible de jouer {choice} maintenant (carte non autorisée)."
+        redraw()
+        return
+    state.legal_cards = []
+    redraw()
+    try:
+        writer.write(protocol.encode(protocol.PLAY_CARD, {"card": choice}))
+        await writer.drain()
+    except (ConnectionError, OSError):
+        pass
+
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8765
+BACKOFF_DELAYS = (1, 2, 4, 8, 16)
+
+
+def _prompt_host_port(args: argparse.Namespace) -> tuple[str, int]:
     host = args.host or input(f"Adresse du serveur [{DEFAULT_HOST}]: ").strip() or DEFAULT_HOST
     if args.port is not None:
         port = args.port
     else:
         raw_port = input(f"Port [{DEFAULT_PORT}]: ").strip()
         port = int(raw_port) if raw_port else DEFAULT_PORT
-    table_key = args.table or input("Clé de table : ").strip()
-    player_name = args.name or input("Votre nom : ").strip()
+    return host, port
+
+
+async def _fetch_table_listing(host: str, port: int) -> list[dict]:
+    """Open a throwaway connection, query LIST_TABLES, close, return the table list."""
+    try:
+        reader, writer = await asyncio.open_connection(host, port)
+    except OSError as exc:
+        print(f"Impossible de se connecter à {host}:{port} ({exc})")
+        return []
+    try:
+        writer.write(protocol.encode(protocol.LIST_TABLES, {}))
+        await writer.drain()
+        line = await asyncio.wait_for(reader.readline(), timeout=5.0)
+        if not line:
+            return []
+        msg_type, payload = protocol.decode(line)
+        if msg_type != protocol.TABLE_LISTING:
+            return []
+        return payload["tables"]
+    except (ConnectionError, OSError, protocol.ProtocolError):
+        return []
+    finally:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+
+def _show_table_picker(tables: list[dict]) -> str:
+    """Interactive numbered table picker.  Returns the chosen table key."""
+    print("\nTables disponibles :")
+    options: list[dict] = []
+    for t in tables:
+        names = ", ".join(p["name"] for p in t["players"]) if t["players"] else "(vide)"
+        in_prog = t["in_progress"]
+        status = f" (en cours, {t['seats_filled']}/4)" if in_prog else f" ({t['seats_filled']}/4)"
+        idx = len(options) + 1
+        print(f"  {idx}) {t['table_key']}{status} \u2014 {names}")
+        options.append({"key": t["table_key"], "selectable": not in_prog})
+    print("  0) Cr\u00e9er une nouvelle table")
+    while True:
+        choice = input("Choix : ").strip()
+        if choice == "0":
+            key = _auto_generate_table_key(tables)
+            print(f"Nouvelle table : {key}")
+            return key
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(options) and options[idx]["selectable"]:
+                return options[idx]["key"]
+        except ValueError:
+            pass
+        print("Choix invalide.")
+
+
+def _auto_generate_table_key(existing_tables: list[dict]) -> str:
+    """Generate the next available 'Table N' key (displayed as 'Table N',
+    stored as lowercase alphanumeric 'tableN' for the server)."""
+    existing_keys = {t["table_key"].lower() for t in existing_tables}
+    n = 1
+    while True:
+        key = f"table{n}"
+        if len(key) <= 12 and key not in existing_keys:
+            return key
+        n += 1
+
+
+def _show_team_picker(table_entry: dict | None) -> str:
+    """Interactive team picker for a table.  Returns the chosen team label."""
+    equipes: dict[str, list[str]] = {"Equipe 1": [], "Equipe 2": []}
+    if table_entry is not None:
+        for p in table_entry["players"]:
+            tn = p.get("team_name")
+            if tn in equipes:
+                equipes[tn].append(p["name"])
+
+    print("\n\u00c9quipes :")
+    labels = ["Equipe 1", "Equipe 2"]
+    for i, label in enumerate(labels):
+        members = equipes[label]
+        full = len(members) >= 2
+        member_str = ", ".join(members) if members else "(libre)"
+        marker = " \U0001f512 compl\u00e8te" if full else ""
+        print(f"  {i + 1}) {label} \u2014 {member_str}{marker}")
+    while True:
+        choice = input("Choix : ").strip()
+        if choice in ("1", "2"):
+            label = labels[int(choice) - 1]
+            if len(equipes[label]) >= 2:
+                print("Cette \u00e9quipe est compl\u00e8te.")
+                continue
+            return label
+        print("Choix invalide.")
+
+
+async def _prompt_table_and_team(host: str, port: int, args: argparse.Namespace) -> tuple[str, str | None]:
+    """Interactive table + team selection.  Bypassed entirely when --table/--team are given."""
+    # --- table ---
+    if args.table is not None:
+        table_key = args.table
+        listing: list[dict] | None = None
+    else:
+        listing = await _fetch_table_listing(host, port)
+        if listing is None:
+            listing = []
+        table_key = _show_table_picker(listing)
+
+    # --- team ---
     if args.team is not None:
         team_name = args.team.strip() or None
     else:
-        team_name = input("Nom d'équipe (optionnel, ex: A/B) : ").strip() or None
-    return host, port, table_key, player_name, team_name
+        if listing is None:
+            listing = await _fetch_table_listing(host, port)
+        table_entry = next((t for t in listing if t["table_key"] == table_key), None)
+        team_name = _show_team_picker(table_entry)
+
+    return table_key, team_name
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Coinche network game client")
     parser.add_argument("--host", help="Server host/IP")
     parser.add_argument("--port", type=int, help="Server port")
-    parser.add_argument("--table", help="Table key")
+    parser.add_argument("--table", help="Table key (skips interactive table picker)")
     parser.add_argument("--name", help="Player name")
     parser.add_argument(
-        "--team", help="Team label (e.g. 'A'/'B') shared with a teammate to try to be seated together (best-effort)"
+        "--team",
+        help="Team label ('Equipe 1'/'Equipe 2'); skips interactive team picker",
     )
     return parser
 
 
 async def main(argv: list[str] | None = None) -> None:
     args = build_arg_parser().parse_args(argv)
-    host, port, table_key, player_name, team_name = _prompt_missing(args)
+    host, port = _prompt_host_port(args)
+    player_name = args.name or input("Votre nom : ").strip()
+    table_key, team_name = await _prompt_table_and_team(host, port, args)
 
     result = await run_session(host, port, table_key, player_name, team_name)
     if result == "not_joined":

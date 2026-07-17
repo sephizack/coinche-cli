@@ -12,8 +12,11 @@ name or chat message.
 
 from __future__ import annotations
 
+from collections import deque
+
 from rich.align import Align
 from rich.console import Group, RenderableType
+from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -591,3 +594,71 @@ def render_game_over(
     blocks.append(Align.center(Text("[1] Nouvelle partie     [2] Quitter", style="bold yellow")))
 
     return Panel(Group(*blocks), title="Partie terminée", border_style="gold3")
+
+
+def build_chat_panel(
+    messages: deque[tuple[str, str, str | None]],
+    buffer: str,
+    active: bool,
+    error: bool = False,
+    local_team: str | None = None,
+) -> Panel:
+    """Right-side chat panel: message list + inline input buffer.
+
+    Each message is ``(name, text, team_id)`` where *team_id* is ``"NS"``/``"EW"``
+    or ``None``.  When *local_team* is given, the sender's name is coloured with
+    the matching ``TEAM_COLORS`` (``"nous"`` for same-team, ``"eux"`` for
+    opposite-team).
+
+    All player-supplied strings are wrapped via plain ``Text(value)`` to
+    prevent rich-markup injection (see module docstring).
+    """
+    _NAME_WIDTH = 10
+    lines: list[RenderableType] = []
+    for name, text, team in messages:
+        if team is not None and local_team is not None:
+            camp = "nous" if team == local_team else "eux"
+            name_style = f"bold {TEAM_COLORS[camp]}"
+        else:
+            name_style = "bold"
+        line = Text(style="dim" if not active else "")
+        line.append(name.ljust(_NAME_WIDTH), style=name_style)
+        line.append(": ", style=name_style if local_team is not None else "bold")
+        line.append(text)
+        lines.append(line)
+    if not lines:
+        lines.append(Text("  (aucun message)", style="italic grey50"))
+    # Echo the typed buffer at the bottom
+    prompt = Text("> ", style="bold green" if active else "grey50")
+    prompt.append(buffer, style="bold white")
+    if error:
+        prompt.append("  ⚠ trop long", style="bold red")
+    lines.append(prompt)
+    border = "bold cyan" if active else "grey50"
+    body = Group(*lines)
+    return Panel(body, title="Chat", title_align="center", border_style=border, expand=True)
+
+
+def build_split_view(
+    left: RenderableType,
+    chat: RenderableType,
+    focus: str = "game",
+    height: int | None = None,
+) -> Layout:
+    """Side-by-side layout: left panel (table view) + right panel (chat).
+
+    ``focus`` is ``"game"`` or ``"chat"``; the focused pane's border is
+    rendered with a highlight colour by the callers of ``build_chat_panel``
+    and the wrapping of ``left`` in ``Panel`` (done in ``client.py``).
+
+    When *height* is given the layout fills exactly that many terminal rows
+    so both panes stretch to the full screen height.
+    """
+    root = Layout()
+    root.split_row(
+        Layout(left, ratio=1),
+        Layout(chat, ratio=1),
+    )
+    if height is not None:
+        root.size = height
+    return root

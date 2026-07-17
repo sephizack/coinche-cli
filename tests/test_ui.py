@@ -14,7 +14,9 @@ from rich.text import Text
 
 from coinche.cards import Seat
 from coinche.ui import (
+    build_chat_panel,
     build_hand,
+    build_split_view,
     build_table_layout,
     card_text,
     center_panel,
@@ -277,3 +279,72 @@ def test_render_game_over_with_contract_shows_result_and_untrusted_name_unparsed
     output = console.export_text()
     assert MALICIOUS_NAME in output
     assert "Annonce chutée" in output
+
+
+# --- Chat panel ----------------------------------------------------------------
+
+
+def test_build_chat_panel_shows_placeholder_when_empty():
+    from collections import deque
+
+    panel = build_chat_panel(deque(maxlen=20), buffer="", active=False)
+    assert panel.title == "Chat"
+    assert "(aucun message)" in _plain(panel)
+
+
+def test_build_chat_panel_renders_messages():
+    from collections import deque
+
+    msgs: deque[tuple[str, str, str | None]] = deque(maxlen=20)
+    msgs.append(("Alice", "bonjour", "NS"))
+    msgs.append(("Bob", "salut", "EW"))
+    panel = build_chat_panel(msgs, buffer="", active=False, local_team="NS")
+    plain = _plain(panel)
+    assert "Alice" in plain
+    assert "bonjour" in plain
+    assert "Bob" in plain
+    assert "salut" in plain
+
+
+def test_build_chat_panel_shows_buffer_and_error():
+    from collections import deque
+
+    panel = build_chat_panel(deque(maxlen=20), buffer="hello", active=True, error=True)
+    plain = _plain(panel)
+    assert "hello" in plain
+    assert "trop long" in plain
+
+
+def test_build_chat_panel_active_border_differs():
+    from collections import deque
+
+    active = build_chat_panel(deque(maxlen=20), buffer="", active=True)
+    inactive = build_chat_panel(deque(maxlen=20), buffer="", active=False)
+    assert active.border_style != inactive.border_style
+
+
+def test_build_chat_panel_name_not_parsed_as_markup():
+    from collections import deque
+
+    msgs: deque[tuple[str, str, str | None]] = deque(maxlen=20)
+    msgs.append((MALICIOUS_NAME, "test", "NS"))
+    panel = build_chat_panel(msgs, buffer="", active=False, local_team="NS")
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    # The malicious markup must appear as literal text, not be parsed as rich markup.
+    assert "[bold red]INJECTED[/bold red]" in output
+
+
+# --- Split view ----------------------------------------------------------------
+
+
+def test_build_split_view_has_two_columns():
+    from rich.layout import Layout
+    from rich.text import Text
+
+    left = Text("left")
+    chat = Text("chat")
+    layout = build_split_view(left, chat)
+    assert isinstance(layout, Layout)
+    assert len(layout.children) == 2
