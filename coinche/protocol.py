@@ -18,8 +18,9 @@ PLAY_CARD = "play_card"
 CHAT = "chat"
 REMATCH = "rematch"
 LIST_TABLES = "list_tables"
+SUBSCRIBE_LOBBY = "subscribe_lobby"
 
-CLIENT_MESSAGE_TYPES = {JOIN, BID, PLAY_CARD, CHAT, REMATCH, LIST_TABLES}
+CLIENT_MESSAGE_TYPES = {JOIN, BID, PLAY_CARD, CHAT, REMATCH, LIST_TABLES, SUBSCRIBE_LOBBY}
 
 # --- Server -> Client message types -------------------------------------------
 
@@ -81,6 +82,7 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
     PLAY_CARD: {"card"},
     CHAT: {"text"},
     LIST_TABLES: set(),
+    SUBSCRIBE_LOBBY: set(),
 }
 # JOIN also accepts an optional "team_name" field (a free-text label, e.g. "A"/"B",
 # shared with a teammate to try to be seated on the same team, best-effort; see

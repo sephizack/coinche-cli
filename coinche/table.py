@@ -197,3 +197,48 @@ def get_or_create_table(
             round_pause_seconds=round_pause_seconds,
         )
     return TABLES[table_key]
+
+
+LOBBY_SUBSCRIBERS: set[asyncio.StreamWriter] = set()
+
+
+def tables_listing() -> list[dict]:
+    """Snapshot of every table's lobby state (pre-join query).
+
+    Read-only snapshot without locking -- data may be slightly stale
+    (e.g. a player joined moments ago) but that's fine for the picker.
+    """
+    listing: list[dict] = []
+    for _key, table in list(TABLES.items()):
+        seats_filled = sum(1 for s in table.seats.values() if s is not None)
+        listing.append(
+            {
+                "table_key": table.table_key,
+                "in_progress": table.game is not None,
+                "seats_filled": seats_filled,
+                "players": [
+                    {"seat": _seat_to_str(seat), "name": s.name, "team_name": s.team_name}
+                    for seat, s in table.seats.items()
+                    if s is not None
+                ],
+            }
+        )
+    return listing
+
+
+def _seat_to_str(seat: Seat) -> str:
+    return seat.value
+
+
+async def notify_lobby_subscribers() -> None:
+    """Push a TABLE_LISTING to every current lobby subscriber, dropping any that error."""
+    data = protocol.encode(protocol.TABLE_LISTING, {"tables": tables_listing()})
+    dead: list[asyncio.StreamWriter] = []
+    for writer in list(LOBBY_SUBSCRIBERS):
+        try:
+            writer.write(data)
+            await writer.drain()
+        except (ConnectionError, OSError):
+            dead.append(writer)
+    for w in dead:
+        LOBBY_SUBSCRIBERS.discard(w)

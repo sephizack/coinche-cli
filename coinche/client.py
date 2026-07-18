@@ -3,17 +3,20 @@
 Run with: python -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
                                     [--team TEAM_NAME]
 When --table and --team are omitted, the client connects, queries the server
-for existing tables (LIST_TABLES), shows an interactive picker with player
-names per table (in-progress tables are shown but locked), lets the player
-choose Equipe 1 or Equipe 2 (showing members already on each side), and
-joins.  --table/--team flags still bypass every interactive step (back-compat).
+for existing tables (LIST_TABLES), shows a two-step interactive picker:
+step 1 — select a table (or create a new one), step 2 — pick Equipe 1 or
+Equipe 2 (showing members already on each side), and joins.
+--table/--team flags still bypass every interactive step (back-compat).
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+import select
 import sys
+import termios
 import time
 from collections import deque
 from collections.abc import Callable
@@ -501,7 +504,14 @@ def _apply_message(state: ClientState, msg_type: str, payload: dict, action_even
         state.last_action = f"Erreur : {text}"
 
 
-async def run_session(host: str, port: int, table_key: str, player_name: str, team_name: str | None = None) -> str:
+async def run_session(
+    host: str,
+    port: int,
+    table_key: str,
+    player_name: str,
+    team_name: str | None = None,
+    connection: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None,
+) -> str:
     """Run one connection attempt end-to-end.
 
     `team_name`, if given, is a free-text label (e.g. "A"/"B") shared with a
@@ -509,17 +519,23 @@ async def run_session(host: str, port: int, table_key: str, player_name: str, te
     falls back to normal seating if no other player joined with the same
     label yet, or their team is already full).
 
+    When *connection* is provided, reuse it (the lobby picker already opened
+    it); otherwise open a fresh connection.
+
     Returns "not_joined" if the session never completed a join/resync,
     "game_over" if the game concluded normally, or "disconnected" if the
     connection dropped mid-session after having joined (worth retrying).
     """
     state = ClientState()
 
-    try:
-        reader, writer = await asyncio.open_connection(host, port)
-    except OSError as exc:
-        print(f"Impossible de se connecter à {host}:{port} ({exc})")
-        return "not_joined"
+    if connection is not None:
+        reader, writer = connection
+    else:
+        try:
+            reader, writer = await asyncio.open_connection(host, port)
+        except OSError as exc:
+            print(f"Impossible de se connecter à {host}:{port} ({exc})")
+            return "not_joined"
 
     try:
         writer.write(
@@ -625,8 +641,7 @@ async def run_session(host: str, port: int, table_key: str, player_name: str, te
             left_border = "bold cyan" if game_focused else "grey50"
             left_panel = ui.Panel(
                 view,
-                title=state.table_key or "",
-                title_align="left",
+                title="Table",
                 border_style=left_border,
                 expand=True,
             )
@@ -657,71 +672,83 @@ async def run_session(host: str, port: int, table_key: str, player_name: str, te
             action_event.set()  # wake the input loop so it notices the session ended
 
     async def input_loop() -> None:
-        while True:
-            if state.game_over:
-                choice = await _prompt_game_over_screen(live, state)
-                if choice != "rematch":
+        key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
+        try:
+            while True:
+                # Race persistent key task against action_event (session
+                # teardown / game-state update signals EOF).  The same
+                # key_task is reused across iterations so only one
+                # stdin-reading thread is active at a time — the old
+                # pattern spawned a fresh thread every iteration, and when
+                # action_event fired first the still-pending thread leaked,
+                # producing zombie readers that consumed keystrokes silently.
+                event_waiter = asyncio.ensure_future(action_event.wait())
+                done, _ = await asyncio.wait(
+                    [key_task, event_waiter],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for t in done:
+                    t.cancel()
+
+                if action_event.is_set():
+                    action_event.clear()
+                    if reader.at_eof():
+                        return
+                    key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
+                    continue
+
+                # Key completed — consume result but DON'T recreate the
+                # task yet: game_over does its own blocking read and must
+                # not race with a lingering key reader thread.
+                key = key_task.result()
+
+                if not key:
+                    return
+                if state.game_over:
+                    # key_task is consumed (done), no competing thread.
+                    choice = await _prompt_game_over_screen(live, state)
+                    if choice != "rematch":
+                        try:
+                            writer.close()
+                        except Exception:
+                            pass
+                        return
+                    state.game_over = False
+                    action_event.clear()
                     try:
-                        writer.close()
-                    except Exception:
-                        pass
-                    return
-                state.game_over = False
-                try:
-                    writer.write(protocol.encode(protocol.REMATCH, {}))
-                    await writer.drain()
-                except (ConnectionError, OSError):
-                    return
-                continue
-
-            # Race key read against action_event (session teardown signals EOF).
-            done, _ = await asyncio.wait(
-                [
-                    asyncio.ensure_future(asyncio.to_thread(_read_single_key)),
-                    asyncio.ensure_future(action_event.wait()),
-                ],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            for t in done:
-                t.cancel()
-            if action_event.is_set():
-                action_event.clear()
-                if reader.at_eof():
-                    return
-                continue
-            key = done.pop().result()
-
-            if not key:
-                return
-            if state.round_over_screen:
-                state.round_over_screen = False
-                redraw()
-                continue
-            if key == "\t":
-                state.active_pane = "chat" if state.active_pane == "game" else "game"
-                redraw()
-                continue
-            if state.active_pane == "chat":
-                await _handle_chat_key(state, key, writer)
-                redraw()
-                continue
-            # Game pane: bid/play key dispatch.
-            if state.active_bid_request is not None:
-                if await _handle_bid_key(state, key, writer, redraw):
+                        writer.write(protocol.encode(protocol.REMATCH, {}))
+                        await writer.drain()
+                    except (ConnectionError, OSError):
+                        return
+                    key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
                     continue
-            elif state.active_bid_value_prompt is not None:
-                if await _handle_bid_value_key(state, key, writer, redraw):
-                    continue
-            elif state.pending_bid_request is not None:
-                req = state.pending_bid_request
-                state.pending_bid_request = None
-                state.active_bid_request = req
-                redraw()
-            elif state.pending_play_request is not None:
-                state.pending_play_request = None
-                redraw()
-            elif state.legal_cards:
-                await _handle_play_key(state, key, writer, redraw)
+                if state.round_over_screen:
+                    state.round_over_screen = False
+                    redraw()
+                elif key == "\t":
+                    state.active_pane = "chat" if state.active_pane == "game" else "game"
+                    redraw()
+                elif state.active_pane == "chat":
+                    await _handle_chat_key(state, key, writer)
+                    redraw()
+                elif state.active_bid_request is not None:
+                    await _handle_bid_key(state, key, writer, redraw)
+                elif state.active_bid_value_prompt is not None:
+                    await _handle_bid_value_key(state, key, writer, redraw)
+                elif state.pending_bid_request is not None:
+                    req = state.pending_bid_request
+                    state.pending_bid_request = None
+                    state.active_bid_request = req
+                    redraw()
+                elif state.pending_play_request is not None:
+                    state.pending_play_request = None
+                    redraw()
+                elif state.legal_cards:
+                    await _handle_play_key(state, key, writer, redraw)
+
+                key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
+        finally:
+            key_task.cancel()
 
     try:
         redraw()
@@ -754,23 +781,49 @@ async def run_session(host: str, port: int, table_key: str, player_name: str, te
 def _read_single_key() -> str:
     """Read one keystroke with no Enter needed (POSIX raw mode; falls back to a line read
     when stdin isn't a real terminal, e.g. piped input)."""
+    old_settings = termios.tcgetattr(sys.stdin)
     try:
-        import termios
-        import tty
-    except ImportError:
-        return sys.stdin.readline()[:1]
-
-    fd = sys.stdin.fileno()
-    try:
-        old_settings = termios.tcgetattr(fd)
-    except termios.error:
-        return sys.stdin.readline()[:1]
-
-    try:
-        tty.setcbreak(fd)
-        return sys.stdin.read(1)
+        # Set up raw-like mode for byte-at-a-time input, but keep OPOST
+        # (output processing) enabled so that Rich's \n -> \r\n conversion
+        # still works — clearing OPOST breaks `Live(screen=True)` rendering.
+        # Indices into the termios attribute list.
+        _IFLAG, _OFLAG, _CFLAG, _LFLAG, _CC = 0, 1, 2, 3, 6
+        mode = termios.tcgetattr(sys.stdin)
+        mode[_IFLAG] &= ~(termios.BRKINT | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.IXON)
+        # NOTE: OPOST (_OFLAG) deliberately left enabled — Rich needs \n -> \r\n.
+        mode[_CFLAG] &= ~(termios.CSIZE | termios.PARENB)
+        mode[_CFLAG] |= termios.CS8
+        mode[_LFLAG] &= ~(termios.ECHO | termios.ICANON | termios.IEXTEN)
+        mode[_CC][termios.VMIN] = 1
+        mode[_CC][termios.VTIME] = 0
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, mode)
+        ch = os.read(sys.stdin.fileno(), 1).decode("utf-8")
+        # \x1b is either the bare Esc key or the start of an escape sequence (eg. arrow keys).
+        if ch != "\x1b":
+            return ch
+        # Read the rest of an escape sequence (up to 2 more bytes: [ + letter).
+        # Timeout must be generous: when _read_key runs in a background thread
+        # (via asyncio.to_thread), thread scheduling can add tens of ms of
+        # delay before we get here — the bytes are already in the terminal
+        # buffer, but we need select() to see them.  100ms keeps bare-Esc
+        # responsive while making arrow keys reliable even under load.
+        rest = ""
+        for _ in range(2):
+            rlist, _, _ = select.select([sys.stdin.fileno()], [], [], 0.1)
+            if not rlist:
+                break
+            rest += os.read(sys.stdin.fileno(), 1).decode("utf-8")
+        if rest == "[A":
+            return "up"
+        if rest == "[B":
+            return "down"
+        if rest == "[C":
+            return "right"
+        if rest == "[D":
+            return "left"
+        return "esc"
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 
 async def _prompt_game_over_screen(live: Live, state: ClientState) -> str:
@@ -928,122 +981,245 @@ def _prompt_host_port(args: argparse.Namespace) -> tuple[str, int]:
     return host, port
 
 
-async def _fetch_table_listing(host: str, port: int) -> list[dict]:
-    """Open a throwaway connection, query LIST_TABLES, close, return the table list."""
+def _auto_generate_table_key(existing_tables: list[dict]) -> str:
+    """Generate the next available 'Table N' key (displayed as 'Table N',
+    stored as lowercase alphanumeric 'tableN' for the server)."""
+    existing_keys = {t["table_key"].lower() for t in existing_tables}
+    for n in range(1, 10**7):
+        key = f"table{n}"
+        if len(key) > 12:
+            break
+        if key not in existing_keys:
+            return key
+    # Fallback: all 'tableN' keys (N up to the limit) are taken.
+    return f"table{len(existing_keys) + 1}"
+
+
+async def _lobby_picker(
+    host: str,
+    port: int,
+) -> tuple[str, str | None, asyncio.StreamReader, asyncio.StreamWriter] | None:
+    """Live-updating interactive lobby picker using a two-step flow.
+
+    Step 1 — table selection: browse tables, Enter to pick one.
+    Step 2 — team selection: pick Equipe 1 or Equipe 2, Enter to JOIN.
+
+    Returns ``(table_key, team_name, reader, writer)`` on success, or ``None``
+    on cancel / connection error.  The reader/writer are kept open so the
+    caller can reuse them for JOIN via ``run_session``.
+    """
     try:
         reader, writer = await asyncio.open_connection(host, port)
     except OSError as exc:
         print(f"Impossible de se connecter à {host}:{port} ({exc})")
-        return []
+        return None
+
     try:
-        writer.write(protocol.encode(protocol.LIST_TABLES, {}))
+        writer.write(protocol.encode(protocol.SUBSCRIBE_LOBBY, {}))
         await writer.drain()
-        line = await asyncio.wait_for(reader.readline(), timeout=5.0)
-        if not line:
-            return []
-        msg_type, payload = protocol.decode(line)
-        if msg_type != protocol.TABLE_LISTING:
-            return []
-        return payload["tables"]
-    except (ConnectionError, OSError, protocol.ProtocolError):
-        return []
-    finally:
+    except (ConnectionError, OSError):
         try:
             writer.close()
             await writer.wait_closed()
         except Exception:
             pass
+        return None
 
+    latest_tables: list[dict] = []
+    latest_event = asyncio.Event()
 
-def _show_table_picker(tables: list[dict]) -> str:
-    """Interactive numbered table picker.  Returns the chosen table key."""
-    print("\nTables disponibles :")
-    options: list[dict] = []
-    for t in tables:
-        names = ", ".join(p["name"] for p in t["players"]) if t["players"] else "(vide)"
-        in_prog = t["in_progress"]
-        status = f" (en cours, {t['seats_filled']}/4)" if in_prog else f" ({t['seats_filled']}/4)"
-        idx = len(options) + 1
-        print(f"  {idx}) {t['table_key']}{status} \u2014 {names}")
-        options.append({"key": t["table_key"], "selectable": not in_prog})
-    print("  0) Cr\u00e9er une nouvelle table")
-    while True:
-        choice = input("Choix : ").strip()
-        if choice == "0":
-            key = _auto_generate_table_key(tables)
-            print(f"Nouvelle table : {key}")
-            return key
+    async def _receiver() -> None:
         try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(options) and options[idx]["selectable"]:
-                return options[idx]["key"]
-        except ValueError:
+            while True:
+                line = await reader.readline()
+                if not line:
+                    break
+                try:
+                    msg_type, payload = protocol.decode(line)
+                except protocol.ProtocolError:
+                    continue
+                if msg_type == protocol.TABLE_LISTING:
+                    latest_tables.clear()
+                    latest_tables.extend(payload["tables"])
+                    latest_event.set()
+        except (ConnectionError, OSError):
             pass
-        print("Choix invalide.")
+        finally:
+            latest_event.set()
 
+    recv_task = asyncio.create_task(_receiver())
 
-def _auto_generate_table_key(existing_tables: list[dict]) -> str:
-    """Generate the next available 'Table N' key (displayed as 'Table N',
-    stored as lowercase alphanumeric 'tableN' for the server)."""
-    existing_keys = {t["table_key"].lower() for t in existing_tables}
-    n = 1
-    while True:
-        key = f"table{n}"
-        if len(key) <= 12 and key not in existing_keys:
-            return key
-        n += 1
+    step = "table"
+    table_cursor = 0
+    selected_table: dict | None = None
+    new_table_mode = False
+    team_cursor = 0
+    lobby_error = ""
 
+    live = Live(
+        ui.render_lobby(latest_tables, table_cursor, error=lobby_error),
+        auto_refresh=False,
+        screen=True,
+    )
+    live.start()
 
-def _show_team_picker(table_entry: dict | None) -> str:
-    """Interactive team picker for a table.  Returns the chosen team label."""
-    equipes: dict[str, list[str]] = {"Equipe 1": [], "Equipe 2": []}
-    if table_entry is not None:
-        for p in table_entry["players"]:
-            tn = p.get("team_name")
-            if tn in equipes:
-                equipes[tn].append(p["name"])
+    def redraw() -> None:
+        if step == "table":
+            live.update(ui.render_lobby(latest_tables, table_cursor, error=lobby_error))
+        elif step == "team" and selected_table is not None:
+            live.update(ui.render_team_picker(selected_table, team_cursor, error=lobby_error))
+        live.refresh()
 
-    print("\n\u00c9quipes :")
-    labels = ["Equipe 1", "Equipe 2"]
-    for i, label in enumerate(labels):
-        members = equipes[label]
-        full = len(members) >= 2
-        member_str = ", ".join(members) if members else "(libre)"
-        marker = " \U0001f512 compl\u00e8te" if full else ""
-        print(f"  {i + 1}) {label} \u2014 {member_str}{marker}")
-    while True:
-        choice = input("Choix : ").strip()
-        if choice in ("1", "2"):
-            label = labels[int(choice) - 1]
-            if len(equipes[label]) >= 2:
-                print("Cette \u00e9quipe est compl\u00e8te.")
-                continue
-            return label
-        print("Choix invalide.")
+    key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
 
+    try:
+        while True:
+            # Handle any pending live update before waiting for I/O.
+            if latest_event.is_set():
+                latest_event.clear()
+                if recv_task.done():
+                    live.stop()
+                    print("Connexion perdue.")
+                    return None
+                # Refresh state from updated table list.
+                if step == "table":
+                    table_cursor = min(table_cursor, len(latest_tables))
+                elif step == "team" and selected_table is not None:
+                    tk = selected_table["table_key"]
+                    match = next((t for t in latest_tables if t["table_key"] == tk), None)
+                    if new_table_mode:
+                        # The new table doesn't exist on the server yet; only
+                        # bounce if its key got taken by an in-progress/full table.
+                        if match is not None and (match["in_progress"] or match["seats_filled"] >= 4):
+                            step = "table"
+                            selected_table = None
+                            new_table_mode = False
+                            lobby_error = "Clé de table déjà prise."
+                    else:
+                        if match is None:
+                            step = "table"
+                            selected_table = None
+                            lobby_error = "Table disparue."
+                        elif match["in_progress"] or match["seats_filled"] >= 4:
+                            step = "table"
+                            selected_table = None
+                            lobby_error = "Table en cours ou complète."
+                        else:
+                            selected_table = match
+                redraw()
 
-async def _prompt_table_and_team(host: str, port: int, args: argparse.Namespace) -> tuple[str, str | None]:
-    """Interactive table + team selection.  Bypassed entirely when --table/--team are given."""
-    # --- table ---
-    if args.table is not None:
-        table_key = args.table
-        listing: list[dict] | None = None
-    else:
-        listing = await _fetch_table_listing(host, port)
-        if listing is None:
-            listing = []
-        table_key = _show_table_picker(listing)
+            # Race: the persistent key-read task vs. the next live update.
+            event_waiter = asyncio.ensure_future(latest_event.wait())
+            done, _ = await asyncio.wait(
+                [key_task, event_waiter],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for t in done:
+                t.cancel()
 
-    # --- team ---
-    if args.team is not None:
-        team_name = args.team.strip() or None
-    else:
-        if listing is None:
-            listing = await _fetch_table_listing(host, port)
-        table_entry = next((t for t in listing if t["table_key"] == table_key), None)
-        team_name = _show_team_picker(table_entry)
+            if latest_event.is_set():
+                continue  # handled at the top of the next iteration
 
-    return table_key, team_name
+            # Key read completed — consume.
+            try:
+                key = key_task.result()
+            except Exception as exc:
+                live.stop()
+                print(f"[lobby] Erreur de lecture clavier : {exc}", file=sys.stderr)
+                return None
+
+            if not key:
+                live.stop()
+                print("Entrée fermée.", file=sys.stderr)
+                return None
+
+            lobby_error = ""
+
+            if key == "esc":
+                if step == "team":
+                    step = "table"
+                    selected_table = None
+                    new_table_mode = False
+                else:
+                    try:
+                        writer.close()
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+                    return None
+
+            # Capture the step before dispatch so that a mid-dispatch
+            # transition (table→team) doesn't double-dispatch the same key.
+            current_step = step
+
+            if current_step == "table":
+                total = len(latest_tables) + 1
+
+                if key == "up":
+                    table_cursor = max(0, table_cursor - 1)
+                elif key == "down":
+                    table_cursor = min(total - 1, table_cursor + 1)
+                elif key in ("\r", "\n"):
+                    if table_cursor == 0:
+                        new_key = _auto_generate_table_key(latest_tables)
+                        selected_table = {
+                            "table_key": new_key,
+                            "in_progress": False,
+                            "seats_filled": 0,
+                            "players": [],
+                        }
+                        new_table_mode = True
+                        step = "team"
+                        team_cursor = 0
+                    elif table_cursor - 1 >= len(latest_tables):
+                        lobby_error = "Table introuvable."
+                    else:
+                        selected = latest_tables[table_cursor - 1]
+                        if selected["in_progress"] or selected["seats_filled"] >= 4:
+                            lobby_error = "Table en cours ou complète."
+                        else:
+                            step = "team"
+                            selected_table = selected
+                            team_cursor = 0
+
+            elif current_step == "team" and selected_table is not None:
+                if selected_table["in_progress"] or selected_table["seats_filled"] >= 4:
+                    step = "table"
+                    selected_table = None
+                    new_table_mode = False
+                    lobby_error = "Table en cours ou complète."
+                elif key in ("up", "down"):
+                    team_cursor = 1 - team_cursor
+                elif key == "1":
+                    team_cursor = 0
+                elif key == "2":
+                    team_cursor = 1
+                elif key in ("\r", "\n"):
+                    team_label = "Equipe 1" if team_cursor == 0 else "Equipe 2"
+                    equipes: dict[str, list[str]] = {"Equipe 1": [], "Equipe 2": []}
+                    for p in selected_table["players"]:
+                        tn = p.get("team_name")
+                        if tn in equipes:
+                            equipes[tn].append(p["name"])
+                    if len(equipes[team_label]) >= 2:
+                        lobby_error = f"{team_label} est complète."
+                    else:
+                        return selected_table["table_key"], team_label, reader, writer
+
+            redraw()
+            key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
+    except Exception as exc:
+        live.stop()
+        print(f"[lobby] Erreur inattendue : {exc}", file=sys.stderr)
+        return None
+    finally:
+        live.stop()
+        key_task.cancel()
+        recv_task.cancel()
+        try:
+            await recv_task
+        except asyncio.CancelledError:
+            pass
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -1063,9 +1239,20 @@ async def main(argv: list[str] | None = None) -> None:
     args = build_arg_parser().parse_args(argv)
     host, port = _prompt_host_port(args)
     player_name = args.name or input("Votre nom : ").strip()
-    table_key, team_name = await _prompt_table_and_team(host, port, args)
 
-    result = await run_session(host, port, table_key, player_name, team_name)
+    # --- table + team selection (interactive lobby or --table/--team bypass) ---
+    if args.table is not None:
+        table_key = args.table
+        team_name = args.team.strip() if args.team else None
+        connection: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None
+    else:
+        result = await _lobby_picker(host, port)
+        if result is None:
+            return
+        table_key, team_name, conn_reader, conn_writer = result
+        connection = (conn_reader, conn_writer)
+
+    result = await run_session(host, port, table_key, player_name, team_name, connection=connection)
     if result == "not_joined":
         return
     if result == "game_over":

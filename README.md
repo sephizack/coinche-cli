@@ -49,12 +49,15 @@ python -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
 - `--team` — team label (`Equipe 1` or `Equipe 2`); skips the interactive
   team picker
 
-When `--table` and `--team` are omitted, the client connects, queries the
-server for existing tables (`LIST_TABLES`), displays an interactive numbered
-picker (with player names per table, in-progress tables shown but locked), and
-then lets you choose **Equipe 1** or **Equipe 2** (showing which players are
-already on each side). You can also pick **Créer une nouvelle table** at any
-time to create a new table with a custom key.
+When `--table` and `--team` are omitted, the client opens a live-updating
+two-step lobby screen (`rich`-based, alternate buffer, arrow-key + Enter
+navigation) that subscribes to real-time table updates from the server
+(`SUBSCRIBE_LOBBY`).  **Step 1** — browse existing tables (locked when
+in-progress or full) plus **Créer une nouvelle table** at the top, then
+press Enter to select one.  **Step 2** — pick Equipe 1 or Equipe 2 (with
+live member lists), then Enter to join; Esc returns to step 1.  When
+another player creates a table or joins one, the list and team rosters
+update automatically.
 
 Alternatively, `./run_client.sh` creates the `.venv` if it doesn't exist,
 activates it, installs/updates `requirements.txt` when needed, then launches

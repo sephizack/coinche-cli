@@ -43,7 +43,7 @@ Before submitting any change, run all three and make sure they pass:
 ```bash
 ruff check .                              # lint (E, F, I, B, UP)
 ruff format --check coinche demo_table.py # formatting
-python -m pytest                          # 103 tests, ~2s
+python -m pytest                          # ~110 tests, ~2s
 ```
 
 `ruff check . --fix` and `ruff format coinche demo_table.py` apply autofixes.
@@ -55,6 +55,19 @@ CI (`.github/workflows/ci.yml`) runs the same three checks on push/PR for Python
   containing `{"tables": [{"table_key", "in_progress", "seats_filled", "players": [{"seat","name","team_name"}]}]}`.
   Sent by the client before `JOIN` to power the interactive table picker;
   `_resolve_join` loops over `LIST_TABLES` and only proceeds on `JOIN`.
+- **`SUBSCRIBE_LOBBY`** (client→server, no payload): registers the connection
+  for live push `TABLE_LISTING` updates.  The server immediately replies with
+  the current listing, then pushes a fresh listing whenever a table is created,
+  a seat is filled/removed, or a game starts/stops.  The writer is removed
+  from the subscriber set on `JOIN` or disconnect (try/finally in
+  `_resolve_join`).  Pushes are delivered via `notify_lobby_subscribers()` in
+  `table.py`; `LOBBY_SUBSCRIBERS` (a `set[asyncio.StreamWriter]`) lives there
+  next to `TABLES`.
+  The lobby picker (`_lobby_picker` in `client.py`) is a two-step flow rendered
+  in the alternate buffer (`Live(screen=True)`): step 1 — browse tables and
+  pick one (Enter) or create a new one; step 2 — pick Equipe 1 or Equipe 2,
+  Enter to JOIN, Esc to return to step 1.  Live `TABLE_LISTING` pushes refresh
+  whichever step is active.
 - **`team_name` guard** (`Table.add_player`): when a `team_name` match is
   found but that label already has 2 seated players, the match branch is
   skipped and the player is seated by normal seat-filling order instead,

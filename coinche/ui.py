@@ -662,3 +662,168 @@ def build_split_view(
     if height is not None:
         root.size = height
     return root
+
+
+def render_lobby(
+    tables: list[dict],
+    cursor_index: int,
+    status: str = "",
+    error: str = "",
+) -> RenderableType:
+    """Interactive lobby table picker (step 1: table selection).
+
+    Row 0 is always "✦ Créer une nouvelle table"; rows 1..N are existing
+    tables from *tables*.  The row at *cursor_index* is highlighted.
+
+    All player-supplied strings (names, table keys) are rendered via
+    ``Text()`` — never interpolated into markup — to prevent injection.
+    """
+    rows: list[RenderableType] = []
+
+    # --- Row 0: new table -------------------------------------------------
+    is_cursor = cursor_index == 0
+    new_line = Text()
+    new_line.append(" >> " if is_cursor else "    ", style="bold green")
+    new_line.append("Nouvelle table", "white" + (" bold" if is_cursor else ""))
+    rows.append(new_line)
+
+    # --- Rows 1..N: existing tables ---------------------------------------
+    for i, t in enumerate(tables, start=1):
+        is_cursor = cursor_index == i
+        locked = t["in_progress"] or t["seats_filled"] >= 4
+        names = ", ".join(p["name"] for p in t["players"]) if t["players"] else "(vide)"
+        status_tag = ""
+        if t["in_progress"]:
+            status_tag = " en cours"
+        elif t["seats_filled"] >= 4:
+            status_tag = " complète"
+        seats_str = f"({t['seats_filled']}/4{status_tag})"
+
+        style = (" dim" if locked else "") + (" bold" if is_cursor else "")
+
+        line = Text()
+        line.append(" >> " if is_cursor else "    ", style="bold green")
+        line.append(t["table_key"].ljust(14), style=style)
+        line.append(seats_str.ljust(18), style=style + " cyan")
+        line.append(names, style=style)
+        if locked:
+            line.append(" 🔒", style="dim")
+        rows.append(line)
+
+    # --- Status / error / help --------------------------------------------
+    if status:
+        rows.append(Text(status, style="bold yellow"))
+    if error:
+        rows.append(Text(f"⚠ {error}", style="bold red"))
+    rows.append(Text(""))
+    rows.append(
+        Text(
+            "↑↓ sélectionner · Entrée choisir · Échap annuler",
+            style="dim grey50",
+        )
+    )
+
+    return Panel(
+        Group(*rows),
+        title="Lobby — Tables disponibles",
+        title_align="left",
+        border_style="bold cyan",
+        expand=True,
+    )
+
+
+def render_team_picker(
+    table_entry: dict,
+    team_cursor: int,
+    error: str = "",
+) -> RenderableType:
+    """Team selection panel (step 2) for a chosen table.
+
+    Shows the table header (key, seats filled) with each player's name,
+    then the two Equipe options (1 = ``team_cursor`` == 0, 2 = 1) with
+    member lists and a 🔒 marker when a team is full.
+
+    ``team_cursor`` is 0 (Equipe 1) or 1 (Equipe 2).
+
+    All player-supplied strings are wrapped via ``Text()`` — never
+    interpolated into markup.
+    """
+    rows: list[RenderableType] = []
+
+    # Table header
+    locked = table_entry["in_progress"] or table_entry["seats_filled"] >= 4
+    names = ", ".join(p["name"] for p in table_entry["players"]) if table_entry["players"] else "(vide)"
+    header = Text()
+    header.append(table_entry["table_key"], style="bold white")
+    header.append(f"  ({table_entry['seats_filled']}/4)", style="cyan")
+    if locked:
+        header.append(" 🔒", style="dim")
+    rows.append(header)
+    rows.append(Text(f"  {names}", style="dim" if locked else "white"))
+    rows.append(Text(""))
+
+    # Equipe options
+    equipes: dict[str, list[str]] = {"Equipe 1": [], "Equipe 2": []}
+    for p in table_entry["players"]:
+        tn = p.get("team_name")
+        if tn in equipes:
+            equipes[tn].append(p["name"])
+
+    for idx, label in enumerate(("Equipe 1", "Equipe 2")):
+        is_cursor = team_cursor == idx
+        members = equipes[label]
+        full = len(members) >= 2
+        member_str = ", ".join(members) if members else "(libre)"
+        line = Text()
+        style = (" dim" if full else "") + (" bold" if is_cursor else "")
+        line.append(" >> " if is_cursor else "    ", style="bold green" if is_cursor else "")
+        line.append(f"{idx + 1}) ", style="yellow" + style)
+        line.append(f"{label} ", style="cyan" + style)
+        line.append("— ", style="grey50" + style)
+        line.append(member_str, style=("dim" if full else "white") + style)
+        if full:
+            line.append(" 🔒 complète", style="dim red")
+        rows.append(line)
+
+    if error:
+        rows.append(Text(f"⚠ {error}", style="bold red"))
+    rows.append(Text(""))
+    rows.append(
+        Text(
+            "↑↓ ou 1/2 choisir l'équipe · Entrée rejoindre · Échap retour",
+            style="dim grey50",
+        )
+    )
+
+    return Panel(
+        Group(*rows),
+        title=f"Lobby — {table_entry['table_key']}",
+        title_align="left",
+        border_style="bold cyan",
+        expand=True,
+    )
+
+
+def _render_team_options(table_entry: dict | None) -> RenderableType:
+    """Render Equipe 1 / Equipe 2 options for the highlighted table entry."""
+    equipes: dict[str, list[str]] = {"Equipe 1": [], "Equipe 2": []}
+    if table_entry is not None:
+        for p in table_entry["players"]:
+            tn = p.get("team_name")
+            if tn in equipes:
+                equipes[tn].append(p["name"])
+
+    lines: list[RenderableType] = []
+    for idx, label in enumerate(("Equipe 1", "Equipe 2"), start=1):
+        members = equipes[label]
+        full = len(members) >= 2
+        member_str = ", ".join(members) if members else "(libre)"
+        line = Text()
+        line.append(f"      {idx}) ", style="bold yellow")
+        line.append(f"{label} ", style="bold cyan")
+        line.append("— ", style="grey50")
+        line.append(member_str, style="dim" if full else "white")
+        if full:
+            line.append(" 🔒 complète", style="dim red")
+        lines.append(line)
+    return Group(*lines)

@@ -26,8 +26,10 @@ from coinche.ui import (
     render_bid_value_prompt,
     render_connection_banner,
     render_game_over,
+    render_lobby,
     render_play_menu,
     render_round_score,
+    render_team_picker,
 )
 
 MALICIOUS_NAME = "[bold red]INJECTED[/bold red]"
@@ -348,3 +350,130 @@ def test_build_split_view_has_two_columns():
     layout = build_split_view(left, chat)
     assert isinstance(layout, Layout)
     assert len(layout.children) == 2
+
+
+# --- render_lobby ---------------------------------------------------------------
+
+
+def test_render_lobby_cursor_highlight():
+    """The cursor row is highlighted and shows 'Créer une nouvelle table' at index 0."""
+    panel = render_lobby([], cursor_index=0)
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    assert "Créer une nouvelle table" in output
+
+
+def test_render_lobby_shows_tables():
+    """Existing tables are rendered with their key, seats, and member names."""
+    tables = [
+        {"table_key": "tbl1", "in_progress": False, "seats_filled": 2, "players": [
+            {"seat": "N", "name": "Alice", "team_name": "Equipe 1"},
+            {"seat": "S", "name": "Bob", "team_name": "Equipe 2"},
+        ]},
+    ]
+    panel = render_lobby(tables, cursor_index=1)
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    assert "tbl1" in output
+    assert "Alice" in output
+    assert "Bob" in output
+    assert "(2/4)" in output
+
+
+def test_render_lobby_in_progress_locked():
+    """In-progress tables are shown with a lock icon."""
+    tables = [
+        {"table_key": "live1", "in_progress": True, "seats_filled": 4, "players": [
+            {"seat": "N", "name": "A", "team_name": None},
+            {"seat": "E", "name": "B", "team_name": None},
+            {"seat": "S", "name": "C", "team_name": None},
+            {"seat": "W", "name": "D", "team_name": None},
+        ]},
+    ]
+    panel = render_lobby(tables, cursor_index=1)
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    assert "🔒" in output
+    assert "en cours" in output
+
+
+def test_render_team_picker_shows_members():
+    """Team picker shows member names under each Equipe option."""
+    table = {"table_key": "t1", "in_progress": False, "seats_filled": 1, "players": [
+        {"seat": "N", "name": "Alice", "team_name": "Equipe 1"},
+    ]}
+    panel = render_team_picker(table, team_cursor=0)
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    assert "Equipe 1" in output
+    assert "Equipe 2" in output
+    assert "Alice" in output
+
+
+def test_render_team_picker_full_team_locked():
+    """A full team shows the lock marker in the team picker."""
+    table = {"table_key": "t1", "in_progress": False, "seats_filled": 3, "players": [
+        {"seat": "N", "name": "Alice", "team_name": "Equipe 1"},
+        {"seat": "S", "name": "Bob", "team_name": "Equipe 1"},
+        {"seat": "E", "name": "Carol", "team_name": "Equipe 2"},
+    ]}
+    panel = render_team_picker(table, team_cursor=1)
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    assert "complète" in output
+
+
+def test_render_team_picker_malicious_name_not_markup():
+    """Player names in team picker are not parsed as rich markup."""
+    table = {"table_key": "bad1", "in_progress": False, "seats_filled": 1, "players": [
+        {"seat": "N", "name": MALICIOUS_NAME, "team_name": None},
+    ]}
+    panel = render_team_picker(table, team_cursor=0)
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    assert "[bold red]INJECTED[/bold red]" in output
+
+
+def test_render_lobby_status_and_error():
+    """Status and error messages are rendered."""
+    panel_ok = render_lobby([], cursor_index=0, status="Connecté")
+    console = Console(record=True, width=100)
+    console.print(panel_ok)
+    assert "Connecté" in console.export_text()
+
+    panel_err = render_lobby([], cursor_index=0, error="Table en cours")
+    console2 = Console(record=True, width=100)
+    console2.print(panel_err)
+    assert "Table en cours" in console2.export_text()
+
+
+def test_render_lobby_empty_table_vide():
+    """An empty table shows '(vide)'."""
+    tables = [
+        {"table_key": "empty1", "in_progress": False, "seats_filled": 0, "players": []},
+    ]
+    panel = render_lobby(tables, cursor_index=1)
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    assert "(vide)" in output
+
+
+def test_render_lobby_malicious_name_not_markup():
+    """Player names with rich-markup-like content are not parsed as markup."""
+    tables = [
+        {"table_key": "bad1", "in_progress": False, "seats_filled": 1, "players": [
+            {"seat": "N", "name": MALICIOUS_NAME, "team_name": None},
+        ]},
+    ]
+    panel = render_lobby(tables, cursor_index=1)
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    assert "[bold red]INJECTED[/bold red]" in output

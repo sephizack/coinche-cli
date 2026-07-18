@@ -20,6 +20,7 @@ card identities independently of what the server says is legal.
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
@@ -918,3 +919,216 @@ def test_chat_works_in_lobby():
             await srv.wait_closed()
 
     asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# SUBSCRIBE_LOBBY / push TABLE_LISTING tests
+# ---------------------------------------------------------------------------
+
+
+def test_subscribe_lobby_receives_initial_listing():
+    """SUBSCRIBE_LOBBY returns an immediate TABLE_LISTING snapshot."""
+
+    async def scenario():
+        srv, port = await _start_server()
+        try:
+            # Seed one table
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "seed1", "player_name": "Alice"})
+            await _read_until(r1, protocol.JOINED)
+
+            # Subscribe on a fresh connection
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.SUBSCRIBE_LOBBY, {})
+            listing = await _read_until(r2, protocol.TABLE_LISTING)
+            tables = listing["tables"]
+            assert any(t["table_key"] == "seed1" for t in tables)
+        finally:
+            w1.close()
+            w2.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_subscribe_lobby_pushes_on_new_player():
+    """A subscriber receives a pushed TABLE_LISTING when another client joins a table."""
+
+    async def scenario():
+        srv, port = await _start_server()
+        try:
+            # Subscribe first
+            rs, ws = await _connect(port)
+            await _send(ws, protocol.SUBSCRIBE_LOBBY, {})
+            initial = await _read_until(rs, protocol.TABLE_LISTING)
+            initial_keys = {t["table_key"] for t in initial["tables"]}
+            assert "push1" not in initial_keys  # table doesn't exist yet
+
+            # Another client joins "push1" — this should trigger a push
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "push1", "player_name": "Alice"})
+            await _read_until(r1, protocol.JOINED)
+
+            # Subscriber should receive a push with the new table
+            push = await _read_until(rs, protocol.TABLE_LISTING)
+            tables = push["tables"]
+            push1 = next(t for t in tables if t["table_key"] == "push1")
+            assert push1["seats_filled"] == 1
+            assert push1["in_progress"] is False
+        finally:
+            ws.close()
+            w1.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_subscribe_lobby_pushes_on_seat_removal():
+    """A subscriber receives a pushed TABLE_LISTING when a pre-game player disconnects."""
+
+    async def scenario():
+        srv, port = await _start_server()
+        try:
+            # Join a table (2 players, no game yet)
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "rem1", "player_name": "Alice"})
+            await _read_until(r1, protocol.JOINED)
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.JOIN, {"table_key": "rem1", "player_name": "Bob"})
+            await _read_until(r2, protocol.JOINED)
+
+            # Subscribe
+            rs, ws = await _connect(port)
+            await _send(ws, protocol.SUBSCRIBE_LOBBY, {})
+            initial = await _read_until(rs, protocol.TABLE_LISTING)
+            rem1 = next(t for t in initial["tables"] if t["table_key"] == "rem1")
+            assert rem1["seats_filled"] == 2
+
+            # Bob disconnects (pre-game) — should trigger a push
+            w2.close()
+            await w2.wait_closed()
+
+            push = await _read_until(rs, protocol.TABLE_LISTING)
+            rem1_after = next(t for t in push["tables"] if t["table_key"] == "rem1")
+            assert rem1_after["seats_filled"] == 1
+        finally:
+            ws.close()
+            w1.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_subscribe_lobby_pushes_on_game_start():
+    """A subscriber receives a pushed TABLE_LISTING when a 4th seat fills (game starts)."""
+
+    async def scenario():
+        srv, port = await _start_server()
+        try:
+            # Subscribe first
+            rs, ws = await _connect(port)
+            await _send(ws, protocol.SUBSCRIBE_LOBBY, {})
+            await _read_until(rs, protocol.TABLE_LISTING)
+
+            # Fill the table with 3 players
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "start1", "player_name": "Alice"})
+            await _read_until(r1, protocol.JOINED)
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.JOIN, {"table_key": "start1", "player_name": "Bob"})
+            await _read_until(r2, protocol.JOINED)
+            r3, w3 = await _connect(port)
+            await _send(w3, protocol.JOIN, {"table_key": "start1", "player_name": "Carol"})
+            await _read_until(r3, protocol.JOINED)
+
+            # 4th player joins — game starts
+            r4, w4 = await _connect(port)
+            await _send(w4, protocol.JOIN, {"table_key": "start1", "player_name": "Dave"})
+            await _read_until(r4, protocol.JOINED)
+
+            # Drain pushes until we see the game-start one
+            game_started = False
+            for _ in range(10):
+                push = await asyncio.wait_for(rs.readline(), timeout=2.0)
+                if not push:
+                    break
+                mtype, payload = protocol.decode(push)
+                if mtype == protocol.TABLE_LISTING:
+                    t = next((x for x in payload["tables"] if x["table_key"] == "start1"), None)
+                    if t is not None and t["in_progress"] is True:
+                        game_started = True
+                        break
+            assert game_started, "subscriber never saw in_progress=True"
+        finally:
+            ws.close()
+            w1.close()
+            w2.close()
+            w3.close()
+            w4.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_subscribe_lobby_then_join_on_same_connection():
+    """SUBSCRIBE_LOBBY then JOIN on the same connection works (like LIST_TABLES then JOIN)."""
+
+    async def scenario():
+        srv, port = await _start_server()
+        try:
+            # Seed a table
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "seed2", "player_name": "Alice"})
+            await _read_until(r1, protocol.JOINED)
+
+            # Subscribe, then JOIN on the same connection
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.SUBSCRIBE_LOBBY, {})
+            listing = await _read_until(r2, protocol.TABLE_LISTING)
+            assert any(t["table_key"] == "seed2" for t in listing["tables"])
+
+            await _send(w2, protocol.JOIN, {"table_key": "seed2", "player_name": "Bob"})
+            joined = await _read_until(r2, protocol.JOINED)
+            assert joined["table_key"] == "seed2"
+            assert joined["seat"] in ("N", "E", "S", "W")
+        finally:
+            w1.close()
+            w2.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_unsubscribed_connection_does_not_receive_pushes():
+    """A connection that sent LIST_TABLES (not SUBSCRIBE_LOBBY) does not receive pushes."""
+
+    async def scenario():
+        srv, port = await _start_server()
+        try:
+            # Query with LIST_TABLES (not subscribe)
+            rl, wl = await _connect(port)
+            await _send(wl, protocol.LIST_TABLES, {})
+            listing = await _read_until(rl, protocol.TABLE_LISTING)
+            assert isinstance(listing["tables"], list)
+
+            # Another client joins
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "nosub", "player_name": "Alice"})
+            await _read_until(r1, protocol.JOINED)
+
+            # LIST_TABLES client should NOT receive a push
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(rl.readline(), timeout=0.3)
+        finally:
+            wl.close()
+            w1.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
