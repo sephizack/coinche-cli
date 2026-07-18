@@ -15,8 +15,10 @@ import argparse
 import asyncio
 import os
 import select
+import signal
 import sys
 import termios
+import threading
 import time
 from collections import deque
 from collections.abc import Callable
@@ -40,6 +42,12 @@ BACKOFF_DELAYS = (1, 2, 4, 8, 16)
 # original order for bid/trump enumeration elsewhere.
 BLACK_SUITS: tuple[str, ...] = ("♠", "♣")
 RED_SUITS: tuple[str, ...] = ("♥", "♦")
+
+# Thread-safety flag: when set, `_read_single_key` returns "" promptly so the
+# executor's worker thread frees up.  This allows shutdown_default_executor()
+# to complete within ms rather than blocking for up to 5 minutes waiting on a
+# thread stuck in os.read(stdin).
+_key_interrupt = threading.Event()
 
 
 @dataclass
@@ -780,52 +788,78 @@ async def run_session(
     return "not_joined"
 
 
+_raw_mode_applied: bool = False
+
+
+def _enable_raw_mode() -> None:
+    """Put stdin into byte-at-a-time mode once for the entire session.
+
+    Once applied, the mode persists until the process exits.  The original
+    settings are restored by the outermost ``cli()`` try/finally (which
+    catches ``KeyboardInterrupt`` and restores the saved termios state).
+
+    Leaving OPOST enabled so Rich's ``\\n`` → ``\\r\\n`` conversion still
+    works — clearing it breaks ``Live(screen=True)`` rendering.
+    """
+    global _raw_mode_applied
+    if _raw_mode_applied or not sys.stdin.isatty():
+        return
+    _IFLAG, _CFLAG, _LFLAG, _CC = 0, 2, 3, 6
+    mode = termios.tcgetattr(sys.stdin)
+    mode[_IFLAG] &= ~(termios.BRKINT | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.IXON)
+    mode[_CFLAG] &= ~(termios.CSIZE | termios.PARENB)
+    mode[_CFLAG] |= termios.CS8
+    mode[_LFLAG] &= ~(termios.ECHO | termios.ICANON | termios.IEXTEN)
+    mode[_CC][termios.VMIN] = 1
+    mode[_CC][termios.VTIME] = 0
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, mode)
+    _raw_mode_applied = True
+
+
 def _read_single_key() -> str:
-    """Read one keystroke with no Enter needed (POSIX raw mode; falls back to a line read
-    when stdin isn't a real terminal, e.g. piped input)."""
-    old_settings = termios.tcgetattr(sys.stdin)
-    try:
-        # Set up raw-like mode for byte-at-a-time input, but keep OPOST
-        # (output processing) enabled so that Rich's \n -> \r\n conversion
-        # still works — clearing OPOST breaks `Live(screen=True)` rendering.
-        # Indices into the termios attribute list.
-        _IFLAG, _OFLAG, _CFLAG, _LFLAG, _CC = 0, 1, 2, 3, 6
-        mode = termios.tcgetattr(sys.stdin)
-        mode[_IFLAG] &= ~(termios.BRKINT | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.IXON)
-        # NOTE: OPOST (_OFLAG) deliberately left enabled — Rich needs \n -> \r\n.
-        mode[_CFLAG] &= ~(termios.CSIZE | termios.PARENB)
-        mode[_CFLAG] |= termios.CS8
-        mode[_LFLAG] &= ~(termios.ECHO | termios.ICANON | termios.IEXTEN)
-        mode[_CC][termios.VMIN] = 1
-        mode[_CC][termios.VTIME] = 0
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, mode)
-        ch = os.read(sys.stdin.fileno(), 1).decode("utf-8")
-        # \x1b is either the bare Esc key or the start of an escape sequence (eg. arrow keys).
-        if ch != "\x1b":
-            return ch
-        # Read the rest of an escape sequence (up to 2 more bytes: [ + letter).
-        # Timeout must be generous: when _read_key runs in a background thread
-        # (via asyncio.to_thread), thread scheduling can add tens of ms of
-        # delay before we get here — the bytes are already in the terminal
-        # buffer, but we need select() to see them.  100ms keeps bare-Esc
-        # responsive while making arrow keys reliable even under load.
-        rest = ""
-        for _ in range(2):
-            rlist, _, _ = select.select([sys.stdin.fileno()], [], [], 0.1)
-            if not rlist:
-                break
-            rest += os.read(sys.stdin.fileno(), 1).decode("utf-8")
-        if rest == "[A":
-            return "up"
-        if rest == "[B":
-            return "down"
-        if rest == "[C":
-            return "right"
-        if rest == "[D":
-            return "left"
-        return "esc"
-    finally:
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+    """Read one keystroke with no Enter needed (POSIX cbreak mode; falls back
+    to a line read when stdin isn't a real terminal, e.g. piped input).
+
+    Polls stdin with a 100 ms timeout so that ``_key_interrupt`` can unblock
+    the thread when Ctrl+C is pressed, allowing a clean shutdown."""
+    _enable_raw_mode()
+    fd = sys.stdin.fileno()
+
+    # Wait for a byte, polling every 100 ms so we notice shutdown requests.
+    while not _key_interrupt.is_set():
+        rlist, _, _ = select.select([fd], [], [], 0.1)
+        if rlist:
+            break
+    if _key_interrupt.is_set():
+        return ""
+    ch = os.read(fd, 1).decode("utf-8")
+
+    # \x1b is either the bare Esc key or the start of an escape sequence (eg. arrow keys).
+    if ch != "\x1b":
+        return ch
+    # Read the rest of an escape sequence (up to 2 more bytes: [ + letter).
+    # Timeout must be generous: when _read_key runs in a background thread
+    # (via asyncio.to_thread), thread scheduling can add tens of ms of
+    # delay before we get here — the bytes are already in the terminal
+    # buffer, but we need select() to see them.  100ms keeps bare-Esc
+    # responsive while making arrow keys reliable even under load.
+    rest = ""
+    for _ in range(2):
+        if _key_interrupt.is_set():
+            return ""
+        rlist, _, _ = select.select([fd], [], [], 0.1)
+        if not rlist:
+            break
+        rest += os.read(fd, 1).decode("utf-8")
+    if rest == "[A":
+        return "up"
+    if rest == "[B":
+        return "down"
+    if rest == "[C":
+        return "right"
+    if rest == "[D":
+        return "left"
+    return "esc"
 
 
 async def _prompt_game_over_screen(live: Live, state: ClientState) -> str:
@@ -1293,37 +1327,45 @@ def cli() -> None:
     """Entry point. Catches Ctrl+C at the top level so the player gets a clean
     "Au revoir" message instead of a raw asyncio KeyboardInterrupt traceback.
 
-    `run_session`'s own `try`/`finally` (`live.stop()`, closing the writer) still
-    runs first: `asyncio.run()` reacts to a KeyboardInterrupt raised while the
-    event loop is waiting by cancelling the still-suspended `main()` task in its
-    own `finally` block, which unwinds through `run_session`'s `finally` (a
-    `CancelledError` there) before the original `KeyboardInterrupt` is re-raised
-    out of `asyncio.run()` and caught here.
+    Installs a custom SIGINT handler that sets ``_key_interrupt`` so the
+    worker thread blocked in ``_read_single_key`` returns immediately,
+    then raises ``KeyboardInterrupt``.  This keeps ``asyncio.run`` from
+    installing its own handler (which would leave the thread blocked while
+    ``shutdown_default_executor`` waits up to 5 minutes), and it lets the
+    worker thread exit cleanly so ``Runner.close()`` completes in ms.
 
-    Also defensively restores the terminal's mode (`_read_single_key` puts it in
-    cbreak mode while awaiting a keystroke): if Ctrl+C lands while a background
-    thread is blocked inside that raw read, the thread can't be cancelled and
-    its own `finally` restoring the mode may not run before we exit, which would
-    otherwise leave the shell's terminal in a broken/no-echo state.
+    Also defensively restores the terminal's mode (``_enable_raw_mode`` puts
+    stdin into cbreak mode once for the session): if Ctrl+C lands while a
+    background thread is still waking up, the mode stays applied beyond our
+    exit, leaving the shell in a broken/no-echo state.
     """
     try:
-        import termios
-    except ImportError:
+        fd = sys.stdin.fileno()
+        original_settings: list | None = termios.tcgetattr(fd)
+    except (termios.error, ValueError, OSError):
         fd = None
         original_settings = None
-    else:
-        try:
-            fd = sys.stdin.fileno()
-            original_settings: list | None = termios.tcgetattr(fd)
-        except (termios.error, ValueError):
-            fd = None
-            original_settings = None
+
+    # Save the SIGINT handler that was in place before us (usually the
+    # default_int_handler installed by site.py).
+    prev_sigint = signal.getsignal(signal.SIGINT)
+
+    def _on_sigint(signum: int, frame: object) -> None:
+        _key_interrupt.set()
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, _on_sigint)
+
+    # Reset the flag so a prior Ctrl+C doesn't break a fresh session
+    # (the flag survives across retries in the main() reconnection loop).
+    _key_interrupt.clear()
 
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nInterrompu. À bientôt !")
     finally:
+        signal.signal(signal.SIGINT, prev_sigint)
         if fd is not None and original_settings is not None:
             termios.tcsetattr(fd, termios.TCSADRAIN, original_settings)
 

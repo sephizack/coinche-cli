@@ -20,7 +20,6 @@ card identities independently of what the server says is legal.
 from __future__ import annotations
 
 import asyncio
-import time
 
 import pytest
 

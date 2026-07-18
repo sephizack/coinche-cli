@@ -415,12 +415,12 @@ def test_build_split_view_has_two_columns():
 
 
 def test_render_lobby_cursor_highlight():
-    """The cursor row is highlighted and shows 'Créer une nouvelle table' at index 0."""
+    """The cursor row is highlighted and shows 'Nouvelle table' at index 0."""
     panel = render_lobby([], cursor_index=0)
     console = Console(record=True, width=100)
     console.print(panel)
     output = console.export_text()
-    assert "Créer une nouvelle table" in output
+    assert "Nouvelle table" in output
 
 
 def test_render_lobby_shows_tables():

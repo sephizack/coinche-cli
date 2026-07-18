@@ -53,7 +53,7 @@ When `--table` and `--team` are omitted, the client opens a live-updating
 two-step lobby screen (`rich`-based, alternate buffer, arrow-key + Enter
 navigation) that subscribes to real-time table updates from the server
 (`SUBSCRIBE_LOBBY`).  **Step 1** — browse existing tables (locked when
-in-progress or full) plus **Créer une nouvelle table** at the top, then
+in-progress or full) plus **Nouvelle table** at the top, then
 press Enter to select one.  **Step 2** — pick Equipe 1 or Equipe 2 (with
 live member lists), then Enter to join; Esc returns to step 1.  When
 another player creates a table or joins one, the list and team rosters

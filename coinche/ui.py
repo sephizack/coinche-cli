@@ -699,7 +699,7 @@ def render_lobby(
 ) -> RenderableType:
     """Interactive lobby table picker (step 1: table selection).
 
-    Row 0 is always "✦ Créer une nouvelle table"; rows 1..N are existing
+    Row 0 is always "✦ Nouvelle table"; rows 1..N are existing
     tables from *tables*.  The row at *cursor_index* is highlighted.
 
     All player-supplied strings (names, table keys) are rendered via
