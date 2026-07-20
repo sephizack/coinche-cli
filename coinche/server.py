@@ -16,12 +16,14 @@ from coinche import __version__, protocol, rules
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
-    TABLES,
+    LOBBY_SUBSCRIBERS,
     GameInProgressError,
     NameTakenError,
     Table,
     TableFullError,
     get_or_create_table,
+    notify_lobby_subscribers,
+    tables_listing,
 )
 
 TABLE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9]{4,12}$")
@@ -62,30 +64,6 @@ def _players_summary(table: Table) -> list[dict]:
         for seat, session in table.seats.items()
         if session is not None
     ]
-
-
-def _tables_listing() -> list[dict]:
-    """Snapshot of every table's lobby state (pre-join query).
-
-    Read-only snapshot without locking -- data may be slightly stale
-    (e.g. a player joined moments ago) but that's fine for the picker.
-    """
-    listing: list[dict] = []
-    for _key, table in list(TABLES.items()):
-        seats_filled = sum(1 for s in table.seats.values() if s is not None)
-        listing.append(
-            {
-                "table_key": table.table_key,
-                "in_progress": table.game is not None,
-                "seats_filled": seats_filled,
-                "players": [
-                    {"seat": _seat_to_str(seat), "name": s.name, "team_name": s.team_name}
-                    for seat, s in table.seats.items()
-                    if s is not None
-                ],
-            }
-        )
-    return listing
 
 
 def _bid_to_wire(bid: dict | None) -> dict | None:
@@ -430,7 +408,21 @@ async def _resolve_join(
 
     LIST_TABLES is served inline (TABLE_LISTING reply) and the loop continues
     so the same connection can then send JOIN -- no extra round trip needed.
+    SUBSCRIBE_LOBBY registers the writer for live push TABLE_LISTING updates.
     """
+    try:
+        return await _resolve_join_inner(reader, writer, target_score, trick_pause_seconds, round_pause_seconds)
+    finally:
+        LOBBY_SUBSCRIBERS.discard(writer)
+
+
+async def _resolve_join_inner(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    target_score: int,
+    trick_pause_seconds: float,
+    round_pause_seconds: float,
+) -> tuple[Table, Seat] | None:
     while True:
         try:
             line = await reader.readline()
@@ -448,7 +440,16 @@ async def _resolve_join(
 
         if msg_type == protocol.LIST_TABLES:
             try:
-                writer.write(protocol.encode(protocol.TABLE_LISTING, {"tables": _tables_listing()}))
+                writer.write(protocol.encode(protocol.TABLE_LISTING, {"tables": tables_listing()}))
+                await writer.drain()
+            except (ConnectionError, OSError):
+                return None
+            continue
+
+        if msg_type == protocol.SUBSCRIBE_LOBBY:
+            LOBBY_SUBSCRIBERS.add(writer)
+            try:
+                writer.write(protocol.encode(protocol.TABLE_LISTING, {"tables": tables_listing()}))
                 await writer.drain()
             except (ConnectionError, OSError):
                 return None
@@ -499,6 +500,7 @@ async def _resolve_join(
                     await _send_bid_request(table, seat)
                 elif table.game.phase == "trick_play":
                     await _send_play_request(table, seat)
+            await notify_lobby_subscribers()
             return table, seat
 
         try:
@@ -541,6 +543,7 @@ async def _resolve_join(
             await _broadcast_deal(table)
             await _send_bid_request(table, table.game.next_to_act)
 
+        await notify_lobby_subscribers()
         return table, seat
 
 
@@ -590,6 +593,7 @@ async def handle_connection(
                         protocol.LOBBY_UPDATE,
                         {"players": players, "seats_filled": len(players), "waiting_for": 4 - len(players)},
                     )
+                    await notify_lobby_subscribers()
                 else:
                     name = table.mark_disconnected(seat)
                     logger.info("[%s] DECONNEXION %s (%s)", table.table_key, name, _seat_to_str(seat))

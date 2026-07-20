@@ -12,6 +12,7 @@ name or chat message.
 
 from __future__ import annotations
 
+import time
 from collections import deque
 
 from rich.align import Align
@@ -25,6 +26,8 @@ from coinche.cards import Seat
 
 RED_SUITS = {"♥", "♦"}
 TEAM_COLORS = {"nous": "cyan", "eux": "magenta"}
+
+MAX_CHAT_LEN = 256
 
 # Fixed counter-clockwise rotation order (A1), used to rotate the visual
 # layout so the local seat always renders at "south".
@@ -597,42 +600,66 @@ def render_game_over(
 
 
 def build_chat_panel(
-    messages: deque[tuple[str, str, str | None]],
+    messages: deque[tuple[str, str, str | None, float]],
     buffer: str,
     active: bool,
     error: bool = False,
     local_team: str | None = None,
+    cursor: int | None = None,
 ) -> Panel:
     """Right-side chat panel: message list + inline input buffer.
 
-    Each message is ``(name, text, team_id)`` where *team_id* is ``"NS"``/``"EW"``
-    or ``None``.  When *local_team* is given, the sender's name is coloured with
-    the matching ``TEAM_COLORS`` (``"nous"`` for same-team, ``"eux"`` for
-    opposite-team).
+    Each message is ``(name, text, team_id, ts)`` where *team_id* is
+    ``"NS"``/``"EW"`` or ``None`` and *ts* is a client-side receive timestamp
+    (``time.time()``).  When *local_team* is given, the sender's name is
+    coloured with the matching ``TEAM_COLORS`` (``"nous"`` for same-team,
+    ``"eux"`` for opposite-team).
+
+    When *active*, the input buffer is rendered with a reverse-video block
+    cursor at the position indicated by *cursor* (default: end of buffer).
 
     All player-supplied strings are wrapped via plain ``Text(value)`` to
     prevent rich-markup injection (see module docstring).
     """
+    if cursor is None:
+        cursor = len(buffer)
     _NAME_WIDTH = 10
     lines: list[RenderableType] = []
-    for name, text, team in messages:
+    for name, text, team, ts in messages:
         if team is not None and local_team is not None:
             camp = "nous" if team == local_team else "eux"
             name_style = f"bold {TEAM_COLORS[camp]}"
         else:
             name_style = "bold"
         line = Text(style="dim" if not active else "")
+        line.append(time.strftime("%H:%M", time.localtime(ts)), style="dim")
+        line.append(" ")
         line.append(name.ljust(_NAME_WIDTH), style=name_style)
-        line.append(": ", style=name_style if local_team is not None else "bold")
+        line.append(" ")
         line.append(text)
         lines.append(line)
     if not lines:
         lines.append(Text("  (aucun message)", style="italic grey50"))
     # Echo the typed buffer at the bottom
     prompt = Text("> ", style="bold green" if active else "grey50")
-    prompt.append(buffer, style="bold white")
+    if active:
+        before = buffer[:cursor]
+        after = buffer[cursor:]
+        if before:
+            prompt.append(before, style="bold white")
+        if after:
+            prompt.append(Text(after[0], style="reverse bold white"))
+            if len(after) > 1:
+                prompt.append(after[1:], style="bold white")
+        else:
+            prompt.append(Text(" ", style="reverse"))
+    else:
+        prompt.append(buffer, style="bold white")
     if error:
-        prompt.append("  ⚠ trop long", style="bold red")
+        prompt.append("  \u26a0 trop long", style="bold red")
+    if active and len(buffer) >= int(0.8 * MAX_CHAT_LEN):
+        count_style = "bold red" if error else "yellow"
+        prompt.append(f"  {len(buffer)}/{MAX_CHAT_LEN}", style=count_style)
     lines.append(prompt)
     border = "bold cyan" if active else "grey50"
     body = Group(*lines)
@@ -662,3 +689,168 @@ def build_split_view(
     if height is not None:
         root.size = height
     return root
+
+
+def render_lobby(
+    tables: list[dict],
+    cursor_index: int,
+    status: str = "",
+    error: str = "",
+) -> RenderableType:
+    """Interactive lobby table picker (step 1: table selection).
+
+    Row 0 is always "✦ Nouvelle table"; rows 1..N are existing
+    tables from *tables*.  The row at *cursor_index* is highlighted.
+
+    All player-supplied strings (names, table keys) are rendered via
+    ``Text()`` — never interpolated into markup — to prevent injection.
+    """
+    rows: list[RenderableType] = []
+
+    # --- Row 0: new table -------------------------------------------------
+    is_cursor = cursor_index == 0
+    new_line = Text()
+    new_line.append(" >> " if is_cursor else "    ", style="bold green")
+    new_line.append("Nouvelle table", "white" + (" bold" if is_cursor else ""))
+    rows.append(new_line)
+
+    # --- Rows 1..N: existing tables ---------------------------------------
+    for i, t in enumerate(tables, start=1):
+        is_cursor = cursor_index == i
+        locked = t["in_progress"] or t["seats_filled"] >= 4
+        names = ", ".join(p["name"] for p in t["players"]) if t["players"] else "(vide)"
+        status_tag = ""
+        if t["in_progress"]:
+            status_tag = " en cours"
+        elif t["seats_filled"] >= 4:
+            status_tag = " complète"
+        seats_str = f"({t['seats_filled']}/4{status_tag})"
+
+        style = (" dim" if locked else "") + (" bold" if is_cursor else "")
+
+        line = Text()
+        line.append(" >> " if is_cursor else "    ", style="bold green")
+        line.append(t["table_key"].ljust(14), style=style)
+        line.append(seats_str.ljust(18), style=style + " cyan")
+        line.append(names, style=style)
+        if locked:
+            line.append(" 🔒", style="dim")
+        rows.append(line)
+
+    # --- Status / error / help --------------------------------------------
+    if status:
+        rows.append(Text(status, style="bold yellow"))
+    if error:
+        rows.append(Text(f"⚠ {error}", style="bold red"))
+    rows.append(Text(""))
+    rows.append(
+        Text(
+            "↑↓ sélectionner · Entrée choisir · Échap annuler",
+            style="dim grey50",
+        )
+    )
+
+    return Panel(
+        Group(*rows),
+        title="Lobby — Tables disponibles",
+        title_align="left",
+        border_style="bold cyan",
+        expand=True,
+    )
+
+
+def render_team_picker(
+    table_entry: dict,
+    team_cursor: int,
+    error: str = "",
+) -> RenderableType:
+    """Team selection panel (step 2) for a chosen table.
+
+    Shows the table header (key, seats filled) with each player's name,
+    then the two Equipe options (1 = ``team_cursor`` == 0, 2 = 1) with
+    member lists and a 🔒 marker when a team is full.
+
+    ``team_cursor`` is 0 (Equipe 1) or 1 (Equipe 2).
+
+    All player-supplied strings are wrapped via ``Text()`` — never
+    interpolated into markup.
+    """
+    rows: list[RenderableType] = []
+
+    # Table header
+    locked = table_entry["in_progress"] or table_entry["seats_filled"] >= 4
+    names = ", ".join(p["name"] for p in table_entry["players"]) if table_entry["players"] else "(vide)"
+    header = Text()
+    header.append(table_entry["table_key"], style="bold white")
+    header.append(f"  ({table_entry['seats_filled']}/4)", style="cyan")
+    if locked:
+        header.append(" 🔒", style="dim")
+    rows.append(header)
+    rows.append(Text(f"  {names}", style="dim" if locked else "white"))
+    rows.append(Text(""))
+
+    # Equipe options
+    equipes: dict[str, list[str]] = {"Equipe 1": [], "Equipe 2": []}
+    for p in table_entry["players"]:
+        tn = p.get("team_name")
+        if tn in equipes:
+            equipes[tn].append(p["name"])
+
+    for idx, label in enumerate(("Equipe 1", "Equipe 2")):
+        is_cursor = team_cursor == idx
+        members = equipes[label]
+        full = len(members) >= 2
+        member_str = ", ".join(members) if members else "(libre)"
+        line = Text()
+        style = (" dim" if full else "") + (" bold" if is_cursor else "")
+        line.append(" >> " if is_cursor else "    ", style="bold green" if is_cursor else "")
+        line.append(f"{idx + 1}) ", style="yellow" + style)
+        line.append(f"{label} ", style="cyan" + style)
+        line.append("— ", style="grey50" + style)
+        line.append(member_str, style=("dim" if full else "white") + style)
+        if full:
+            line.append(" 🔒 complète", style="dim red")
+        rows.append(line)
+
+    if error:
+        rows.append(Text(f"⚠ {error}", style="bold red"))
+    rows.append(Text(""))
+    rows.append(
+        Text(
+            "↑↓ ou 1/2 choisir l'équipe · Entrée rejoindre · Échap retour",
+            style="dim grey50",
+        )
+    )
+
+    return Panel(
+        Group(*rows),
+        title=f"Lobby — {table_entry['table_key']}",
+        title_align="left",
+        border_style="bold cyan",
+        expand=True,
+    )
+
+
+def _render_team_options(table_entry: dict | None) -> RenderableType:
+    """Render Equipe 1 / Equipe 2 options for the highlighted table entry."""
+    equipes: dict[str, list[str]] = {"Equipe 1": [], "Equipe 2": []}
+    if table_entry is not None:
+        for p in table_entry["players"]:
+            tn = p.get("team_name")
+            if tn in equipes:
+                equipes[tn].append(p["name"])
+
+    lines: list[RenderableType] = []
+    for idx, label in enumerate(("Equipe 1", "Equipe 2"), start=1):
+        members = equipes[label]
+        full = len(members) >= 2
+        member_str = ", ".join(members) if members else "(libre)"
+        line = Text()
+        line.append(f"      {idx}) ", style="bold yellow")
+        line.append(f"{label} ", style="bold cyan")
+        line.append("— ", style="grey50")
+        line.append(member_str, style="dim" if full else "white")
+        if full:
+            line.append(" 🔒 complète", style="dim red")
+        lines.append(line)
+    return Group(*lines)
