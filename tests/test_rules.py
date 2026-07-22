@@ -103,10 +103,30 @@ def test_legal_cards_must_overtrump_when_opponent_holds_highest_trump():
     # holds both a low trump (8♦) and a higher trump (A♦) plus a non-trump.
     hand = [Card("8", "♦"), Card("A", "♦"), Card("R", "♥")]
     trick = [(Seat.N, Card("8", "♠")), (Seat.E, Card("10", "♦"))]
-    result = legal_cards_to_play(
-        hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.W
-    )
+    result = legal_cards_to_play(hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.W)
     assert result == [Card("A", "♦")]  # only the overtrumping card is legal
+
+
+def test_legal_cards_can_pisser_when_cutting_and_no_higher_trump_available():
+    # Opponent (E) already cut with 10♦ (trump). Player (S) is void of the
+    # led suit (♠) and their only trump (8♦) cannot beat it. Since the led
+    # suit was not trump, S is not forced to under-trump and may pisser —
+    # discard any card, including the non-trump R♥.
+    hand = [Card("8", "♦"), Card("R", "♥")]
+    trick = [(Seat.N, Card("8", "♠")), (Seat.E, Card("10", "♦"))]
+    result = legal_cards_to_play(hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.W)
+    assert result == hand  # free discard ("pisser"), no obligation to under-trump
+
+
+def test_legal_cards_must_undertrump_when_trump_led_and_no_higher_trump():
+    # Trump (♦) was the led suit itself. Opponent (N) leads V♦ (highest
+    # trump). Player (S) is following suit with trump — even though they
+    # cannot beat V♦, they must still play one of their trumps (no pisser
+    # exception applies when trump was led).
+    hand = [Card("8", "♦"), Card("R", "♥")]
+    trick = [(Seat.N, Card("V", "♦")), (Seat.E, Card("8", "♣"))]
+    result = legal_cards_to_play(hand, trick, "♦", "♦", player_seat=Seat.S, partner_seat=Seat.W)
+    assert result == [Card("8", "♦")]  # must still play the (losing) trump
 
 
 def test_legal_cards_under_trump_exception_when_partner_holds_highest_trump():
@@ -114,10 +134,33 @@ def test_legal_cards_under_trump_exception_when_partner_holds_highest_trump():
     # overtrump and may play any trump card they hold.
     hand = [Card("8", "♦"), Card("7", "♦")]
     trick = [(Seat.N, Card("10", "♦")), (Seat.E, Card("8", "♠"))]
-    result = legal_cards_to_play(
-        hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.N
-    )
+    result = legal_cards_to_play(hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.N)
     assert result == hand  # free choice among trumps, no overtrump required
+
+
+def test_legal_cards_can_pisser_when_partner_is_master_via_a_cut():
+    # Partner (E) is currently master of the trick because they cut the
+    # non-trump lead (8♠) with A♦, not because they hold the led suit's
+    # highest card. Player (W) is void of the led suit and holds a mix of
+    # trump and non-trump cards — since partner is master (even via a cut),
+    # W is not obliged to cut and may freely discard any card, including
+    # non-trump ones.
+    hand = [Card("8", "♦"), Card("7", "♦"), Card("R", "♥"), Card("7", "♣")]
+    trick = [(Seat.N, Card("8", "♠")), (Seat.E, Card("A", "♦")), (Seat.S, Card("K", "♥"))]
+    result = legal_cards_to_play(hand, trick, "♦", "♠", player_seat=Seat.W, partner_seat=Seat.E)
+    assert result == hand  # free discard ("pisser"), partner already master via cut
+
+def test_legal_cards_can_pisser_when_partner_is_master_via_a_cut_and_adversaire_undercut():
+    # Partner (E) is currently master of the trick because they cut the
+    # non-trump lead (8♠) with A♦, not because they hold the led suit's
+    # highest card. Player (W) is void of the led suit and holds a mix of
+    # trump and non-trump cards — since partner is master (even via a cut),
+    # W is not obliged to cut and may freely discard any card, including
+    # non-trump ones.
+    hand = [Card("8", "♦"), Card("7", "♦"), Card("R", "♥"), Card("7", "♣")]
+    trick = [(Seat.N, Card("8", "♠")), (Seat.E, Card("A", "♦")), (Seat.S, Card("10", "♦"))]
+    result = legal_cards_to_play(hand, trick, "♦", "♠", player_seat=Seat.W, partner_seat=Seat.E)
+    assert result == hand  # free discard ("pisser"), partner already master via cut
 
 
 def test_legal_cards_can_pisser_when_partner_is_master_via_led_suit():
@@ -127,9 +170,7 @@ def test_legal_cards_can_pisser_when_partner_is_master_via_led_suit():
     # to cut and may freely discard any card, including non-trump ones.
     hand = [Card("A", "♣"), Card("R", "♦"), Card("V", "♦")]
     trick = [(Seat.N, Card("10", "♠")), (Seat.W, Card("8", "♠"))]
-    result = legal_cards_to_play(
-        hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.N
-    )
+    result = legal_cards_to_play(hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.N)
     assert result == hand  # free discard ("pisser"), no obligation to cut
 
 
@@ -139,9 +180,7 @@ def test_legal_cards_must_cut_when_opponent_is_master_via_led_suit():
     # must still cut.
     hand = [Card("A", "♣"), Card("R", "♦"), Card("V", "♦")]
     trick = [(Seat.N, Card("8", "♠")), (Seat.E, Card("10", "♠"))]
-    result = legal_cards_to_play(
-        hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.N
-    )
+    result = legal_cards_to_play(hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.N)
     assert result == [Card("R", "♦"), Card("V", "♦")]
 
 
@@ -204,9 +243,7 @@ def test_score_round_contract_failed_defenders_get_pool_plus_bid():
 def test_score_round_capot_achieved():
     captured = {"NS": 152, "EW": 0}
     bid = {"team": "NS", "trump": "♠", "points": CAPOT}
-    result = score_round(
-        captured, bid, coinche_level=1, capot_result=True, belote_holder=None, attacker_tricks=8
-    )
+    result = score_round(captured, bid, coinche_level=1, capot_result=True, belote_holder=None, attacker_tricks=8)
     assert result["NS"]["contract_result"] == "capot_achieved"
     assert result["NS"]["total"] == 502  # 252 réalisés + 250 demandés
     assert result["EW"]["total"] == 0
@@ -215,9 +252,7 @@ def test_score_round_capot_achieved():
 def test_score_round_capot_failed_defenders_get_502():
     captured = {"NS": 100, "EW": 52}
     bid = {"team": "NS", "trump": "♠", "points": CAPOT}
-    result = score_round(
-        captured, bid, coinche_level=1, capot_result=False, belote_holder=None, attacker_tricks=6
-    )
+    result = score_round(captured, bid, coinche_level=1, capot_result=False, belote_holder=None, attacker_tricks=6)
     assert result["NS"]["contract_result"] == "capot_failed"
     assert result["NS"]["total"] == 0
     assert result["EW"]["total"] == 502  # 252 chute capot + 250 demandé
@@ -227,9 +262,7 @@ def test_score_round_unannounced_capot_upgrades_to_252():
     # 100 annoncés et capot fait (non annoncé) : 252 + 100 = 352.
     captured = {"NS": 162, "EW": 0}
     bid = {"team": "NS", "trump": "♠", "points": 100}
-    result = score_round(
-        captured, bid, coinche_level=1, capot_result=None, belote_holder=None, attacker_tricks=8
-    )
+    result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder=None, attacker_tricks=8)
     assert result["NS"]["total"] == 352  # 252 + 100
     assert result["EW"]["total"] == 0
 
@@ -264,9 +297,7 @@ def test_score_round_coinche_on_made_contract_doubles_attackers():
 def test_score_round_belote_counted_once_and_not_multiplied_on_coinche():
     captured = {"NS": 90, "EW": 72}
     bid = {"team": "NS", "trump": "♠", "points": 100}
-    result = score_round(
-        captured, bid, coinche_level=2, capot_result=None, belote_holder="EW"
-    )
+    result = score_round(captured, bid, coinche_level=2, capot_result=None, belote_holder="EW")
     # Chute contrée : (100 + 162) × 2 = 524, belote +20 non multipliée.
     assert result["EW"]["total"] == (100 + NORMAL_POOL) * 2 + 20  # 544
     assert result["EW"]["belote_bonus"] == 20
@@ -277,9 +308,7 @@ def test_score_round_belote_bonus_credited_to_holder_on_failure():
     # (40 + 20 = 60 < 110) le contrat chute. La belote reste au détenteur.
     captured = {"NS": 40, "EW": 122}
     bid = {"team": "NS", "trump": "♠", "points": 110}
-    result = score_round(
-        captured, bid, coinche_level=1, capot_result=None, belote_holder="NS"
-    )
+    result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder="NS")
     assert result["NS"]["contract_result"] == "failed"
     assert result["NS"]["total"] == 20  # 0 base + 20 belote (règle coinche classique)
     assert result["NS"]["belote_bonus"] == 20
@@ -290,8 +319,6 @@ def test_score_round_belote_helps_fulfil_contract():
     # 80 annoncés, 60 cartes + belote NS (60 + 20 = 80) -> contrat réussi.
     captured = {"NS": 60, "EW": 102}
     bid = {"team": "NS", "trump": "♠", "points": 80}
-    result = score_round(
-        captured, bid, coinche_level=1, capot_result=None, belote_holder="NS"
-    )
+    result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder="NS")
     assert result["NS"]["contract_result"] == "made"
     assert result["NS"]["total"] == 160  # 60 (arrondi) + 80 + 20 belote

@@ -148,8 +148,15 @@ def legal_cards_to_play(
     Enforces: follow-suit -> master-partner "pisser" exception (free discard
     when void of the led suit and the partner is already master of the
     trick) -> must-trump -> must-overtrump -> under-trump exception when the
-    partner holds the trick's current highest trump -> free discard
+    partner holds the trick's current highest trump -> free-discard
+    exception when cutting and no overtrump is possible -> free discard
     fallback.
+
+    Note the free-discard-when-can't-overtrump exception only applies when
+    the player is cutting a non-trump lead while void of the led suit; if
+    trump was the suit originally led, a player following suit with trump
+    must still play a trump even when unable to beat the highest trump
+    played so far (no "pisser" exception in that case).
     """
     if not current_trick:
         return list(hand)
@@ -178,7 +185,7 @@ def legal_cards_to_play(
     if not trump_cards:
         return list(hand)
 
-    return _apply_overtrump_rule(trump_cards, current_trick, trump_suit, partner_seat)
+    return _apply_overtrump_rule(trump_cards, current_trick, trump_suit, partner_seat, free_discard_fallback=list(hand))
 
 
 def _apply_overtrump_rule(
@@ -186,6 +193,7 @@ def _apply_overtrump_rule(
     current_trick: list[tuple[Seat, Card]],
     trump_suit: str,
     partner_seat: Seat | None,
+    free_discard_fallback: list[Card] | None = None,
 ) -> list[Card]:
     trumps_in_trick = [(s, c) for s, c in current_trick if c.suit == trump_suit]
     if not trumps_in_trick:
@@ -200,7 +208,15 @@ def _apply_overtrump_rule(
     if higher_trumps:
         return higher_trumps
 
-    return candidate_cards  # can't overtrump: any trump of that group is legal
+    # Can't overtrump. When cutting a non-trump lead (free_discard_fallback
+    # set), the player is not forced to under-trump and may "pisser" —
+    # discard any card in hand freely. When following suit because trump
+    # itself was led (free_discard_fallback is None), the player must still
+    # play one of their trumps.
+    if free_discard_fallback is not None:
+        return free_discard_fallback
+
+    return candidate_cards  # trump was led: must still follow suit with a trump
 
 
 def trick_winner(
