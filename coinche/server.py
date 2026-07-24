@@ -601,6 +601,10 @@ async def handle_connection(
                         protocol.CONNECTION_STATUS,
                         {"seat": _seat_to_str(seat), "name": name, "status": "disconnected"},
                     )
+                    # Refresh lobby subscribers so a returning player's picker sees
+                    # this seat as disconnected (connected=False) and offers the
+                    # reconnect path instead of showing the table as locked.
+                    await notify_lobby_subscribers()
         try:
             writer.close()
         except Exception:
