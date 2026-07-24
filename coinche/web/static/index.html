@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <title>Coinche — Casino</title>
+    <link rel="stylesheet" href="styles.css" />
+    <!--
+      Vue 3 (global prod build) is VENDORED locally under vendor/ and served
+      same-origin by U2's static file handler. We deliberately load it from the
+      same origin instead of a CDN: a same-origin script needs no Subresource
+      Integrity attribute, and this avoids shipping a possibly-wrong SRI hash on
+      a cross-origin <script>. The file is the pinned Vue 3.4.38 full build
+      (compiler included, so components can use string templates — no build step).
+    -->
+    <script src="vendor/vue.global.prod.js"></script>
+  </head>
+  <body>
+    <!-- Vue mounts the whole casino UI here. Everything below #app is rendered
+         by app.js from the pushed state snapshots. -->
+    <div id="app" aria-live="off"></div>
+    <noscript>
+      <p
+        style="
+          color: #f5f5f5;
+          padding: 2rem;
+          font-family: system-ui, sans-serif;
+        "
+      >
+        Cette interface nécessite JavaScript. Vous pouvez toujours jouer depuis
+        le client terminal.
+      </p>
+    </noscript>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

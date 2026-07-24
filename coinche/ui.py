@@ -230,6 +230,7 @@ def build_footer(
     contract: Text | None = None,
     last_trick: Panel | None = None,
     team_names: dict[str, str] | None = None,
+    web_url: str | None = None,
 ) -> Table:
     """`team_names` (team id -> untrusted free-text label) is only ever
     embedded via an f-string into a `Text`/`Text.assemble` tuple, never parsed
@@ -254,6 +255,16 @@ def build_footer(
     footer.add_row(Text(last_action, style="italic grey50"), scores)
     if waiting is not None and waiting.plain:
         footer.add_row(waiting, Text(""))
+    if web_url:
+        # In-game reminder of the web UI address, rendered as an OSC-8 hyperlink
+        # so terminals that support it make the URL clickable. `web_url` is a
+        # locally-computed http URL (never untrusted input), so embedding it in
+        # a Text is safe.
+        web_line = Text.assemble(
+            ("\U0001f310 Interface web : ", "grey50"),
+            (web_url, f"bold {TEAM_COLORS['nous']} link {web_url}"),
+        )
+        footer.add_row(web_line, Text(""))
     return footer
 
 
@@ -278,6 +289,7 @@ def build_table_view(
     dealer_seat: Seat | None = None,
     bid_menu: Group | Text | None = None,
     team_names: dict[str, str] | None = None,
+    web_url: str | None = None,
 ) -> Group:
     """Compose the whole table view into one root renderable for rich.live.Live.
 
@@ -314,7 +326,16 @@ def build_table_view(
         blocks.append(Align.center(bid_menu))
     blocks.append(Text(""))
     blocks.append(
-        build_footer(cumulative_scores, local_team, last_action, waiting, contract, last_trick_panel, team_names)
+        build_footer(
+            cumulative_scores,
+            local_team,
+            last_action,
+            waiting,
+            contract,
+            last_trick_panel,
+            team_names,
+            web_url=web_url,
+        )
     )
     return Group(*blocks)
 

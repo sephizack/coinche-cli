@@ -1,0 +1,1243 @@
+/* =========================================================================
+   Coinche — Casino web overlay styles (U3)
+   Design tokens + casino-felt theme. Traces to refined-mockups/
+   design-system-mapping.md. Framework-agnostic CSS custom properties, a
+   3/4-perspective felt table on desktop, responsive recompose on mobile,
+   and a prefers-reduced-motion collapse.
+   ========================================================================= */
+
+:root {
+  /* ---- Color tokens (design-system-mapping.md) ---- */
+  --felt-green: #0b5d3b;
+  --felt-green-dark: #083f29;
+  --felt-green-light: #10744a;
+  --gold: #d4af37;
+  --gold-soft: #e8cf7a;
+  --card-face: #faf7f0;
+  --suit-red: #c0392b;
+  --suit-black: #1a1a1a;
+  --team-nous: #26c6da; /* cyan — carries over the TUI nous=cyan convention */
+  --team-eux: #c94fd8; /* magenta — TUI eux=magenta */
+  --text-on-felt: #f5f5f5;
+  --text-muted: #b9c6bd;
+  --danger: #e74c3c;
+  --panel-bg: rgba(6, 40, 27, 0.82);
+  --panel-bg-solid: #0a2a1c;
+  --overlay-scrim: rgba(3, 18, 12, 0.72);
+
+  /* ---- Spacing scale ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* ---- Radius ---- */
+  --radius-card: 8px;
+  --radius-panel: 12px;
+
+  /* ---- Elevation ---- */
+  --shadow-card: 0 4px 10px rgba(0, 0, 0, 0.45);
+  --shadow-card-raised: 0 12px 24px rgba(0, 0, 0, 0.55);
+  --shadow-panel: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --glow-gold: 0 0 0 2px var(--gold), 0 0 18px rgba(212, 175, 55, 0.6);
+
+  /* ---- Motion tokens ---- */
+  --dur-fast: 120ms;
+  --dur-card: 280ms;
+  --dur-deal-stagger: 60ms;
+  --dur-trick-sweep: 400ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Card face geometry (kept in one place so fan math can reference it) */
+  --card-w: 66px;
+  --card-h: 96px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: "Georgia", "Iowan Old Style", "Times New Roman", serif;
+  background:
+    radial-gradient(ellipse at 50% 20%, #133b2a 0%, #06140d 75%), #06140d;
+  color: var(--text-on-felt);
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+/* Sans stack for numeric/body content where the serif hurts legibility */
+.sans {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+#app {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Visible gold focus ring on every interactive element (a11y). */
+:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* =========================================================================
+   Top bar
+   ========================================================================= */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0));
+  z-index: 30;
+  flex: 0 0 auto;
+}
+
+.topbar__brand {
+  font-size: 1.35rem;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.scoreboard {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  font-family: system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.scoreboard__team {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid transparent;
+}
+
+.scoreboard__team--nous {
+  border-color: var(--team-nous);
+  color: var(--team-nous);
+}
+.scoreboard__team--eux {
+  border-color: var(--team-eux);
+  color: var(--team-eux);
+}
+.scoreboard__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.scoreboard__value {
+  font-size: 1.2rem;
+  color: var(--text-on-felt);
+}
+
+.chat-toggle {
+  position: relative;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--gold-soft);
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: 0.9rem;
+}
+.chat-toggle__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.72rem;
+  font-family: system-ui, sans-serif;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* =========================================================================
+   Stage (holds the felt table + chat side by side)
+   ========================================================================= */
+.stage {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+
+.table-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* The perspective viewport — the felt tilts back in 3/4 on desktop. */
+.felt-scene {
+  flex: 1 1 auto;
+  position: relative;
+  perspective: 1400px;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  min-height: 0;
+}
+
+.felt {
+  position: relative;
+  width: min(760px, 92%);
+  aspect-ratio: 4 / 3;
+  border-radius: 46% / 40%;
+  background: radial-gradient(
+    ellipse at 50% 42%,
+    var(--felt-green-light) 0%,
+    var(--felt-green) 46%,
+    var(--felt-green-dark) 100%
+  );
+  box-shadow:
+    inset 0 0 60px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 10px rgba(212, 175, 55, 0.14),
+    0 30px 60px rgba(0, 0, 0, 0.6);
+  border: 3px solid rgba(212, 175, 55, 0.35);
+  transform: rotateX(18deg);
+  transform-style: preserve-3d;
+  transition: transform var(--dur-card) var(--ease-standard);
+}
+
+/* Subtle felt weave texture over the gradient. */
+.felt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(0, 0, 0, 0.04) 0 2px,
+      transparent 2px 4px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.02) 0 2px,
+      transparent 2px 4px
+    );
+  pointer-events: none;
+}
+
+/* Counter the table tilt for content so text stays readable. */
+.felt__upright {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(-18deg);
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+.felt__upright > * {
+  pointer-events: auto;
+}
+
+/* =========================================================================
+   Seat panels — placed around the felt oval
+   ========================================================================= */
+.seat {
+  position: absolute;
+  width: 170px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: center;
+}
+.seat--south {
+  left: 50%;
+  top: 90%;
+}
+.seat--north {
+  left: 50%;
+  top: 8%;
+}
+.seat--west {
+  left: 9%;
+  top: 50%;
+}
+.seat--east {
+  left: 91%;
+  top: 50%;
+}
+
+.seat__nameplate {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 100%;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: 999px;
+  background: var(--panel-bg);
+  border: 2px solid var(--seat-ring, rgba(255, 255, 255, 0.2));
+  font-family: system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-card);
+  transition:
+    box-shadow var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.seat--nous .seat__nameplate {
+  --seat-ring: var(--team-nous);
+  color: var(--team-nous);
+}
+.seat--eux .seat__nameplate {
+  --seat-ring: var(--team-eux);
+  color: var(--team-eux);
+}
+.seat__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 110px;
+  color: var(--text-on-felt);
+}
+.seat__badge {
+  font-size: 0.68rem;
+  color: var(--gold);
+  font-weight: 700;
+}
+.seat--turn .seat__nameplate {
+  box-shadow: var(--glow-gold);
+  border-color: var(--gold);
+  animation: pulse-ring 1.6s ease-in-out infinite;
+}
+.seat--offline .seat__nameplate {
+  opacity: 0.45;
+  filter: grayscale(0.7);
+  border-style: dashed;
+}
+.seat__offline-note {
+  font-size: 0.7rem;
+  color: var(--danger);
+  font-family: system-ui, sans-serif;
+}
+
+/* The card / bid-mark a seat currently shows. */
+.seat__slot {
+  min-height: var(--card-h);
+  display: grid;
+  place-items: center;
+}
+.bid-mark {
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-card);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--gold-soft);
+  color: var(--gold-soft);
+  font-family: system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.bid-mark--pass {
+  color: var(--text-muted);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+@keyframes pulse-ring {
+  0%,
+  100% {
+    box-shadow: var(--glow-gold);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px var(--gold-soft),
+      0 0 28px rgba(232, 207, 122, 0.85);
+  }
+}
+
+/* =========================================================================
+   Trick area / contract badge / last-trick corner
+   ========================================================================= */
+.trick-area {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  width: 210px;
+  height: 150px;
+  pointer-events: none;
+}
+.trick-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transition:
+    transform var(--dur-card) var(--ease-standard),
+    opacity var(--dur-card) var(--ease-standard);
+}
+/* Each played card offset slightly toward its origin seat. */
+.trick-card--south {
+  transform: translate(-50%, 10%);
+}
+.trick-card--north {
+  transform: translate(-50%, -80%);
+}
+.trick-card--west {
+  transform: translate(-90%, -35%) rotate(-6deg);
+}
+.trick-card--east {
+  transform: translate(-10%, -35%) rotate(6deg);
+}
+.trick-area--sweeping .trick-card {
+  opacity: 0;
+}
+.trick-area--sweeping.sweep-south .trick-card {
+  transform: translate(-50%, 220%);
+}
+.trick-area--sweeping.sweep-north .trick-card {
+  transform: translate(-50%, -320%);
+}
+.trick-area--sweeping.sweep-west .trick-card {
+  transform: translate(-360%, -35%);
+}
+.trick-area--sweeping.sweep-east .trick-card {
+  transform: translate(320%, -35%);
+}
+
+.center-bid {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-family: system-ui, sans-serif;
+  color: var(--text-on-felt);
+  background: rgba(0, 0, 0, 0.35);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgba(212, 175, 55, 0.4);
+}
+.center-bid__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.center-bid__value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--gold-soft);
+}
+
+.contract-badge {
+  position: absolute;
+  left: 50%;
+  top: 74%;
+  transform: translate(-50%, -50%);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(212, 175, 55, 0.28),
+    rgba(212, 175, 55, 0.12)
+  );
+  border: 1.5px solid var(--gold);
+  color: var(--gold-soft);
+  font-family: system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+.contract-badge--flash {
+  animation: coinche-flash 0.7s var(--ease-standard);
+}
+@keyframes coinche-flash {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    box-shadow: 0 0 0 rgba(212, 175, 55, 0);
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(1.35);
+    box-shadow: 0 0 40px rgba(232, 207, 122, 0.95);
+    background: var(--gold-soft);
+    color: var(--felt-green-dark);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.last-trick {
+  position: absolute;
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  z-index: 20;
+  padding: var(--sp-2);
+  border-radius: var(--radius-panel);
+  background: var(--panel-bg);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  box-shadow: var(--shadow-card);
+}
+.last-trick__title {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: system-ui, sans-serif;
+  margin-bottom: var(--sp-1);
+  text-align: center;
+}
+.last-trick__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, auto);
+  gap: 2px;
+  place-items: center;
+}
+.last-trick__grid .card {
+  --card-w: 34px;
+  --card-h: 50px;
+}
+
+/* =========================================================================
+   Hand fan (local player's cards)
+   ========================================================================= */
+.hand-fan {
+  flex: 0 0 auto;
+  position: relative;
+  height: calc(var(--card-h) + 54px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: var(--sp-3);
+  z-index: 25;
+}
+.hand-fan__inner {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+.hand-fan .card {
+  margin-left: -22px;
+  transform-origin: bottom center;
+  transition:
+    transform var(--dur-card) var(--ease-standard),
+    filter var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard);
+}
+.hand-fan .card:first-child {
+  margin-left: 0;
+}
+.hand-fan .card--legal:hover,
+.hand-fan .card--legal:focus-visible {
+  transform: translateY(-22px) scale(1.06);
+  z-index: 5;
+}
+.hand-fan .card--illegal {
+  opacity: 0.42;
+  filter: grayscale(0.5) brightness(0.85);
+}
+.card--shake {
+  animation: card-shake 0.4s var(--ease-standard);
+}
+@keyframes card-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+.hand-hint {
+  text-align: center;
+  font-family: system-ui, sans-serif;
+  font-size: 0.8rem;
+  color: var(--danger);
+  min-height: 1.1em;
+}
+
+/* =========================================================================
+   Card (SVG) shared sizing
+   ========================================================================= */
+.card {
+  width: var(--card-w);
+  height: var(--card-h);
+  display: inline-block;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  background: transparent;
+  border: none;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.card svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: var(--radius-card);
+}
+.card--legal {
+  cursor: pointer;
+}
+.card--legal:hover {
+  box-shadow: var(--shadow-card-raised);
+}
+
+/* =========================================================================
+   Status footer
+   ========================================================================= */
+.status-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+  font-family: system-ui, sans-serif;
+  font-size: 0.9rem;
+  min-height: 2.4rem;
+  text-align: center;
+}
+.status-footer__last {
+  color: var(--text-muted);
+}
+.status-footer__turn {
+  color: var(--gold-soft);
+  font-weight: 700;
+}
+
+/* =========================================================================
+   Bid panel (dialog)
+   ========================================================================= */
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-scrim);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+  padding: var(--sp-4);
+}
+.bid-panel {
+  width: min(460px, 100%);
+  background: var(--panel-bg-solid);
+  border: 2px solid var(--gold);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+  padding: var(--sp-6);
+  font-family: system-ui, sans-serif;
+}
+.bid-panel__title {
+  margin: 0 0 var(--sp-4);
+  color: var(--gold);
+  font-family: "Georgia", serif;
+  font-size: 1.3rem;
+  text-align: center;
+}
+.bid-panel__group {
+  margin-bottom: var(--sp-4);
+}
+.bid-panel__legend {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+.trump-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-2);
+}
+.trump-btn {
+  padding: var(--sp-3) 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  border-radius: var(--radius-card);
+  border: 2px solid rgba(212, 175, 55, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-on-felt);
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.trump-btn[data-suit="red"] {
+  color: var(--suit-red);
+}
+.trump-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.trump-btn--selected {
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.22);
+  box-shadow: var(--glow-gold);
+}
+.points-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+}
+.stepper-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 2px solid var(--gold);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--gold-soft);
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.stepper-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.points-value {
+  min-width: 90px;
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--gold-soft);
+}
+.points-value--capot {
+  font-size: 1.25rem;
+}
+.bid-panel__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.action-btn {
+  padding: var(--sp-3);
+  border-radius: var(--radius-card);
+  border: 2px solid transparent;
+  font-size: 1rem;
+  font-weight: 700;
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    filter var(--dur-fast) var(--ease-standard);
+}
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.action-btn:not(:disabled):hover {
+  filter: brightness(1.12);
+}
+.action-btn--pass {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: var(--text-on-felt);
+}
+.action-btn--announce {
+  background: linear-gradient(180deg, var(--gold-soft), var(--gold));
+  color: var(--felt-green-dark);
+}
+.action-btn--coinche {
+  grid-column: 1 / -1;
+  background: rgba(201, 79, 216, 0.22);
+  border-color: var(--team-eux);
+  color: var(--team-eux);
+}
+.action-btn--surcoinche {
+  grid-column: 1 / -1;
+  background: rgba(231, 76, 60, 0.22);
+  border-color: var(--danger);
+  color: #ffb4ab;
+}
+.bid-panel--sending {
+  opacity: 0.7;
+  pointer-events: none;
+}
+.bid-panel__sending {
+  text-align: center;
+  color: var(--gold-soft);
+  margin-top: var(--sp-3);
+  font-style: italic;
+}
+
+/* =========================================================================
+   Chat panel
+   ========================================================================= */
+.chat-panel {
+  flex: 0 0 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg-solid);
+  border-left: 1px solid rgba(212, 175, 55, 0.25);
+  z-index: 40;
+}
+.chat-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: system-ui, sans-serif;
+  font-weight: 700;
+  color: var(--gold-soft);
+}
+.chat-panel__close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+}
+.chat-log {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-family: system-ui, sans-serif;
+  font-size: 0.88rem;
+}
+.chat-msg__name {
+  font-weight: 700;
+  margin-right: var(--sp-2);
+}
+.chat-msg__name--nous {
+  color: var(--team-nous);
+}
+.chat-msg__name--eux {
+  color: var(--team-eux);
+}
+.chat-msg__text {
+  color: var(--text-on-felt);
+  word-break: break-word;
+}
+.chat-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  margin-top: var(--sp-4);
+}
+.chat-compose {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.chat-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-card);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-on-felt);
+  font-family: system-ui, sans-serif;
+}
+.chat-send {
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--gold);
+  background: rgba(212, 175, 55, 0.18);
+  color: var(--gold-soft);
+  font-weight: 700;
+}
+
+/* =========================================================================
+   Lobby
+   ========================================================================= */
+.lobby {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6);
+  overflow-y: auto;
+}
+.lobby__card {
+  width: min(520px, 100%);
+  background: var(--panel-bg);
+  border: 2px solid rgba(212, 175, 55, 0.4);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+  padding: var(--sp-6);
+}
+.lobby__title {
+  margin: 0 0 var(--sp-4);
+  color: var(--gold);
+  text-align: center;
+  font-size: 1.5rem;
+}
+.lobby__field {
+  margin-bottom: var(--sp-4);
+}
+.lobby__field label {
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-1);
+}
+.lobby__field input {
+  width: 100%;
+  padding: var(--sp-3);
+  border-radius: var(--radius-card);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-on-felt);
+  font-family: system-ui, sans-serif;
+  font-size: 1rem;
+}
+.team-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.team-card {
+  padding: var(--sp-4);
+  border-radius: var(--radius-panel);
+  border: 2px solid transparent;
+  background: rgba(0, 0, 0, 0.3);
+  text-align: center;
+  font-family: system-ui, sans-serif;
+}
+.team-card--nous {
+  border-color: var(--team-nous);
+}
+.team-card--eux {
+  border-color: var(--team-eux);
+}
+.team-card__title {
+  font-weight: 700;
+  margin-bottom: var(--sp-2);
+}
+.team-card--nous .team-card__title {
+  color: var(--team-nous);
+}
+.team-card--eux .team-card__title {
+  color: var(--team-eux);
+}
+.team-card__members {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--sp-3);
+  font-size: 0.85rem;
+  color: var(--text-on-felt);
+  min-height: 3em;
+}
+.team-card__members li {
+  padding: 2px 0;
+}
+.team-card__members li.free {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.team-join {
+  width: 100%;
+  padding: var(--sp-2);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--gold);
+  background: rgba(212, 175, 55, 0.16);
+  color: var(--gold-soft);
+  font-weight: 700;
+}
+
+/* =========================================================================
+   Round recap / game over overlays
+   ========================================================================= */
+.recap {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-scrim);
+  display: grid;
+  place-items: center;
+  z-index: 70;
+  padding: var(--sp-6);
+}
+.recap__card {
+  width: min(520px, 100%);
+  background: var(--panel-bg-solid);
+  border: 2px solid var(--gold);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+  padding: var(--sp-8) var(--sp-6);
+  text-align: center;
+  font-family: system-ui, sans-serif;
+}
+.recap__title {
+  margin: 0 0 var(--sp-4);
+  color: var(--gold);
+  font-family: "Georgia", serif;
+  font-size: 1.7rem;
+}
+.recap__scores {
+  display: flex;
+  justify-content: center;
+  gap: var(--sp-8);
+  margin: var(--sp-4) 0;
+}
+.recap__score-team {
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.recap__score-value {
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: var(--text-on-felt);
+}
+.recap__team--nous {
+  color: var(--team-nous);
+}
+.recap__team--eux {
+  color: var(--team-eux);
+}
+.recap__contract {
+  margin: var(--sp-3) 0;
+  color: var(--text-muted);
+}
+.recap__contract .ok {
+  color: #7bd88f;
+  font-weight: 700;
+}
+.recap__contract .ko {
+  color: var(--danger);
+  font-weight: 700;
+}
+.recap__winner {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--gold);
+  margin: var(--sp-4) 0;
+}
+.rematch-btn {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-8);
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(180deg, var(--gold-soft), var(--gold));
+  color: var(--felt-green-dark);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+/* Confetti pieces */
+.confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 65;
+}
+.confetti__piece {
+  position: absolute;
+  top: -12px;
+  width: 10px;
+  height: 14px;
+  opacity: 0.9;
+  animation: confetti-fall linear forwards;
+}
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-20px) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(105vh) rotate(720deg);
+    opacity: 0.8;
+  }
+}
+
+/* =========================================================================
+   Toast
+   ========================================================================= */
+.toast-stack {
+  position: fixed;
+  top: var(--sp-4);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  z-index: 100;
+  width: min(420px, 92%);
+}
+.toast {
+  background: var(--danger);
+  color: #fff;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-panel);
+  font-family: system-ui, sans-serif;
+  font-size: 0.9rem;
+  animation: toast-in var(--dur-card) var(--ease-standard);
+}
+.toast--info {
+  background: #1f6f52;
+}
+@keyframes toast-in {
+  from {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Deal animation — cards drop/scale in when a fresh hand arrives. */
+.deal-enter {
+  animation: deal-in var(--dur-card) var(--ease-standard) backwards;
+}
+@keyframes deal-in {
+  from {
+    transform: translateY(-160px) rotate(-12deg) scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* =========================================================================
+   Responsive: tablet (>=600) chat becomes an overlay toggle
+   ========================================================================= */
+@media (max-width: 1023px) {
+  .chat-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    flex-basis: min(360px, 88%);
+    box-shadow: var(--shadow-panel);
+  }
+}
+
+/* =========================================================================
+   Responsive: mobile portrait (<600) — vertical recompose, NO perspective
+   ========================================================================= */
+@media (max-width: 599px) {
+  .felt {
+    transform: none; /* A4: perspective removed on mobile portrait */
+    width: 96%;
+    aspect-ratio: 3 / 4;
+    border-radius: 24px;
+  }
+  .felt__upright {
+    transform: none;
+  }
+  .felt-scene {
+    perspective: none;
+    padding: var(--sp-2);
+  }
+  .seat {
+    width: 130px;
+  }
+  .seat--west {
+    left: 16%;
+    top: 42%;
+  }
+  .seat--east {
+    left: 84%;
+    top: 42%;
+  }
+  .seat--north {
+    top: 10%;
+  }
+  .seat--south {
+    top: 88%;
+  }
+  /* Tap targets >= 44px */
+  .hand-fan .card {
+    --card-w: 52px;
+    --card-h: 76px;
+    margin-left: -14px;
+  }
+  .trump-btn,
+  .action-btn,
+  .stepper-btn,
+  .chat-send {
+    min-height: 44px;
+  }
+  .chat-panel {
+    flex-basis: 100%;
+    border-left: none;
+  }
+  /* Bid panel becomes a bottom sheet. */
+  .scrim {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .bid-panel {
+    width: 100%;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    border-bottom: none;
+  }
+  .last-trick {
+    right: var(--sp-2);
+    bottom: 90px;
+  }
+}
+
+/* =========================================================================
+   Reduced motion — collapse every animation/transition to instant
+   ========================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .felt {
+    /* keep the static tilt, just don't animate into it */
+    transition: none;
+  }
+}

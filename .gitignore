@@ -5,6 +5,9 @@ coinche/__pycache__/
 *.py[cod]
 *$py.class
 
+aidlc
+.claude
+
 # Distribution / packaging
 build/
 dist/

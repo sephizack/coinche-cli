@@ -37,7 +37,7 @@ python -m coinche.server --port 8765 --target-score 1000
 
 ```bash
 python -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
-                         [--team TEAM]
+                         [--team TEAM] [--web-port PORT]
 ```
 
 - `--host` — server address (defaults to an interactive prompt, `127.0.0.1`)
@@ -48,6 +48,31 @@ python -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
   table picker (useful for scripting)
 - `--team` — team label (`Equipe 1` or `Equipe 2`); skips the interactive
   team picker
+- `--web-port` — port for the optional **web overlay** (default `0` = pick a
+  free port automatically)
+
+## Web overlay
+
+Each client also runs a small in-process web server that mirrors your seat's
+view of the game to a browser. On start it prints the reachable URL(s), e.g.:
+
+```
+Interface web disponible : http://127.0.0.1:52341
+Interface web disponible : http://192.168.1.20:52341
+```
+
+Open either URL in a browser to follow the game; pin the port with
+`--web-port 8080` if you want a stable address. The current page is a
+placeholder (the full UI ships in a later unit), but the state feed is live.
+
+Caveats:
+
+- The overlay binds `0.0.0.0` and is **unauthenticated** — anyone who can
+  reach that port on your LAN can view (and, once the UI lands, drive) your
+  seat. Only expose it on trusted networks.
+- The page only ever shows **your own seat**: your hand, the table, the score.
+  It never receives another player's private cards — the bridge pushes only
+  the same information your terminal already sees.
 
 When `--table` and `--team` are omitted, the client opens a live-updating
 two-step lobby screen (`rich`-based, alternate buffer, arrow-key + Enter

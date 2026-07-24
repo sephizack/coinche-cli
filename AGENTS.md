@@ -23,6 +23,8 @@ The core rule is a **strict separation between game logic and I/O**:
 | Wire protocol | `protocol.py` | Newline-delimited JSON encode/decode; centralizes enum↔string conversion. |
 | Transport / sessions | `server.py`, `table.py` | asyncio connection handling, seat assignment, disconnect/reconnect. Server-authoritative validation. |
 | Client / rendering | `client.py`, `ui.py` | Connects, renders live table view with `rich`. |
+| Session state (I/O-free) | `session_state.py` | The one `ClientState` + `apply_message` reducer + `snapshot_to_dict` projection shared by the terminal and web views. No `await`/sockets/`rich`. |
+| Web overlay (client-local) | `web/` (`server.py`, `messages.py`, `static/`) | In-process HTTP+WebSocket bridge that mirrors `ClientState` to browsers and relays browser actions through the client's `ClientLink`. |
 
 Rules to preserve:
 
@@ -77,6 +79,41 @@ CI (`.github/workflows/ci.yml`) runs the same three checks on push/PR for Python
   Messages are client-side ephemeral only — no server storage.  The client
   renders them in a split-pane chat panel (`ui.build_chat_panel`);
   `Tab` toggles focus between the game pane and the chat pane.
+
+## Web overlay (`coinche/web/`)
+
+Each client runs an optional in-process HTTP + WebSocket server (a **proxy**,
+not a second game connection) that mirrors the local session to browsers.
+Launch it with `python -m coinche.client ... [--web-port PORT]` (default `0` =
+auto); the reachable URL(s) are printed on start (`Interface web disponible :
+http://...`). It runs as a 3rd coroutine in `run_session`'s gather.
+
+Boundaries to preserve (these are hard rules for this package):
+
+- **Proxy only.** The bridge MUST NOT open a socket to the game server and MUST
+  NOT encode a game-wire message. Every server-bound browser action goes through
+  U1's `ClientLink.send_*` seams (the single writer); all wire encoding stays in
+  `protocol.py`.
+- **No authority.** The bridge never evaluates legality (legal cards, bids,
+  scoring). It relays intent; the server decides and any `ERROR` flows back
+  through the normal `apply_message` → `broadcast_state` state path.
+- **Own-seat-only.** The bridge only ever pushes `snapshot_to_dict(state)`,
+  which contains just the local seat's hand — never another seat's cards.
+- **Error boundary.** No browser event (disconnect, malformed/oversized frame,
+  slow socket) may propagate out to cancel `receiver_loop`/`input_loop`.
+  `serve()` swallows non-`CancelledError` faults, `_handle_ws` isolates
+  per-browser faults, and `broadcast_state` bounds each send with `wait_for`.
+- **Unauthenticated `0.0.0.0` listener.** Intended for trusted LANs only —
+  document this wherever you surface the overlay.
+- **Transport is hand-rolled stdlib.** `web/server.py` implements the RFC 6455
+  handshake + text frames directly (no `websockets` dependency). Keep it minimal
+  (single unfragmented text/close/ping frames); binary/fragmented frames are
+  rejected by design.
+- **`messages.py` is pure** (no I/O): `parse_browser_message` enforces a 64 KiB
+  size cap + shape validation, and the frame encoders are plain JSON.
+- HTML-safe rendering of untrusted strings (names, chat) is the browser UI's job
+  (`textContent`); the bridge passes them through as JSON data and MUST NOT emit
+  HTML fragments.
 
 ## Testing conventions
 
