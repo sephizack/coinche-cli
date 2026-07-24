@@ -1021,6 +1021,49 @@ def test_subscribe_lobby_pushes_on_seat_removal():
     asyncio.run(scenario())
 
 
+def test_subscribe_lobby_pushes_on_midgame_disconnect():
+    """A subscriber receives a pushed TABLE_LISTING when a player disconnects
+    mid-game, and the listing reports that seat as connected=False. This is what
+    lets a returning player's lobby picker offer the reconnect path instead of
+    showing the table as locked."""
+
+    async def scenario():
+        srv, port = await _start_server()
+        conns = None
+        try:
+            # Fill a table so the game starts.
+            conns = await _join_all(port, "live1")
+
+            # Subscribe after the game has started.
+            rs, ws = await _connect(port)
+            await _send(ws, protocol.SUBSCRIBE_LOBBY, {})
+            initial = await _read_until(rs, protocol.TABLE_LISTING)
+            live1 = next(t for t in initial["tables"] if t["table_key"] == "live1")
+            assert live1["in_progress"] is True
+            assert all(p["connected"] for p in live1["players"])
+
+            # Alice (seat N) disconnects mid-game.
+            conns["N"][1].close()
+            await conns["N"][1].wait_closed()
+
+            # Subscriber must receive a refreshed listing flagging N as disconnected.
+            push = await _read_until(rs, protocol.TABLE_LISTING)
+            live1_after = next(t for t in push["tables"] if t["table_key"] == "live1")
+            alice = next(p for p in live1_after["players"] if p["name"] == "Alice")
+            assert alice["connected"] is False
+            assert live1_after["in_progress"] is True  # seat kept, game intact
+        finally:
+            ws.close()
+            if conns is not None:
+                for seat_key, (_r, w) in conns.items():
+                    if seat_key != "N":
+                        w.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
 def test_subscribe_lobby_pushes_on_game_start():
     """A subscriber receives a pushed TABLE_LISTING when a 4th seat fills (game starts)."""
 
