@@ -459,6 +459,34 @@ def test_render_lobby_in_progress_locked():
     assert "en cours" in output
 
 
+def test_render_lobby_reconnectable_not_locked():
+    """An in-progress table with a disconnected seat matching the player's name is
+    shown as selectable (↻ reconnexion), not locked, so the player can rejoin."""
+    tables = [
+        {"table_key": "live1", "in_progress": True, "seats_filled": 4, "players": [
+            {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "connected": False},
+            {"seat": "E", "name": "Bob", "team_name": "Equipe 2", "connected": True},
+            {"seat": "S", "name": "Carol", "team_name": "Equipe 1", "connected": True},
+            {"seat": "W", "name": "Dave", "team_name": "Equipe 2", "connected": True},
+        ]},
+    ]
+    # Matching player name (case-insensitive): reconnectable.
+    panel = render_lobby(tables, cursor_index=1, player_name="alice")
+    console = Console(record=True, width=100)
+    console.print(panel)
+    output = console.export_text()
+    assert "reconnexion" in output
+    assert "🔒" not in output
+
+    # A different player name: the table stays locked.
+    panel2 = render_lobby(tables, cursor_index=1, player_name="Zoe")
+    console2 = Console(record=True, width=100)
+    console2.print(panel2)
+    output2 = console2.export_text()
+    assert "reconnexion" not in output2
+    assert "🔒" in output2
+
+
 def test_render_team_picker_shows_members():
     """Team picker shows member names under each Equipe option."""
     table = {"table_key": "t1", "in_progress": False, "seats_filled": 1, "players": [

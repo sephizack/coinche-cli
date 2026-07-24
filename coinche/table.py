@@ -217,7 +217,12 @@ def tables_listing() -> list[dict]:
                 "in_progress": table.game is not None,
                 "seats_filled": seats_filled,
                 "players": [
-                    {"seat": _seat_to_str(seat), "name": s.name, "team_name": s.team_name}
+                    {
+                        "seat": _seat_to_str(seat),
+                        "name": s.name,
+                        "team_name": s.team_name,
+                        "connected": s.connected,
+                    }
                     for seat, s in table.seats.items()
                     if s is not None
                 ],

@@ -634,9 +634,24 @@ def _auto_generate_table_key(existing_tables: list[dict]) -> str:
     return f"table{len(existing_keys) + 1}"
 
 
+def _reconnectable_seat(table_entry: dict, player_name: str) -> dict | None:
+    """Return the disconnected player entry matching *player_name* on this table,
+    or None. A table that is in progress but holds a disconnected seat whose name
+    matches (case-insensitive) is one this player can rejoin via the server's
+    RESYNC path -- so the picker must let them select it despite being "en cours"."""
+    name = player_name.strip().lower()
+    if not name:
+        return None
+    for p in table_entry.get("players", []):
+        if not p.get("connected", True) and p.get("name", "").lower() == name:
+            return p
+    return None
+
+
 async def _lobby_picker(
     host: str,
     port: int,
+    player_name: str = "",
 ) -> tuple[str, str | None, asyncio.StreamReader, asyncio.StreamWriter] | None:
     """Live-updating interactive lobby picker using a two-step flow.
 
@@ -693,7 +708,7 @@ async def _lobby_picker(
     lobby_error = ""
 
     live = Live(
-        ui.render_lobby(latest_tables, table_cursor, error=lobby_error),
+        ui.render_lobby(latest_tables, table_cursor, error=lobby_error, player_name=player_name),
         auto_refresh=False,
         screen=True,
     )
@@ -701,7 +716,7 @@ async def _lobby_picker(
 
     def redraw() -> None:
         if step == "table":
-            live.update(ui.render_lobby(latest_tables, table_cursor, error=lobby_error))
+            live.update(ui.render_lobby(latest_tables, table_cursor, error=lobby_error, player_name=player_name))
         elif step == "team" and selected_table is not None:
             live.update(ui.render_team_picker(selected_table, team_cursor, error=lobby_error))
         live.refresh()
@@ -811,6 +826,13 @@ async def _lobby_picker(
                         lobby_error = "Table introuvable."
                     else:
                         selected = latest_tables[table_cursor - 1]
+                        reconnect = _reconnectable_seat(selected, player_name)
+                        if reconnect is not None:
+                            # Name matches a disconnected seat on this table: rejoin
+                            # directly. The server's RESYNC path restores our seat, so
+                            # we skip team selection and reuse the disconnected seat's
+                            # team label.
+                            return selected["table_key"], reconnect.get("team_name"), reader, writer
                         if selected["in_progress"] or selected["seats_filled"] >= 4:
                             lobby_error = "Table en cours ou complète."
                         else:
@@ -888,7 +910,7 @@ async def main(argv: list[str] | None = None) -> None:
         team_name = args.team.strip() if args.team else None
         connection: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None
     else:
-        result = await _lobby_picker(host, port)
+        result = await _lobby_picker(host, port, player_name)
         if result is None:
             return
         table_key, team_name, conn_reader, conn_writer = result

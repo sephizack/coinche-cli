@@ -155,6 +155,28 @@ def test_reconnect_reattaches_writer_and_returns_snapshot():
     assert "cumulative_scores" in snapshot
 
 
+def test_tables_listing_exposes_connected_flag():
+    """The lobby listing must report each seated player's connected state so the
+    picker can tell a reconnectable table from a genuinely unavailable one."""
+    import coinche.table as table_mod
+    from coinche.table import get_or_create_table, tables_listing
+
+    table_mod.TABLES.clear()
+    try:
+        table = get_or_create_table("recon")
+        for name in ("Alice", "Bob", "Carol", "Dave"):
+            table.add_player(name, FakeWriter())
+        table.mark_disconnected(Seat.N)  # Alice
+
+        listing = tables_listing()
+        entry = next(t for t in listing if t["table_key"] == "recon")
+        by_name = {p["name"]: p for p in entry["players"]}
+        assert by_name["Alice"]["connected"] is False
+        assert by_name["Bob"]["connected"] is True
+    finally:
+        table_mod.TABLES.clear()
+
+
 def test_broadcast_and_send_to_write_encoded_json():
     async def run() -> None:
         table = Table("abcd")

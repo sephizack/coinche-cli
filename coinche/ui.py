@@ -712,16 +712,33 @@ def build_split_view(
     return root
 
 
+def _reconnectable_in_lobby(table_entry: dict, player_name: str) -> bool:
+    """True if *player_name* (case-insensitive) matches a disconnected seat on this
+    table — i.e. a table the player can rejoin via the server's RESYNC path even
+    though it is "en cours". Mirrors the picker's own reconnect detection."""
+    name = player_name.strip().lower()
+    if not name:
+        return False
+    return any(
+        not p.get("connected", True) and p.get("name", "").lower() == name for p in table_entry.get("players", [])
+    )
+
+
 def render_lobby(
     tables: list[dict],
     cursor_index: int,
     status: str = "",
     error: str = "",
+    player_name: str = "",
 ) -> RenderableType:
     """Interactive lobby table picker (step 1: table selection).
 
     Row 0 is always "✦ Nouvelle table"; rows 1..N are existing
     tables from *tables*.  The row at *cursor_index* is highlighted.
+
+    When *player_name* matches a disconnected seat on an in-progress table, that
+    row is shown as selectable (a "↻ reconnexion" hint) rather than locked, so the
+    returning player can pick it and trigger the server's RESYNC path.
 
     All player-supplied strings (names, table keys) are rendered via
     ``Text()`` — never interpolated into markup — to prevent injection.
@@ -738,7 +755,8 @@ def render_lobby(
     # --- Rows 1..N: existing tables ---------------------------------------
     for i, t in enumerate(tables, start=1):
         is_cursor = cursor_index == i
-        locked = t["in_progress"] or t["seats_filled"] >= 4
+        reconnectable = _reconnectable_in_lobby(t, player_name)
+        locked = (t["in_progress"] or t["seats_filled"] >= 4) and not reconnectable
         names = ", ".join(p["name"] for p in t["players"]) if t["players"] else "(vide)"
         status_tag = ""
         if t["in_progress"]:
@@ -754,7 +772,9 @@ def render_lobby(
         line.append(t["table_key"].ljust(14), style=style)
         line.append(seats_str.ljust(18), style=style + " cyan")
         line.append(names, style=style)
-        if locked:
+        if reconnectable:
+            line.append(" ↻ reconnexion", style="bold green")
+        elif locked:
             line.append(" 🔒", style="dim")
         rows.append(line)
 
