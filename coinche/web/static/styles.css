@@ -207,7 +207,10 @@ button {
   display: flex;
   flex-direction: column;
   position: relative;
-  overflow: hidden;
+  /* Was `hidden`, which clipped seat cards sitting at the felt edges (south
+     seat near top:90%, west/east near the sides) and the raised hand cards.
+     Allow content to spill past the felt without being cut off. */
+  overflow: visible;
 }
 
 /* The perspective viewport — the felt tilts back in 3/4 on desktop. */
@@ -289,7 +292,7 @@ button {
 }
 .seat--south {
   left: 50%;
-  top: 90%;
+  top: 86%;
 }
 .seat--north {
   left: 50%;

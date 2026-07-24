@@ -623,12 +623,14 @@ const App = {
     const handCards = computed(() => {
       const s = snapshot.value;
       if (!s) return [];
-      const legalSet = new Set(s.legal_cards || []);
       const canPlay = !!s.pending_play_request;
+      // Like the CLI: every card is presented as choosable during our turn
+      // (no greying of "illegal" cards). Legality is checked on click and a
+      // rejection message is shown instead — the server stays authoritative.
       return (s.hand || []).map((card) => ({
         card,
-        legal: canPlay && legalSet.has(card),
-        illegal: canPlay && !legalSet.has(card),
+        legal: canPlay, // clickable/interactive on our turn
+        illegal: false, // never dim cards — all look playable
       }));
     });
 
@@ -712,11 +714,18 @@ const App = {
     // -------- actions --------
     function playCard(card) {
       const s = snapshot.value;
-      const legal = new Set(s ? s.legal_cards : []);
-      if (!s || !s.pending_play_request || !legal.has(card)) {
-        // Illegal / not-your-turn: local shake feedback, no send (UX only).
+      if (!s || !s.pending_play_request) return; // not our turn: ignore
+      const legal = new Set(s.legal_cards || []);
+      if (!legal.has(card)) {
+        // Illegal card: like the CLI, let the player try, then tell them it's
+        // not allowed (server stays authoritative — nothing is sent).
         shakeCard.value = card;
         setTimeout(() => (shakeCard.value = null), 400);
+        showToast(
+          `Impossible de jouer ${card} maintenant (carte non autorisée).`,
+          "error",
+          3500,
+        );
         return;
       }
       sendAction("play", { card });
