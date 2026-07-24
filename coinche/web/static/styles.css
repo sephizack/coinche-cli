@@ -265,11 +265,18 @@ button {
   pointer-events: none;
 }
 
-/* Counter the table tilt for content so text stays readable. */
+/* Counter the table tilt for content so text stays readable.
+   The counter-rotation lands the content on a screen-parallel plane, but that
+   plane still intersects the tilted felt along the horizontal pivot at the
+   vertical centre — so seats/cards sitting on that line (west/east at top:50%,
+   the trick at top:46%) sank into the felt and were clipped at their midline.
+   `translateZ` lifts the whole content plane forward, clear of the felt
+   surface, so nothing intersects it. Applied after the rotation so the lift is
+   along the viewer's Z, not the tilted plane's normal. */
 .felt__upright {
   position: absolute;
   inset: 0;
-  transform: rotateX(-18deg);
+  transform: rotateX(-18deg) translateZ(80px);
   transform-style: preserve-3d;
   pointer-events: none;
 }
