@@ -330,7 +330,7 @@ async def _handle_play_result(table: Table, result: dict) -> None:
             "next_dealer_seat": _seat_to_str(next_dealer_seat) if next_dealer_seat is not None else None,
         },
     )
-    await _announce_bot_starting_hands(table, result["completed_round_hands"])
+    await _announce_bot_starting_hands(table, result["completed_round_hands"], result.get("contract_trump"))
 
     if result["game_over"]:
         logger.info(
@@ -354,12 +354,34 @@ async def _handle_play_result(table: Table, result: dict) -> None:
         await _send_bid_request(table, game.next_to_act)
 
 
-async def _announce_bot_starting_hands(table: Table, hands: dict[Seat, list[Card]]) -> None:
+def _sort_hand_for_display(hand: list[Card], trump: str | None) -> list[Card]:
+    """Sort a hand for readable chat logs: grouped by suit, strongest first.
+
+    The trump suit (when known) leads, then the other suits in their canonical
+    order; within each suit cards run strongest -> weakest so the log reads the
+    way a player would fan their hand.
+    """
+
+    def rank_strength(card: Card) -> int:
+        order = rules.TRUMP_ORDER if trump is not None and card.suit == trump else rules.NONTRUMP_ORDER
+        return order.index(card.rank)
+
+    def suit_priority(suit: str) -> int:
+        # Trump first, then the remaining suits in their canonical order.
+        return (-1, suit) if suit == trump else (rules.SUITS.index(suit), suit)
+
+    return sorted(hand, key=lambda c: (suit_priority(c.suit), -rank_strength(c)))
+
+
+async def _announce_bot_starting_hands(
+    table: Table, hands: dict[Seat, list[Card]], trump: str | None = None
+) -> None:
     """Publish each bot's completed-round hand after scoring, never during play."""
     for seat, session in table.seats.items():
         if session is None or not session.is_bot:
             continue
-        cards = " ".join(_card_to_wire(card) for card in hands[seat])
+        sorted_hand = _sort_hand_for_display(hands[seat], trump)
+        cards = " ".join(_card_to_wire(card) for card in sorted_hand)
         await table.broadcast(protocol.CHAT, {"seat": _seat_to_str(seat), "text": f"Ma main de départ était : {cards}"})
 
 

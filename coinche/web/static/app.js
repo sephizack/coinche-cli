@@ -730,6 +730,16 @@ const App = {
       const pts = s.contract_points === "capot" ? "Capot" : s.contract_points;
       let label = `Annonce : ${pts} ${s.trump}`;
       if (s.coinche_level > 1) label += ` x${s.coinche_level}`;
+      // Attribution : qui a pris et pour quelle équipe.
+      const bidderSeat = s.contract_bidder;
+      if (bidderSeat) {
+        const bidderName = (s.players || {})[bidderSeat] || bidderSeat;
+        const teamId = (s.team_of || {})[bidderSeat];
+        const teamName = teamId ? teamLabel(teamId, teamId) : null;
+        label += teamName
+          ? ` — ${bidderName} (${teamName})`
+          : ` — ${bidderName}`;
+      }
       return label;
     });
 
