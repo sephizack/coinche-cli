@@ -2,8 +2,16 @@
 
 import copy
 import random
+from collections import Counter
 
-from coinche.bot import _choose_tactical_card, choose_bid, choose_card
+from coinche.bot import (
+    _choose_tactical_card,
+    _known_void_suits,
+    _sample_hidden_hands,
+    _trump_honor_bias,
+    choose_bid,
+    choose_card,
+)
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, Game
 
@@ -141,30 +149,123 @@ def test_card_choice_does_not_depend_on_real_hidden_hands() -> None:
     assert choose_card(game, Seat.W) == choose_card(altered, Seat.W)
 
 
-def test_monte_carlo_team_outscores_greedy_play_on_a_fixed_deal() -> None:
-    random_state = random.getstate()
-    try:
-        random.seed(0)
-        game = Game(target_score=99999)
-    finally:
-        random.setstate(random_state)
-    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
-    game.submit_bid(Seat.S, "pass")
-    game.submit_bid(Seat.E, "pass")
-    game.submit_bid(Seat.N, "pass")
+def test_partner_of_taker_does_not_lead_trump_under_the_taker() -> None:
+    # N took the contract; S (the partner) is on lead holding the 9 of trump.
+    # Leading it would force N's Valet to overtrump its own partner, burning
+    # two masters in one trick. S must discard low instead and let N pull.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("9♠", "7♣", "8♦")
 
-    def play_round(source: Game, optimize_ew: bool) -> int:
-        simulation = copy.deepcopy(source)
-        while simulation.phase == "trick_play":
-            acting_seat = simulation.next_to_act
-            if optimize_ew and TEAM_OF[acting_seat] == "EW":
-                card = choose_card(simulation, acting_seat)
-            else:
-                card = _choose_tactical_card(simulation, acting_seat)
-            result = simulation.submit_card(acting_seat, card)
-            if result.get("round_complete"):
-                score = result["round_score"]
-                return score["EW"]["total"] - score["NS"]["total"]
-        raise AssertionError("round did not complete")
+    assert choose_card(game, Seat.S) == Card("7", "♣")
 
-    assert play_round(game, optimize_ew=True) > play_round(game, optimize_ew=False)
+
+def test_taker_leads_its_top_trump() -> None:
+    # When the bot IS the taker, pulling trump is correct.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("9♠", "7♣", "8♦")
+
+    assert choose_card(game, Seat.S) == Card("9", "♠")
+
+
+def test_discarding_on_a_side_lead_reveals_a_trump_void() -> None:
+    # ♥ is led, W neither follows ♥ nor trumps (♠) while the winner so far (N)
+    # is not W's partner: the rules would have forced a cut, so W holds no trump.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("A", "♥")), (Seat.W, Card("7", "♦"))]
+
+    voids = _known_void_suits(game.round_state)
+
+    assert "♥" in voids[Seat.W]
+    assert "♠" in voids[Seat.W]
+
+
+def test_discard_behind_a_played_trump_does_not_imply_a_trump_void() -> None:
+    # A trump is already down, so W may legally "pisser" a low side card rather
+    # than under-trump. The discard says nothing about W's trumps.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("A", "♥")), (Seat.E, Card("7", "♠")), (Seat.W, Card("7", "♦"))]
+
+    voids = _known_void_suits(game.round_state)
+
+    assert "♥" in voids[Seat.W]
+    assert "♠" not in voids[Seat.W]
+
+
+def test_determinization_favours_the_taker_for_trump_honours() -> None:
+    # The auction says W holds the trump suit; sampled hidden hands should place
+    # the trump Valet with W far more often than an even 1-in-3 split would.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.bid_state.history = [{"seat": Seat.W, "action": "bid", "trump": "♠", "points": 80}]
+    game.phase = "trick_play"
+    game.next_to_act = Seat.N
+    # N (the sampling seat) does not hold V♠, so it is an unseen card to place.
+    game.round_state.hands[Seat.N] = _cards("A♥", "10♥", "R♥", "D♥", "A♦", "10♦", "R♦", "D♦")
+
+    bias = _trump_honor_bias(game)
+    assert bias[Seat.W] > bias[Seat.S] == bias[Seat.N]
+
+    samples = _sample_hidden_hands(game, Seat.N, 200)
+    holders = Counter(
+        other for hands in samples for other, hand in hands.items() if Card("V", "♠") in hand
+    )
+    assert holders[Seat.W] > holders[Seat.S]
+    assert holders[Seat.W] > holders[Seat.E]
+
+
+def _play_round(source: Game, optimize_ew: bool) -> int:
+    simulation = copy.deepcopy(source)
+    while simulation.phase == "trick_play":
+        acting_seat = simulation.next_to_act
+        if optimize_ew and TEAM_OF[acting_seat] == "EW":
+            card = choose_card(simulation, acting_seat)
+        else:
+            card = _choose_tactical_card(simulation, acting_seat)
+        result = simulation.submit_card(acting_seat, card)
+        if result.get("round_complete"):
+            score = result["round_score"]
+            return score["EW"]["total"] - score["NS"]["total"]
+    raise AssertionError("round did not complete")
+
+
+def test_monte_carlo_team_outscores_greedy_play_across_deals() -> None:
+    # Aggregate over several deals rather than a single fixed one: the Monte
+    # Carlo advantage is a statistical property, and any one deal can swing the
+    # other way. Summing EW's differential over a fixed seed range keeps the
+    # test deterministic while asserting the property that actually matters.
+    monte_carlo_total = 0
+    greedy_total = 0
+    for seed in range(8):
+        random_state = random.getstate()
+        try:
+            random.seed(seed)
+            game = Game(target_score=99999)
+        finally:
+            random.setstate(random_state)
+        game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+        game.submit_bid(Seat.S, "pass")
+        game.submit_bid(Seat.E, "pass")
+        game.submit_bid(Seat.N, "pass")
+
+        monte_carlo_total += _play_round(game, optimize_ew=True)
+        greedy_total += _play_round(game, optimize_ew=False)
+
+    assert monte_carlo_total > greedy_total

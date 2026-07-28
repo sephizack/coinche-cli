@@ -32,6 +32,20 @@ _NONTRUMP_HAND_WEIGHTS = {
     "7": 0,
 }
 
+# How much more likely a seat that bid the winning trump is to hold each trump
+# honour, relative to a neutral seat. Used only to bias imperfect-information
+# determinizations from the *public* auction — never to read a real hand. The
+# Valet dominates because a trump opening is almost always built around it.
+_TRUMP_HONOR_BIAS = {
+    "V": 6.0,
+    "9": 3.0,
+    "A": 2.0,
+    "10": 1.4,
+}
+# A seat that merely raised (rather than opened) the trump gets a milder share
+# of the same signal.
+_SUPPORTER_BIAS_FACTOR = 0.5
+
 
 def _side_aces(hand: list[Card], trump: str) -> int:
     """Count the most reliable non-trump winners available to the bot."""
@@ -211,8 +225,13 @@ def _choose_tactical_card(game: Game, seat: Seat) -> Card:
         if masters:
             return max(masters, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
 
+        # Pulling trumps is the taker's job, not the partner's. Only lead a
+        # (non-master) trump when this seat is the seat that won the contract:
+        # leading trump as the mere supporter forces the taker to overtrump
+        # their own partner, burning two masters (e.g. the 9 dragging out the
+        # partner's Valet) where they could have each won a trick.
         contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
-        if contract is not None and contract["team"] == TEAM_OF[seat]:
+        if contract is not None and contract["seat"] == seat:
             trumps = [card for card in legal_cards if card.suit == trump]
             if trumps:
                 return max(trumps, key=lambda card: _card_strength(card, trump))
@@ -242,17 +261,67 @@ def _played_cards_by_seat(round_state: RoundState) -> dict[Seat, list[Card]]:
 
 
 def _known_void_suits(round_state: RoundState) -> dict[Seat, set[str]]:
-    """Infer only certain voids: a player who failed to follow a led suit cannot hold it later."""
+    """Infer only *certain* voids from public play.
+
+    Two deductions, both airtight (a player can never hold a suit we mark):
+
+    1. Failing to follow the led suit proves the player is void of it.
+    2. Discarding (playing neither the led non-trump suit nor a trump) while
+       the partner is *not* yet master and *no trump has been played in the
+       trick yet* proves the player is void of trump: the rules would have
+       forced a cut otherwise. When a trump is already down the player may
+       legally "pisser" a low card instead of under-trumping, so a discard in
+       that case says nothing about their trumps and is deliberately ignored.
+    """
+    trump = round_state.trump
     voids: dict[Seat, set[str]] = {seat: set() for seat in Seat}
     tricks = [trick["trick"] for trick in round_state.trick_history]
     if round_state.current_trick:
         tricks.append(round_state.current_trick)
     for trick in tricks:
         led_suit = trick[0][1].suit
-        for seat, card in trick[1:]:
+        for index, (seat, card) in enumerate(trick[1:], start=1):
             if card.suit != led_suit:
                 voids[seat].add(led_suit)
+                if (
+                    trump is not None
+                    and led_suit != trump
+                    and card.suit != trump
+                    and not any(played.suit == trump for _, played in trick[:index])
+                    and rules.trick_winner(trick[:index], trump, led_suit) != PARTNER_OF[seat]
+                ):
+                    voids[seat].add(trump)
     return voids
+
+
+def _trump_honor_bias(game: Game) -> dict[Seat, float]:
+    """Per-seat multiplier for holding a trump honour, read from the auction.
+
+    The seat that won the contract announced the trump suit, so it is far more
+    likely to hold its top honours; any partner who *raised* the same suit gets
+    a milder share of the same signal. Everyone else stays neutral (1.0). Built
+    only from the public bid history — never from a real hand.
+    """
+    bias: dict[Seat, float] = {seat: 1.0 for seat in Seat}
+    contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
+    if contract is None:
+        return bias
+    trump = contract["trump"]
+    taker = contract["seat"]
+    bias[taker] = 2.0
+    if game.bid_state is not None:
+        for entry in game.bid_state.history:
+            if entry.get("action") == "bid" and entry.get("trump") == trump and entry["seat"] != taker:
+                bias[entry["seat"]] = max(bias[entry["seat"]], 1.0 + _SUPPORTER_BIAS_FACTOR)
+    return bias
+
+
+def _card_seat_weight(card: Card, seat: Seat, trump: str | None, bias: dict[Seat, float]) -> float:
+    """Weight for dealing `card` to `seat`: >1 only for trump honours to biased seats."""
+    if trump is None or card.suit != trump or card.rank not in _TRUMP_HONOR_BIAS:
+        return 1.0
+    honour_pull = _TRUMP_HONOR_BIAS[card.rank]
+    return 1.0 + (honour_pull - 1.0) * (bias[seat] - 1.0)
 
 
 def _public_seed(game: Game, seat: Seat) -> str:
@@ -297,34 +366,83 @@ def _sample_hidden_hands(game: Game, seat: Seat, sample_count: int) -> list[dict
         return []
 
     voids = _known_void_suits(round_state)
+    trump = round_state.trump
+    bias = _trump_honor_bias(game)
     rng = random.Random(_public_seed(game, seat))
     samples: list[dict[Seat, list[Card]]] = []
     for _ in range(sample_count):
-        assignment: dict[Seat, list[Card]] | None = None
-        shuffled = list(unseen)
-        for _attempt in range(80):
-            rng.shuffle(shuffled)
-            offset = 0
-            candidate: dict[Seat, list[Card]] = {}
-            valid = True
-            for other in opponents:
-                hand = list(shuffled[offset : offset + counts[other]])
-                offset += counts[other]
-                if any(card.suit in voids[other] for card in hand):
-                    valid = False
-                    break
-                candidate[other] = hand
-            if valid:
-                assignment = candidate
-                break
+        assignment = _weighted_deal(unseen, opponents, counts, voids, trump, bias, rng)
         if assignment is None:
-            offset = 0
-            assignment = {}
-            for other in opponents:
-                assignment[other] = list(shuffled[offset : offset + counts[other]])
-                offset += counts[other]
+            assignment = _fallback_deal(unseen, opponents, counts, rng)
         samples.append(assignment)
     return samples
+
+
+def _weighted_deal(
+    unseen: list[Card],
+    opponents: list[Seat],
+    counts: dict[Seat, int],
+    voids: dict[Seat, set[str]],
+    trump: str | None,
+    bias: dict[Seat, float],
+    rng: random.Random,
+) -> dict[Seat, list[Card]] | None:
+    """Deal cards one at a time, each to a random eligible seat weighted by trump-honour bias.
+
+    Constrained-scarce cards (a suit only a few seats can legally hold) are
+    placed first so a greedy honour bias cannot paint a void seat into a corner
+    and force a failed deal. Returns None if no legal placement exists for some
+    card, letting the caller fall back to an unbiased split.
+    """
+    remaining = {other: counts[other] for other in opponents}
+
+    def eligible(card: Card) -> list[Seat]:
+        return [other for other in opponents if remaining[other] > 0 and card.suit not in voids[other]]
+
+    order = list(unseen)
+    rng.shuffle(order)
+    # Fewest eligible seats first: hardest-to-place cards claim a seat before
+    # the honour bias skews the easy ones.
+    order.sort(key=lambda card: len(eligible(card)))
+
+    hands: dict[Seat, list[Card]] = {other: [] for other in opponents}
+    for card in order:
+        takers = [other for other in eligible(card) if remaining[other] > 0]
+        if not takers:
+            return None
+        weights = [_card_seat_weight(card, other, trump, bias) for other in takers]
+        chosen = _weighted_choice(takers, weights, rng)
+        hands[chosen].append(card)
+        remaining[chosen] -= 1
+    return hands
+
+
+def _weighted_choice(seats: list[Seat], weights: list[float], rng: random.Random) -> Seat:
+    total = sum(weights)
+    threshold = rng.random() * total
+    cumulative = 0.0
+    for seat, weight in zip(seats, weights, strict=True):
+        cumulative += weight
+        if threshold < cumulative:
+            return seat
+    return seats[-1]
+
+
+def _fallback_deal(
+    unseen: list[Card],
+    opponents: list[Seat],
+    counts: dict[Seat, int],
+    rng: random.Random,
+) -> dict[Seat, list[Card]]:
+    """Unbiased split ignoring voids; used only when a constrained deal can't be built."""
+    shuffled = list(unseen)
+    rng.shuffle(shuffled)
+    assignment: dict[Seat, list[Card]] = {}
+    offset = 0
+    for other in opponents:
+        assignment[other] = list(shuffled[offset : offset + counts[other]])
+        offset += counts[other]
+    return assignment
 
 
 def _apply_determinization(game: Game, seat: Seat, hidden_hands: dict[Seat, list[Card]]) -> None:
