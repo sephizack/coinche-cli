@@ -129,13 +129,13 @@ def test_legal_cards_must_undertrump_when_trump_led_and_no_higher_trump():
     assert result == [Card("8", "♦")]  # must still play the (losing) trump
 
 
-def test_legal_cards_under_trump_exception_when_partner_holds_highest_trump():
-    # Partner (N) holds the current highest trump; player (S) need not
-    # overtrump and may play any trump card they hold.
-    hand = [Card("8", "♦"), Card("7", "♦")]
-    trick = [(Seat.N, Card("10", "♦")), (Seat.E, Card("8", "♠"))]
-    result = legal_cards_to_play(hand, trick, "♦", "♠", player_seat=Seat.S, partner_seat=Seat.N)
-    assert result == hand  # free choice among trumps, no overtrump required
+def test_legal_cards_must_overtrump_when_trump_led_even_if_partner_is_master():
+    # Trump (♦) was led by partner (N). Player (S) must still overtrump when
+    # possible, even though N currently holds the trick.
+    hand = [Card("8", "♦"), Card("A", "♦")]
+    trick = [(Seat.N, Card("10", "♦")), (Seat.E, Card("8", "♦"))]
+    result = legal_cards_to_play(hand, trick, "♦", "♦", player_seat=Seat.S, partner_seat=Seat.N)
+    assert result == [Card("A", "♦")]
 
 
 def test_legal_cards_can_pisser_when_partner_is_master_via_a_cut():

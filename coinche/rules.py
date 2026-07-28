@@ -145,10 +145,9 @@ def legal_cards_to_play(
 ) -> list[Card]:
     """Return the subset of `hand` legal to play next.
 
-    Enforces: follow-suit -> master-partner "pisser" exception (free discard
-    when void of the led suit and the partner is already master of the
-    trick) -> must-trump -> must-overtrump -> under-trump exception when the
-    partner holds the trick's current highest trump -> free-discard
+    Enforces: follow-suit -> must-overtrump when trump is led (including when
+    the partner is master) -> master-partner "pisser" exception when void of
+    a non-trump led suit -> must-trump -> must-overtrump -> free-discard
     exception when cutting and no overtrump is possible -> free discard
     fallback.
 
@@ -168,7 +167,7 @@ def legal_cards_to_play(
 
     if led_suit == trump_suit:
         if same_suit_cards:
-            return _apply_overtrump_rule(same_suit_cards, current_trick, trump_suit, partner_seat)
+            return _apply_overtrump_rule(same_suit_cards, current_trick, trump_suit)
         return list(hand)
 
     if same_suit_cards:
@@ -185,24 +184,20 @@ def legal_cards_to_play(
     if not trump_cards:
         return list(hand)
 
-    return _apply_overtrump_rule(trump_cards, current_trick, trump_suit, partner_seat, free_discard_fallback=list(hand))
+    return _apply_overtrump_rule(trump_cards, current_trick, trump_suit, free_discard_fallback=list(hand))
 
 
 def _apply_overtrump_rule(
     candidate_cards: list[Card],
     current_trick: list[tuple[Seat, Card]],
     trump_suit: str,
-    partner_seat: Seat | None,
     free_discard_fallback: list[Card] | None = None,
 ) -> list[Card]:
     trumps_in_trick = [(s, c) for s, c in current_trick if c.suit == trump_suit]
     if not trumps_in_trick:
         return candidate_cards
 
-    highest_seat, highest_card = max(trumps_in_trick, key=lambda sc: TRUMP_ORDER.index(sc[1].rank))
-
-    if partner_seat is not None and highest_seat == partner_seat:
-        return candidate_cards  # under-trump exception: no need to overtrump
+    _, highest_card = max(trumps_in_trick, key=lambda sc: TRUMP_ORDER.index(sc[1].rank))
 
     higher_trumps = [c for c in candidate_cards if TRUMP_ORDER.index(c.rank) > TRUMP_ORDER.index(highest_card.rank)]
     if higher_trumps:
