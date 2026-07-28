@@ -10,6 +10,7 @@ import asyncio
 import logging
 import re
 import socket
+import time
 import urllib.request
 
 from coinche import __version__, protocol, rules
@@ -371,10 +372,18 @@ async def _run_bot_turns(table: Table) -> None:
         if session is None or not session.is_bot:
             return
 
-        await asyncio.sleep(table.bot_think_delay())
+        # The bot's real computation (Monte Carlo rollouts) already takes time
+        # and reads as "thinking". Time it, and only top up to the human-like
+        # target if the decision came back faster; a slow decision waits not at
+        # all. `bot_think_delay()` is the total target, not an added pause.
+        target = table.bot_think_delay()
+        started = time.monotonic()
 
         if game.phase == "bidding":
             action = choose_bid(game, seat)
+            elapsed = time.monotonic() - started
+            if elapsed < target:
+                await asyncio.sleep(target - elapsed)
             result = game.submit_bid(
                 seat,
                 action["action"],
@@ -383,7 +392,11 @@ async def _run_bot_turns(table: Table) -> None:
             )
             await _handle_bid_result(table, seat, result)
         elif game.phase == "trick_play":
-            result = game.submit_card(seat, choose_card(game, seat))
+            card = choose_card(game, seat)
+            elapsed = time.monotonic() - started
+            if elapsed < target:
+                await asyncio.sleep(target - elapsed)
+            result = game.submit_card(seat, card)
             await _handle_play_result(table, result)
         else:
             return

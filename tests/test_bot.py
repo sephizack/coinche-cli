@@ -119,6 +119,21 @@ def test_bot_discards_low_when_partner_is_winning() -> None:
     assert choose_card(game, Seat.S) == Card("7", "♣")
 
 
+def test_discard_shortens_the_shortest_side_suit() -> None:
+    # Opponent (N) is winning with a card S cannot beat, so S discards. Both 7♦
+    # and 7♣ are worth zero points, but ♦ is a singleton while ♣ is longer:
+    # throwing the singleton ♦ makes S void there and able to ruff ♦ next time.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = [(Seat.N, Card("A", "♥"))]
+    game.round_state.hands[Seat.S] = _cards("7♦", "7♣", "8♣", "9♣")
+
+    assert _choose_tactical_card(game, Seat.S) == Card("7", "♦")
+
+
 def test_bot_uses_the_cheapest_card_that_wins() -> None:
     game = Game()
     assert game.round_state is not None

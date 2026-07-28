@@ -9,7 +9,7 @@ from coinche import rules
 from coinche.cards import Card, Seat, build_deck
 from coinche.game import PARTNER_OF, TEAM_OF, Game, RoundState
 
-MONTE_CARLO_SAMPLES = 24
+MONTE_CARLO_SAMPLES = 100
 
 _TRUMP_HAND_WEIGHTS = {
     "V": 30,
@@ -199,6 +199,24 @@ def _discard_key(card: Card, trump: str) -> tuple[int, int, int]:
     return (rules.card_points(card, trump), card.suit == trump, _card_strength(card, trump))
 
 
+def _best_discard(cards: list[Card], hand: list[Card], trump: str) -> Card:
+    """Pick the least useful card to throw away.
+
+    Value comes first (never sacrifice a point card to shape the hand), then
+    keeping trump, then — as the tie-break that used to just take the lowest
+    rank — shortening the shortest non-trump side suit so the bot can create a
+    ruff sooner. A singleton side card goes before one of a longer suit.
+    """
+    lengths = {suit: sum(other.suit == suit for other in hand) for suit in rules.ALLOWED_TRUMPS}
+
+    def key(card: Card) -> tuple[int, int, int, int]:
+        points, is_trump, strength = _discard_key(card, trump)
+        side_length = 99 if card.suit == trump else lengths[card.suit]
+        return (points, is_trump, side_length, strength)
+
+    return min(cards, key=key)
+
+
 def _is_master(card: Card, hand: list[Card], game: Game, trump: str) -> bool:
     assert game.round_state is not None
     order = rules.TRUMP_ORDER if card.suit == trump else rules.NONTRUMP_ORDER
@@ -287,19 +305,20 @@ def _choose_tactical_card(game: Game, seat: Seat) -> Card:
             trumps = [card for card in legal_cards if card.suit == trump]
             if trumps:
                 return max(trumps, key=lambda card: _card_strength(card, trump))
-        return min(legal_cards, key=lambda card: _discard_key(card, trump))
+        return _best_discard(legal_cards, hand, trump)
 
+    hand = game.get_hand(seat)
     led_suit = trick[0][1].suit
     current_winner = rules.trick_winner(trick, trump, led_suit)
     if current_winner == PARTNER_OF[seat]:
         if len(trick) == 3:
             return max(legal_cards, key=lambda card: (rules.card_points(card, trump), -_card_strength(card, trump)))
-        return min(legal_cards, key=lambda card: _discard_key(card, trump))
+        return _best_discard(legal_cards, hand, trump)
 
     winners = [card for card in legal_cards if rules.trick_winner([*trick, (seat, card)], trump, led_suit) == seat]
     if winners:
         return min(winners, key=lambda card: (_card_strength(card, trump), rules.card_points(card, trump)))
-    return min(legal_cards, key=lambda card: _discard_key(card, trump))
+    return _best_discard(legal_cards, hand, trump)
 
 
 def _played_cards_by_seat(round_state: RoundState) -> dict[Seat, list[Card]]:
