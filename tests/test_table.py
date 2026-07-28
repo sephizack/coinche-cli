@@ -32,6 +32,19 @@ def test_add_player_fills_seats_in_order():
     assert table.game is not None  # auto-starts once the 4th seat fills
 
 
+def test_fill_with_bots_occupies_open_seats_and_starts_game():
+    table = Table("abcd")
+    table.add_player("Alice", FakeWriter())
+
+    added = table.fill_with_bots()
+
+    assert added == [Seat.E, Seat.S, Seat.W]
+    assert table.game is not None
+    assert table.seats[Seat.N].is_bot is False
+    assert all(table.seats[seat].is_bot for seat in added)
+    assert [table.seats[seat].name for seat in added] == ["Bot Est", "Bot Sud", "Bot Ouest"]
+
+
 def test_add_player_rejects_fifth_join():
     table = Table("abcd")
     for name in ("Alice", "Bob", "Carol", "Dave"):
@@ -173,6 +186,7 @@ def test_tables_listing_exposes_connected_flag():
         by_name = {p["name"]: p for p in entry["players"]}
         assert by_name["Alice"]["connected"] is False
         assert by_name["Bob"]["connected"] is True
+        assert by_name["Alice"]["is_bot"] is False
     finally:
         table_mod.TABLES.clear()
 

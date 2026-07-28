@@ -78,6 +78,7 @@ class ClientState:
     cumulative_scores: dict[str, int] = field(default_factory=lambda: {"NS": 0, "EW": 0})
     connection_status: dict[Seat, bool] = field(default_factory=dict)
     status_message: str = ""
+    can_fill_bots: bool = False
     # Description of the most recently *completed* action (e.g. "Nord a
     # annoncé 90 Cœur"), kept separate from `status_message` so that a fresh
     # bid/play request for another seat never overwrites/hides what just
@@ -343,6 +344,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({len(state.players)}/4)..."
+        state.can_fill_bots = len(state.players) < 4
         state.server_version = payload.get("server_version")
 
     elif msg_type == protocol.LOBBY_UPDATE:
@@ -350,8 +352,10 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({payload['seats_filled']}/4)..."
+        state.can_fill_bots = payload["seats_filled"] < 4
 
     elif msg_type == protocol.DEAL:
+        state.can_fill_bots = False
         state.hand = _sort_hand(payload["hand"], None)
         state.legal_cards = []
         state.pending_bid_request = None
@@ -528,6 +532,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.last_action = "Nouvelle partie !"
 
     elif msg_type == protocol.RESYNC:
+        state.can_fill_bots = False
         state.joined_once = True
         state.table_key = payload["table_key"]
         state.seat = Seat(payload["seat"])
@@ -624,6 +629,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "last_round_contract": state.last_round_contract,  # round-recap parity (FR3.2/3.3)
         "connection_status": {seat.value: status for seat, status in state.connection_status.items()},
         "status_message": state.status_message,
+        "can_fill_bots": state.can_fill_bots,
         "last_action": state.last_action,
         "pending_bid_request": state.pending_bid_request,  # so the web can show the bid panel
         "pending_play_request": bool(state.legal_cards),

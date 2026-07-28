@@ -97,6 +97,9 @@ class ClientLink:
     async def send_subscribe_lobby(self) -> bool:
         return await self._send(protocol.SUBSCRIBE_LOBBY, {})
 
+    async def send_fill_bots(self) -> bool:
+        return await self._send(protocol.FILL_BOTS, {})
+
 
 async def run_session(
     host: str,
@@ -240,6 +243,7 @@ async def run_session(
                 bid_menu=bid_menu,
                 team_names=state.team_names,
                 web_url=web.urls[0] if web.urls else None,
+                can_fill_bots=state.can_fill_bots,
             )
             game_focused = state.active_pane == "game"
             left_border = "bold cyan" if game_focused else "grey50"
@@ -353,6 +357,10 @@ async def run_session(
                 elif state.active_pane == "chat":
                     await _handle_chat_key(state, key, link)
                     redraw()
+                elif state.can_fill_bots and key.lower() == "f":
+                    state.can_fill_bots = False
+                    redraw()
+                    await link.send_fill_bots()
                 elif state.active_bid_value_prompt is not None:
                     # Stage-2 (typing the point value) takes priority: it's set
                     # while pending_bid_request is still present.

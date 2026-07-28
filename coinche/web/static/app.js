@@ -14,7 +14,7 @@
 //    snapshot; we replace the whole reactive object (idempotent, no deltas).
 //
 // The action verbs sent over the WS are exactly U2's WebActionProtocol names:
-//   play | bid | chat | join | continue | rematch | lobby   (card play is "play", NOT
+//   play | bid | chat | join | continue | rematch | lobby | fill_bots   (card play is "play", NOT
 //   "play_card" — play_card is the game-wire type, not the browser action).
 // =========================================================================
 
@@ -399,6 +399,7 @@ const App = {
     const chatOpen = ref(window.innerWidth >= 1024); // docked open on desktop
     const unread = ref(0);
     const bidSending = ref(false);
+    const fillingBots = ref(false);
     const shakeCard = ref(null);
     const dealing = ref(false);
     const badgeFlash = ref(false);
@@ -437,6 +438,7 @@ const App = {
         } else if (frame.type === "error") {
           showToast(frame.message || frame.code || "Erreur", "error");
           bidSending.value = false; // an error reverts any pending affordance
+          fillingBots.value = false;
         }
       });
       ws.addEventListener("close", () => {
@@ -517,6 +519,7 @@ const App = {
 
       // A new snapshot confirms any in-flight bid.
       bidSending.value = false;
+      fillingBots.value = false;
 
       snapshot.value = snap; // full replace
     }
@@ -666,6 +669,9 @@ const App = {
     const bidRequest = computed(() =>
       snapshot.value ? snapshot.value.pending_bid_request : null,
     );
+    const canFillBots = computed(() =>
+      !!(snapshot.value && snapshot.value.can_fill_bots),
+    );
 
     const turnText = computed(() => {
       const s = snapshot.value;
@@ -754,6 +760,10 @@ const App = {
     function continueRound() {
       sendAction("continue", {});
     }
+    function fillBots() {
+      fillingBots.value = true;
+      sendAction("fill_bots", {});
+    }
     function joinTable() {
       if (!lobby.name.trim() || !lobby.table.trim()) return;
       const payload = {
@@ -797,6 +807,7 @@ const App = {
       chatOpen,
       unread,
       bidSending,
+      fillingBots,
       shakeCard,
       dealing,
       badgeFlash,
@@ -819,6 +830,7 @@ const App = {
       contract,
       currentBid,
       bidRequest,
+      canFillBots,
       turnText,
       recapContract,
       roundScores,
@@ -832,6 +844,7 @@ const App = {
       sendChat,
       doRematch,
       continueRound,
+      fillBots,
       joinTable,
       toggleChat,
     };
@@ -1006,6 +1019,10 @@ const App = {
           <footer class="status-footer" aria-live="polite">
             <span v-if="statusMessage" class="status-footer__last">{{ statusMessage }}</span>
             <span v-if="turnText" class="status-footer__turn">{{ turnText }}</span>
+            <button v-if="canFillBots" class="fill-bots-btn" data-testid="fill-bots"
+                    :disabled="fillingBots" @click="fillBots">
+              {{ fillingBots ? 'Ajout des bots…' : 'Remplir avec des bots' }}
+            </button>
           </footer>
         </main>
 

@@ -177,6 +177,53 @@ def test_full_round_join_deal_bid_trick_score_flow():
     asyncio.run(scenario())
 
 
+def test_one_player_can_fill_the_table_with_bots():
+    async def scenario() -> None:
+        srv, port = await _start_server(target_score=1000)
+        writer = None
+        try:
+            reader, writer = await _connect(port)
+            await _send(writer, protocol.JOIN, {"table_key": "bots01", "player_name": "Alice"})
+            joined = await _read_until(reader, protocol.JOINED)
+            assert joined["seat"] == "N"
+
+            await _send(writer, protocol.FILL_BOTS, {})
+
+            lobby = await _read_until(reader, protocol.LOBBY_UPDATE)
+            assert lobby["seats_filled"] == 4
+            bots = [player for player in lobby["players"] if player["is_bot"]]
+            assert {player["name"] for player in bots} == {"Bot Est", "Bot Sud", "Bot Ouest"}
+
+            deal = await _read_until(reader, protocol.DEAL)
+            assert len(deal["hand"]) == 8
+            request = await _read_until(reader, protocol.BID_REQUEST)
+            assert set(request) >= {"legal_actions", "can_coinche", "can_surcoinche"}
+            await _send(writer, protocol.BID, {"action": "pass"})
+
+            bot_played = False
+            for _ in range(500):
+                msg_type, payload = await _recv(reader)
+                if msg_type == protocol.BID_REQUEST:
+                    await _send(writer, protocol.BID, {"action": "pass"})
+                elif msg_type == protocol.PLAY_REQUEST:
+                    assert payload["legal_cards"]
+                    await _send(writer, protocol.PLAY_CARD, {"card": payload["legal_cards"][0]})
+                elif msg_type == protocol.CARD_PLAYED and payload["seat"] != "N":
+                    bot_played = True
+                elif msg_type == protocol.ROUND_SCORE:
+                    break
+            else:
+                raise AssertionError("the human-plus-bots table did not complete a round")
+            assert bot_played
+        finally:
+            if writer is not None:
+                writer.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
 def test_disconnect_and_reconnect_mid_round():
     async def scenario() -> None:
         srv, port = await _start_server(target_score=1000)
@@ -1173,4 +1220,3 @@ def test_unsubscribed_connection_does_not_receive_pushes():
             await srv.wait_closed()
 
     asyncio.run(scenario())
-

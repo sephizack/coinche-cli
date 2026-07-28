@@ -34,6 +34,7 @@ class ClientSession:
     writer: asyncio.StreamWriter | None
     connected: bool = True
     team_name: str | None = None
+    is_bot: bool = False
 
 
 class Table:
@@ -146,6 +147,39 @@ class Table:
         assert self.game is None
         self.seats[seat] = None
 
+    def fill_with_bots(self) -> list[Seat]:
+        """Fill every open pre-game seat with a server-controlled bot."""
+        if self.game is not None:
+            raise GameInProgressError(self.table_key)
+
+        bot_names = {
+            Seat.N: "Bot Nord",
+            Seat.E: "Bot Est",
+            Seat.S: "Bot Sud",
+            Seat.W: "Bot Ouest",
+        }
+        used_names = {session.name.lower() for session in self.seats.values() if session is not None}
+        added: list[Seat] = []
+        for seat in SEAT_ORDER:
+            if self.seats[seat] is None:
+                name = bot_names[seat]
+                suffix = 2
+                while name.lower() in used_names:
+                    name = f"{bot_names[seat]} {suffix}"
+                    suffix += 1
+                used_names.add(name.lower())
+                self.seats[seat] = ClientSession(
+                    seat=seat,
+                    name=name,
+                    writer=None,
+                    connected=True,
+                    is_bot=True,
+                )
+                added.append(seat)
+        if added:
+            self.game = Game(target_score=self.target_score)
+        return added
+
     def restart_game(self) -> Game:
         """Start a brand-new game at this table once the previous one has ended
         (rematch). Resets cumulative scores/round number/dealer rotation back
@@ -222,6 +256,7 @@ def tables_listing() -> list[dict]:
                         "name": s.name,
                         "team_name": s.team_name,
                         "connected": s.connected,
+                        "is_bot": s.is_bot,
                     }
                     for seat, s in table.seats.items()
                     if s is not None

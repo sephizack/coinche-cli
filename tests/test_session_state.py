@@ -61,6 +61,7 @@ def test_joined_populates_identity_and_players():
     assert state.team_of == {Seat.N: "NS", Seat.E: "EW", Seat.S: "NS", Seat.W: "EW"}
     assert state.team_names == {"NS": "Nous"}
     assert state.status_message == "En attente de joueurs (4/4)..."
+    assert state.can_fill_bots is False
     assert state.server_version == "9.9.9"
 
 
@@ -75,6 +76,7 @@ def test_lobby_update_refreshes_players_and_status():
     assert result.action_requested is False
     assert state.players == {Seat.N: "Nord"}
     assert state.status_message == "En attente de joueurs (1/4)..."
+    assert state.can_fill_bots is True
 
 
 def test_deal_resets_round_state_and_sorts_hand():
@@ -616,6 +618,7 @@ def test_snapshot_is_json_serializable_and_decoded():
     assert snap["players"] == {"N": "Nord", "E": "Est", "S": "Moi", "W": "Ouest"}
     assert snap["dealer_seat"] == "W"
     assert set(snap["hand"]) == {"7♠", "A♥"}
+    assert snap["can_fill_bots"] is False
 
 
 def test_snapshot_includes_last_round_contract():

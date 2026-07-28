@@ -139,6 +139,26 @@ def test_build_table_view_places_contract_in_a_banner_before_the_player_grid():
     assert "Annonce : 90 ♥ (Nord)" in _plain(banner)
 
 
+def test_build_table_view_shows_fill_bots_control_while_waiting():
+    players = {Seat.N: "Nord"}
+    view = build_table_view(
+        Seat.N,
+        players,
+        {Seat.N: "NS"},
+        current_trick={},
+        whose_turn=None,
+        hand=[],
+        cumulative_scores={"NS": 0, "EW": 0},
+        local_team="NS",
+        last_action="",
+        can_fill_bots=True,
+    )
+
+    plain = _plain(view)
+    assert "[F]" in plain
+    assert "Remplir les places libres avec des bots" in plain
+
+
 # --- Numbered menus (no raw card-string typing) -------------------------------
 
 

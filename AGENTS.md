@@ -20,6 +20,7 @@ The core rule is a **strict separation between game logic and I/O**:
 | Layer | Files | Responsibility |
 |---|---|---|
 | Pure rules/state | `cards.py`, `rules.py`, `game.py` | I/O-free, no `await`/sockets. Methods return plain event/result dicts or raise a `GameError` subclass. |
+| Bot strategy | `bot.py` | I/O-free heuristic bidding/card selection. Reads `Game`; never mutates it directly or bypasses validation. |
 | Wire protocol | `protocol.py` | Newline-delimited JSON encode/decode; centralizes enum↔string conversion. |
 | Transport / sessions | `server.py`, `table.py` | asyncio connection handling, seat assignment, disconnect/reconnect. Server-authoritative validation. |
 | Client / rendering | `client.py`, `ui.py` | Connects, renders live table view with `rich`. |
@@ -79,6 +80,12 @@ CI (`.github/workflows/ci.yml`) runs the same three checks on push/PR for Python
   Messages are client-side ephemeral only — no server storage.  The client
   renders them in a split-pane chat panel (`ui.build_chat_panel`);
   `Tab` toggles focus between the game pane and the chat pane.
+- **`FILL_BOTS`** (client→server, no payload): while a joined table is still
+  waiting, fills every free seat with a server-controlled bot. The server then
+  starts the game and advances consecutive bot turns through `Game.submit_bid`
+  and `Game.submit_card`; bots never bypass authoritative validation. The
+  terminal exposes **F** and the web overlay exposes a matching button only
+  while `ClientState.can_fill_bots` is true.
 
 ## Web overlay (`coinche/web/`)
 

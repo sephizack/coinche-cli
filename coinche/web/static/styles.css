@@ -659,6 +659,21 @@ button {
   color: var(--gold-soft);
   font-weight: 700;
 }
+.fill-bots-btn {
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-card);
+  background: rgba(212, 175, 55, 0.16);
+  color: var(--gold-soft);
+  padding: var(--sp-2) var(--sp-3);
+  font-weight: 700;
+}
+.fill-bots-btn:hover:not(:disabled) {
+  background: rgba(212, 175, 55, 0.28);
+}
+.fill-bots-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
 
 /* =========================================================================
    Bid panel (dialog)

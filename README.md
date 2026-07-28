@@ -105,7 +105,14 @@ python -m coinche.client --host 127.0.0.1 --port 8765 --table demo1 --name Dave
 
 (or `./run_client.sh --table demo1 --name Alice`, etc.)
 
-Once all 4 seats are filled, the server deals a hand and the game begins.
+If fewer than 4 people are available, any seated player can press **F** in the
+terminal (or click **Remplir avec des bots** in the web interface) while the
+table is waiting. The server fills every free seat with a bot and starts the
+game. Bots evaluate their hand before bidding, play the cheapest card that wins
+a trick, avoid wasting points when their partner is already winning, and all
+their actions pass through the same server-side legality checks as human moves.
+
+Once all 4 seats are filled, by people or bots, the server deals a hand and the game begins.
 If a client's connection drops mid-game, relaunching it with the same
 `--table` and `--name` reconnects to the same seat and resumes play.
 

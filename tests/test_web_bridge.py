@@ -98,6 +98,7 @@ def test_parse_rejects_incomplete_action_frames(frame: dict) -> None:
         {"action": "continue"},
         {"action": "rematch"},  # no required fields
         {"action": "lobby"},  # no required fields
+        {"action": "fill_bots"},  # no required fields
     ],
 )
 def test_parse_accepts_complete_action_frames(frame: dict) -> None:
@@ -145,6 +146,10 @@ class FakeLink:
 
     async def send_subscribe_lobby(self) -> bool:
         self.calls.append(("lobby",))
+        return True
+
+    async def send_fill_bots(self) -> bool:
+        self.calls.append(("fill_bots",))
         return True
 
 
@@ -270,8 +275,9 @@ def test_round_trip_initial_frame_and_seam() -> None:
             await client.send(json.dumps({"action": "join", "table_key": "t1", "player_name": "Zoe"}))
             await client.send(json.dumps({"action": "rematch"}))
             await client.send(json.dumps({"action": "lobby"}))
+            await client.send(json.dumps({"action": "fill_bots"}))
             for _ in range(200):
-                if len(link.calls) >= 6:
+                if len(link.calls) >= 7:
                     break
                 await asyncio.sleep(0.01)
             assert ("bid", "bid", "♠", 90) in link.calls
@@ -279,6 +285,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
             assert ("join", "t1", "Zoe", None) in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
+            assert ("fill_bots",) in link.calls
 
             # (c) a state change triggers a broadcast frame.
             state.status_message = "En attente de joueurs (2/4)..."

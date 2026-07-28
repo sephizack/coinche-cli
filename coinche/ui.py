@@ -247,6 +247,7 @@ def build_footer(
     last_trick: Panel | None = None,
     team_names: dict[str, str] | None = None,
     web_url: str | None = None,
+    can_fill_bots: bool = False,
 ) -> Table:
     """`team_names` (team id -> untrusted free-text label) is only ever
     embedded via an f-string into a `Text`/`Text.assemble` tuple, never parsed
@@ -271,6 +272,14 @@ def build_footer(
     footer.add_row(Text(last_action, style="italic grey50"), scores)
     if waiting is not None and waiting.plain:
         footer.add_row(waiting, Text(""))
+    if can_fill_bots:
+        footer.add_row(
+            Text.assemble(
+                (" [F] ", "bold black on yellow"),
+                (" Remplir les places libres avec des bots ", "bold yellow"),
+            ),
+            Text(""),
+        )
     if web_url:
         # In-game reminder of the web UI address, rendered as an OSC-8 hyperlink
         # so terminals that support it make the URL clickable. `web_url` is a
@@ -307,6 +316,7 @@ def build_table_view(
     bid_menu: Group | Text | None = None,
     team_names: dict[str, str] | None = None,
     web_url: str | None = None,
+    can_fill_bots: bool = False,
 ) -> Group:
     """Compose the whole table view into one root renderable for rich.live.Live.
 
@@ -363,6 +373,7 @@ def build_table_view(
             last_trick_panel,
             team_names,
             web_url=web_url,
+            can_fill_bots=can_fill_bots,
         )
     )
     return Group(*blocks)

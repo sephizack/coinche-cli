@@ -13,6 +13,7 @@ import socket
 import urllib.request
 
 from coinche import __version__, protocol, rules
+from coinche.bot import choose_bid, choose_card
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
@@ -60,7 +61,12 @@ def _trick_to_wire(trick: list[tuple[Seat, Card]]) -> list[dict]:
 
 def _players_summary(table: Table) -> list[dict]:
     return [
-        {"seat": _seat_to_str(seat), "name": session.name, "team_name": session.team_name}
+        {
+            "seat": _seat_to_str(seat),
+            "name": session.name,
+            "team_name": session.team_name,
+            "is_bot": session.is_bot,
+        }
         for seat, session in table.seats.items()
         if session is not None
     ]
@@ -346,11 +352,64 @@ async def _handle_play_result(table: Table, result: dict) -> None:
         await _send_bid_request(table, game.next_to_act)
 
 
+async def _run_bot_turns(table: Table) -> None:
+    """Advance consecutive bot turns through the same validated Game methods as humans."""
+    while table.game is not None and not table.game.game_over:
+        game = table.game
+        seat = game.next_to_act
+        session = table.seats.get(seat)
+        if session is None or not session.is_bot:
+            return
+
+        if game.phase == "bidding":
+            action = choose_bid(game, seat)
+            result = game.submit_bid(
+                seat,
+                action["action"],
+                trump=action.get("trump"),
+                points=action.get("points"),
+            )
+            await _handle_bid_result(table, seat, result)
+        elif game.phase == "trick_play":
+            result = game.submit_card(seat, choose_card(game, seat))
+            await _handle_play_result(table, result)
+        else:
+            return
+
+
 async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> None:
     # Chat works in the lobby as well as mid-game; handle it before the
     # game-is-None guard that otherwise drops all game-phase messages.
     if msg_type == protocol.CHAT:
         await table.broadcast(protocol.CHAT, {"seat": _seat_to_str(seat), "text": payload["text"]})
+        return
+
+    if msg_type == protocol.FILL_BOTS:
+        if table.game is not None:
+            await table.send_to(
+                seat,
+                protocol.ERROR,
+                {"code": protocol.GAME_IN_PROGRESS, "message": "La partie a déjà commencé"},
+            )
+            return
+        added = table.fill_with_bots()
+        if not added:
+            await table.send_to(
+                seat,
+                protocol.ERROR,
+                {"code": protocol.TABLE_FULL, "message": "La table est déjà pleine"},
+            )
+            return
+        players = _players_summary(table)
+        await table.broadcast(
+            protocol.LOBBY_UPDATE,
+            {"players": players, "seats_filled": len(players), "waiting_for": 0},
+        )
+        await notify_lobby_subscribers()
+        await _broadcast_deal(table)
+        assert table.game is not None
+        await _send_bid_request(table, table.game.next_to_act)
+        await _run_bot_turns(table)
         return
 
     game = table.game
@@ -367,6 +426,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
             await table.send_to(seat, protocol.ERROR, {"code": protocol.ILLEGAL_BID, "message": str(exc)})
             return
         await _handle_bid_result(table, seat, result)
+        await _run_bot_turns(table)
 
     elif msg_type == protocol.PLAY_CARD:
         card_str = payload["card"]
@@ -385,6 +445,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
             await table.send_to(seat, protocol.ERROR, {"code": protocol.ILLEGAL_CARD, "message": str(exc)})
             return
         await _handle_play_result(table, result)
+        await _run_bot_turns(table)
 
     elif msg_type == protocol.REMATCH:
         # Only meaningful once the previous game has actually ended; a stray/
@@ -399,6 +460,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         await _broadcast_deal(table)
         assert table.game is not None
         await _send_bid_request(table, table.game.next_to_act)
+        await _run_bot_turns(table)
 
 
 async def _resolve_join(
