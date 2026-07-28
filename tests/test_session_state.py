@@ -367,10 +367,21 @@ def test_round_score_sets_recap_and_requests_action():
     assert state.whose_turn is None
 
 
-def test_game_over_sets_flags_and_requests_action():
+def test_game_over_retains_final_round_recap_and_requests_action():
     state = ClientState()
     _join(state)
-    state.round_over_screen = True
+    state.contract_bidder = Seat.N
+    state.trump = "♥"
+    state.contract_points = 90
+    apply_message(
+        state,
+        protocol.ROUND_SCORE,
+        {
+            "cumulative": {"NS": 1500, "EW": 800},
+            "team_NS": {"contract_result": "made"},
+            "team_EW": {"contract_result": "failed"},
+        },
+    )
     result = apply_message(
         state,
         protocol.GAME_OVER,
@@ -378,7 +389,12 @@ def test_game_over_sets_flags_and_requests_action():
     )
     assert result.action_requested is True
     assert state.game_over is True
-    assert state.round_over_screen is False
+    assert state.round_over_screen is True
+    assert state.last_round_score == {
+        "NS": {"contract_result": "made"},
+        "EW": {"contract_result": "failed"},
+    }
+    assert state.last_round_contract is not None
     assert state.final_scores == {"NS": 1500, "EW": 800}
     assert state.winning_team == "NS"
     assert state.last_action == "Partie terminée — vainqueur : NS"

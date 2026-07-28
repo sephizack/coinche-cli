@@ -119,9 +119,9 @@ class ClientState:
     last_round_score: dict[str, dict] | None = None
     # Whether the end-of-round recap (score of the manche just finished, plus
     # whether the announced contract was honored) should currently be shown
-    # in place of the normal table view. Set on ROUND_SCORE, cleared once the
-    # next round's DEAL arrives (or the game ends, since GAME_OVER shows its
-    # own final recap instead).
+    # in place of the normal table view. Set on ROUND_SCORE and retained if
+    # that round also ends the game, so the final round recap is shown before
+    # the game-over screen.
     round_over_screen: bool = False
     # Built alongside `last_round_score` (see `_build_last_round_contract`),
     # while `contract_bidder`/`trump`/`contract_points` still describe the
@@ -502,9 +502,9 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.last_round_contract = _build_last_round_contract(state)
         # Shown in place of the normal table view until the local player
         # presses a key to dismiss it (see input_loop) -- NOT auto-cleared by
-        # the next DEAL, so the recap never flashes by unread. Skipped entirely
-        # if this round also ended the game (see GAME_OVER below), whose own
-        # recap screen already covers this same information.
+        # the next DEAL, so the recap never flashes by unread. If this round
+        # ends the game, GAME_OVER retains this flag so this final recap is
+        # still shown before the game-over screen.
         state.round_over_screen = True
         state.last_action = "Score de la manche"
         state.whose_turn = None
@@ -513,7 +513,6 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
 
     elif msg_type == protocol.GAME_OVER:
         state.game_over = True
-        state.round_over_screen = False
         state.final_scores = payload["final_scores"]
         state.winning_team = payload["winning_team"]
         state.last_action = f"Partie terminée — vainqueur : {payload['winning_team']}"

@@ -603,6 +603,14 @@ def test_round_recap_shows_captured_and_awarded_points() -> None:
     assert "{{ euxScore }}" in app
 
 
+def test_web_client_shows_final_round_recap_before_game_over() -> None:
+    """The final round remains reviewable before the player sees the game result."""
+    app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()
+
+    assert app.index('v-else-if="flags.round_over_screen"') < app.index('v-else-if="flags.game_over"')
+    assert "{{ flags.game_over ? 'Voir le résultat de la partie' : 'Manche suivante' }}" in app
+
+
 def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:
     """A confirmed Coinche/Surcoinche must produce the same prominent feedback as the CLI."""
     static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"

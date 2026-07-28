@@ -158,7 +158,7 @@ async def run_session(
                 status.append("\n\n\U0001f310 Interface web : ", style="grey50")
                 status.append(web.urls[0], style="bold cyan link " + web.urls[0])
             live.update(status)
-        elif state.round_over_screen and not state.game_over:
+        elif state.round_over_screen:
             # End-of-round recap (score of the manche just finished, whether
             # the announced contract was honored, cumulative score so far):
             # shown in place of the table until the next DEAL arrives, which
@@ -334,6 +334,11 @@ async def run_session(
 
                 if not key:
                     return
+                if state.round_over_screen:
+                    await dismiss_round_recap()
+                    if not state.game_over:
+                        key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
+                        continue
                 if state.game_over:
                     # key_task is consumed (done), no competing thread.
                     choice = await _prompt_game_over_screen(live, state)
@@ -349,9 +354,7 @@ async def run_session(
                         return
                     key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
                     continue
-                if state.round_over_screen:
-                    await dismiss_round_recap()
-                elif key == "\t":
+                if key == "\t":
                     state.active_pane = "chat" if state.active_pane == "game" else "game"
                     redraw()
                 elif state.active_pane == "chat":

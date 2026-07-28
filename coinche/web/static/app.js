@@ -925,23 +925,6 @@ const App = {
       </div>
     </div>
 
-    <!-- ================= GAME OVER ================= -->
-    <div v-else-if="flags.game_over" class="recap">
-      <div class="confetti" v-if="confetti.length" aria-hidden="true">
-        <span v-for="(c, i) in confetti" :key="i" class="confetti__piece"
-              :style="{ left: c.left + '%', background: c.color, animationDelay: c.delay + 's', animationDuration: c.dur + 's', transform: 'rotate(' + c.rot + 'deg)' }"></span>
-      </div>
-      <div class="recap__card" role="dialog" aria-labelledby="go-title">
-        <h2 class="recap__title" id="go-title">Partie terminée</h2>
-        <div class="recap__winner">🏆 {{ winnerLabel }} l'emporte</div>
-        <div class="recap__scores">
-          <div><div class="recap__score-team recap__team--nous">{{ nousLabel }}</div><div class="recap__score-players">{{ teamPlayers.nous }}</div><div class="recap__score-value">{{ finalNous }}</div></div>
-          <div><div class="recap__score-team recap__team--eux">{{ euxLabel }}</div><div class="recap__score-players">{{ teamPlayers.eux }}</div><div class="recap__score-value">{{ finalEux }}</div></div>
-        </div>
-        <button class="rematch-btn" data-testid="rematch" @click="doRematch">Revanche</button>
-      </div>
-    </div>
-
     <!-- ================= ROUND RECAP ================= -->
     <div v-else-if="flags.round_over_screen" class="recap">
       <div class="recap__card" role="dialog" aria-labelledby="rr-title">
@@ -978,7 +961,24 @@ const App = {
             <div class="recap__score-value">{{ euxScore }}</div>
           </div>
         </div>
-        <button class="rematch-btn" data-testid="round-continue" @click="continueRound">Manche suivante</button>
+        <button class="rematch-btn" data-testid="round-continue" @click="continueRound">{{ flags.game_over ? 'Voir le résultat de la partie' : 'Manche suivante' }}</button>
+      </div>
+    </div>
+
+    <!-- ================= GAME OVER ================= -->
+    <div v-else-if="flags.game_over" class="recap">
+      <div class="confetti" v-if="confetti.length" aria-hidden="true">
+        <span v-for="(c, i) in confetti" :key="i" class="confetti__piece"
+              :style="{ left: c.left + '%', background: c.color, animationDelay: c.delay + 's', animationDuration: c.dur + 's', transform: 'rotate(' + c.rot + 'deg)' }"></span>
+      </div>
+      <div class="recap__card" role="dialog" aria-labelledby="go-title">
+        <h2 class="recap__title" id="go-title">Partie terminée</h2>
+        <div class="recap__winner">🏆 {{ winnerLabel }} l'emporte</div>
+        <div class="recap__scores">
+          <div><div class="recap__score-team recap__team--nous">{{ nousLabel }}</div><div class="recap__score-players">{{ teamPlayers.nous }}</div><div class="recap__score-value">{{ finalNous }}</div></div>
+          <div><div class="recap__score-team recap__team--eux">{{ euxLabel }}</div><div class="recap__score-players">{{ teamPlayers.eux }}</div><div class="recap__score-value">{{ finalEux }}</div></div>
+        </div>
+        <button class="rematch-btn" data-testid="rematch" @click="doRematch">Revanche</button>
       </div>
     </div>
 
