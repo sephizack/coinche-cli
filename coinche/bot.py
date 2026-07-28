@@ -473,7 +473,7 @@ def _weighted_choice(seats: list[Seat], weights: list[float], rng: random.Random
     total = sum(weights)
     threshold = rng.random() * total
     cumulative = 0.0
-    for seat, weight in zip(seats, weights, strict=True):
+    for seat, weight in zip(seats, weights):
         cumulative += weight
         if threshold < cumulative:
             return seat
