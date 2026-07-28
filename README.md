@@ -119,6 +119,8 @@ contract, and only strong J-9 four-trump hands add points for side-suit aces.
 They wait a random one to two seconds before each decision by default, so
 their turns remain visible and do not feel instantaneous; hosts can adjust the
 minimum with `--bot-think` (or use `0` to disable waiting).
+At the end of each round, each bot posts its original eight-card hand in the
+chat so its bidding decisions can be reviewed; human hands are never revealed.
 All bot actions pass through the same server-side legality checks as human moves.
 
 Once all 4 seats are filled, by people or bots, the server deals a hand and the game begins.

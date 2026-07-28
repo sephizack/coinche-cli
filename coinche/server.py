@@ -329,6 +329,7 @@ async def _handle_play_result(table: Table, result: dict) -> None:
             "next_dealer_seat": _seat_to_str(next_dealer_seat) if next_dealer_seat is not None else None,
         },
     )
+    await _announce_bot_starting_hands(table, result["completed_round_hands"])
 
     if result["game_over"]:
         logger.info(
@@ -350,6 +351,15 @@ async def _handle_play_result(table: Table, result: dict) -> None:
         await asyncio.sleep(table.round_pause_seconds)
         await _broadcast_deal(table)
         await _send_bid_request(table, game.next_to_act)
+
+
+async def _announce_bot_starting_hands(table: Table, hands: dict[Seat, list[Card]]) -> None:
+    """Publish each bot's completed-round hand after scoring, never during play."""
+    for seat, session in table.seats.items():
+        if session is None or not session.is_bot:
+            continue
+        cards = " ".join(_card_to_wire(card) for card in hands[seat])
+        await table.broadcast(protocol.CHAT, {"seat": _seat_to_str(seat), "text": f"Ma main de départ était : {cards}"})
 
 
 async def _run_bot_turns(table: Table) -> None:

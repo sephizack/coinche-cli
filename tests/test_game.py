@@ -32,6 +32,8 @@ def _play_full_round(game: Game) -> dict:
 def test_full_round_e2e_deal_bid_tricks_score():
     game = Game(initial_dealer=Seat.N)
     assert game.phase == "bidding"
+    assert game.round_state is not None
+    starting_hands = {seat: list(hand) for seat, hand in game.round_state.dealt_hands.items()}
 
     contract_result = _finalize_simple_contract(game, trump="♠", points=80)
     assert contract_result["outcome"] == "contract"
@@ -46,6 +48,7 @@ def test_full_round_e2e_deal_bid_tricks_score():
         final_result["round_score"]["NS"]["total"] + final_result["round_score"]["EW"]["total"]
     )
     assert final_result["cumulative_scores"]["NS"] + final_result["cumulative_scores"]["EW"] == total_scored
+    assert final_result["completed_round_hands"] == starting_hands
 
 
 def test_all_pass_redeal_rotates_dealer():

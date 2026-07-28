@@ -401,6 +401,7 @@ class Game:
         rs = self.round_state
         contract = bid.current_highest_bid
         assert contract is not None
+        completed_round_hands = {seat: list(hand) for seat, hand in rs.dealt_hands.items()}
 
         attacking_team = contract["team"]
         attacker_tricks = sum(1 for t in rs.trick_history if TEAM_OF[t["winner_seat"]] == attacking_team)
@@ -435,6 +436,10 @@ class Game:
             "cumulative_scores": dict(self.cumulative_scores),
             "game_over": game_over,
             "winning_team": winning_team,
+            # The next round starts below for a non-final game. Keep this
+            # completed round's original hands in the result for post-round
+            # consumers such as the bot audit chat messages.
+            "completed_round_hands": completed_round_hands,
         }
 
         if game_over:

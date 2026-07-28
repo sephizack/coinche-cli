@@ -224,6 +224,18 @@ def test_one_player_can_fill_the_table_with_bots():
             else:
                 raise AssertionError("the human-plus-bots table did not complete a round")
             assert bot_played
+            bot_seats = {player["seat"] for player in bots}
+            revealed_hands: dict[str, list[str]] = {}
+            for _ in bots:
+                msg_type, payload = await _recv(reader)
+                assert msg_type == protocol.CHAT
+                assert payload["seat"] in bot_seats
+                assert payload["seat"] not in revealed_hands
+                assert payload["text"].startswith("Ma main de départ : ")
+                revealed_hands[payload["seat"]] = payload["text"].removeprefix("Ma main de départ : ").split()
+
+            assert set(revealed_hands) == bot_seats
+            assert all(len(hand) == 8 for hand in revealed_hands.values())
         finally:
             if writer is not None:
                 writer.close()
