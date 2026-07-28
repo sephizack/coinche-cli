@@ -19,9 +19,63 @@ def test_bot_bids_a_strong_trump_hand() -> None:
 
     action = choose_bid(game, Seat.W)
 
-    assert action["action"] == "bid"
-    assert action["trump"] == "♠"
-    assert action["points"] in {*range(80, 181, 10), "capot"}
+    assert action == {"action": "bid", "trump": "♠", "points": 120}
+
+
+def test_bot_does_not_add_side_aces_without_four_jack_nine_trumps() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "A♥", "A♦", "A♣", "8♥", "7♦")
+
+    assert choose_bid(game, Seat.W) == {"action": "bid", "trump": "♠", "points": 90}
+
+
+def test_bot_supports_partner_eighty_with_the_missing_jack() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣", "D♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+
+    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 90}
+
+
+def test_bot_supports_partner_eighty_with_the_missing_nine() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("9♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣", "D♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+
+    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 90}
+
+
+def test_bot_does_not_open_with_a_single_trump_master() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣", "D♣")
+
+    assert choose_bid(game, Seat.W) == {"action": "pass"}
+
+
+def test_bot_supports_partner_by_one_trick_not_two() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "A♠", "7♥", "8♥", "7♦", "8♦", "7♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+
+    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 90}
+
+
+def test_bot_passes_when_an_opponent_has_already_reached_its_safe_ceiling() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "A♠", "7♠", "A♥", "7♥", "8♦", "7♣")
+    game.submit_bid(Seat.W, "bid", trump="♥", points=110)
+    game.submit_bid(Seat.S, "pass")
+
+    assert choose_bid(game, Seat.E) == {"action": "pass"}
 
 
 def test_bot_passes_with_a_weak_hand() -> None:

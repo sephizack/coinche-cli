@@ -113,6 +113,8 @@ game. Bots evaluate their hand before bidding. For card play, they simulate
 multiple plausible distributions of the unseen cards, play each legal choice
 to the end of the round, and select the best average result. Those simulations
 use only their own cards and public play history—not the real hidden hands.
+Their opening bids are deliberately conservative: trump control sets the base
+contract, and only strong J-9 four-trump hands add points for side-suit aces.
 They wait one second before each decision by default, so their turns remain
 visible; hosts can adjust this with `--bot-think`.
 All bot actions pass through the same server-side legality checks as human moves.
