@@ -199,6 +199,21 @@ def contract_text(
     return text
 
 
+def render_bid_effect(coinche_level: int) -> Panel | None:
+    """Render a temporary, prominent alert for a doubled contract declaration."""
+    if coinche_level == 2:
+        label = "⚡ COINCHE ! ×2 ⚡"
+        style = "bold white on red3"
+        border_style = "bold red3"
+    elif coinche_level >= 4:
+        label = "🔥 SURCOINCHE ! ×4 🔥"
+        style = "bold white on dark_red"
+        border_style = "bold dark_red"
+    else:
+        return None
+    return Panel(Align.center(Text(label, style=style)), border_style=border_style, padding=(0, 2), expand=False)
+
+
 def last_trick_grid(local_seat: Seat, last_trick: dict[Seat, str]) -> Panel | None:
     """Mini table-shaped rendering of the most recently completed trick: each
     card is positioned at its own player's seat, rotated so `local_seat`
@@ -285,6 +300,7 @@ def build_table_view(
     contract_points: str | int | None = None,
     contract_bidder_name: str | None = None,
     coinche_level: int = 1,
+    bid_effect_level: int = 1,
     last_trick: dict[Seat, str] | None = None,
     dealer_seat: Seat | None = None,
     bid_menu: Group | Text | None = None,
@@ -316,11 +332,22 @@ def build_table_view(
     waiting = waiting_for_text(whose_turn, players, team_of, local_seat)
     contract = contract_text(trump, contract_points, contract_bidder_name, coinche_level)
     last_trick_panel = last_trick_grid(local_seat, last_trick or {})
-    blocks: list[RenderableType] = [
-        Align.center(table_layout),
-        Text(""),
-        Align.center(build_hand(hand, legal_cards)),
-    ]
+    blocks: list[RenderableType] = []
+    if contract.plain:
+        # Keep the announcement outside the four player panels so it cannot
+        # overlap a name or a card at the centre of the table.
+        blocks.extend(
+            [
+                Align.center(
+                    Panel(Align.center(contract), title="Contrat en cours", border_style="gold3", padding=(0, 1))
+                ),
+                Text(""),
+            ]
+        )
+    bid_effect = render_bid_effect(bid_effect_level)
+    if bid_effect is not None:
+        blocks.extend([Align.center(bid_effect), Text("")])
+    blocks.extend([Align.center(table_layout), Text(""), Align.center(build_hand(hand, legal_cards))])
     if bid_menu is not None:
         blocks.append(Text(""))
         blocks.append(Align.center(bid_menu))
@@ -331,7 +358,7 @@ def build_table_view(
             local_team,
             last_action,
             waiting,
-            contract,
+            None,
             last_trick_panel,
             team_names,
             web_url=web_url,
@@ -519,36 +546,49 @@ def render_round_score(
     other_team = "EW" if local_team == "NS" else "NS"
     local_label = (team_names or {}).get(local_team) or "Nous"
     other_label = (team_names or {}).get(other_team) or "Eux"
+    cumulative_grid = Table.grid(expand=True, padding=(0, 4))
+    cumulative_grid.add_column(justify="center")
+    cumulative_grid.add_column(justify="center")
+    cumulative_grid.add_row(
+        Text(local_label, style=f"bold {TEAM_COLORS['nous']}"),
+        Text(other_label, style=f"bold {TEAM_COLORS['eux']}"),
+    )
+    cumulative_grid.add_row(
+        Text(str(cumulative[local_team]), style=f"bold white on {TEAM_COLORS['nous']}"),
+        Text(str(cumulative[other_team]), style=f"bold white on {TEAM_COLORS['eux']}"),
+    )
+
+    round_grid = Table.grid(expand=True, padding=(0, 2))
+    round_grid.add_column(justify="center")
+    round_grid.add_column(justify="center")
+    round_grid.add_row(
+        Text(
+            f"{local_label} : {round_score[local_team]['total']} pts "
+            f"(cartes : {round_score[local_team]['card_points']})",
+            style=f"{TEAM_COLORS['nous']}",
+        ),
+        Text(
+            f"{other_label} : {round_score[other_team]['total']} pts "
+            f"(cartes : {round_score[other_team]['card_points']})",
+            style=f"{TEAM_COLORS['eux']}",
+        ),
+    )
+
     blocks = [
-        Align.center(
-            Text(
-                f"{local_label} : {round_score[local_team]['total']} pts "
-                f"(cartes : {round_score[local_team]['card_points']})",
-                style=f"bold {TEAM_COLORS['nous']}",
-            )
-        ),
-        Align.center(
-            Text(
-                f"{other_label} : {round_score[other_team]['total']} pts "
-                f"(cartes : {round_score[other_team]['card_points']})",
-                style=f"bold {TEAM_COLORS['eux']}",
-            )
-        ),
-        Align.center(
-            Text(
-                f"Cumulé — {local_label} : {cumulative[local_team]}   {other_label} : {cumulative[other_team]}",
-                style="bold white",
-            )
-        ),
+        Align.center(Text("SCORE CUMULÉ", style="bold white")),
+        cumulative_grid,
+        Text(""),
+        Align.center(Text("Cette manche", style="bold grey70")),
+        round_grid,
     ]
 
     if contract is not None:
-        points_label = "Capot" if contract["points"] == "capot" else str(contract["points"])
-        camp = "nous" if contract["attacking_team"] == local_team else "eux"
-        contract_line = Text("Annonce : ", style="grey70")
-        contract_line.append(f"{points_label} {contract['trump']}", style=f"bold {TEAM_COLORS[camp]}")
-        contract_line.append(" par ", style="grey70")
-        contract_line.append(contract["bidder_name"], style="bold white")
+        contract_line = contract_text(
+            contract["trump"],
+            contract["points"],
+            contract["bidder_name"],
+            contract.get("coinche_level", 1),
+        )
         result_text, result_style = _CONTRACT_RESULT_LABELS.get(contract["result"], (contract["result"], "bold white"))
         blocks.append(Text(""))
         blocks.append(Align.center(contract_line))

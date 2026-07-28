@@ -233,6 +233,7 @@ async def run_session(
                 contract_points=display_points,
                 contract_bidder_name=contract_bidder_name,
                 coinche_level=state.coinche_level,
+                bid_effect_level=state.bid_effect_level,
                 last_trick=state.last_trick,
                 dealer_seat=state.dealer_seat,
                 bid_menu=bid_menu,

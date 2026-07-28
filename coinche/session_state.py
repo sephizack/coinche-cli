@@ -61,6 +61,10 @@ class ClientState:
     # so everyone can see the stakes were doubled/quadrupled. Set at
     # BIDDING_RESULT, reset each DEAL.
     coinche_level: int = 1
+    # A short-lived, high-visibility alert for a Coinche/Surcoinche declaration.
+    # It stays visible through the first play, while `coinche_level` remains as
+    # the compact contract badge for the rest of the round.
+    bid_effect_level: int = 1
     # Highest bid still standing *while bidding is ongoing* (distinct from
     # `trump`/`contract_points`/`contract_bidder` above, which only get set
     # once bidding has settled into a final contract at BIDDING_RESULT).
@@ -253,6 +257,24 @@ def _bid_mark_label(entry: dict) -> str:
     return f"{points} {_trump_label(entry['trump'])}"
 
 
+def _append_bid_announcement(state: ClientState, seat: Seat, payload: dict) -> None:
+    """Add a non-pass auction declaration to the shared client-side chat."""
+    action = payload["action"]
+    if action == "pass":
+        return
+
+    if action == "bid":
+        points = "Capot" if payload.get("points") == "capot" else payload.get("points")
+        text = f"Annonce : {points} {_trump_label(payload['trump'])}"
+    elif action == "coinche":
+        text = "Coinche ! ×2"
+    else:
+        text = "Surcoinche ! ×4"
+
+    who = state.players.get(seat, seat.value)
+    state.chat_messages.append((who, text, state.team_of.get(seat), time.time()))
+
+
 def _build_last_round_contract(state: ClientState) -> dict | None:
     """Build the {trump, points, bidder_name, attacking_team, result} summary of
     the round that just ended, from the contract fields BIDDING_RESULT set
@@ -272,6 +294,7 @@ def _build_last_round_contract(state: ClientState) -> dict | None:
         "bidder_name": state.players.get(state.contract_bidder, state.contract_bidder.value),
         "attacking_team": attacking_team,
         "result": round_score_for_attacker["contract_result"],
+        "coinche_level": state.coinche_level,
     }
 
 
@@ -340,6 +363,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.contract_points = None
         state.contract_bidder = None
         state.coinche_level = 1
+        state.bid_effect_level = 1
         state.current_bid_trump = None
         state.current_bid_points = None
         state.current_bid_seat = None
@@ -370,6 +394,11 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         who = state.players.get(seat, seat.value)
         state.last_action = f"{who} {_bid_action_label(payload)}"
         state.bid_marks[seat] = _bid_mark_label(payload)
+        _append_bid_announcement(state, seat, payload)
+        if payload["action"] == "coinche":
+            state.bid_effect_level = 2
+        elif payload["action"] == "surcoinche":
+            state.bid_effect_level = 4
         if payload["action"] == "bid":
             state.current_bid_trump = payload["trump"]
             state.current_bid_points = payload["points"]
@@ -388,9 +417,18 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             state.contract_points = payload["points"]
             state.contract_bidder = Seat(payload["seat"])
             state.coinche_level = payload.get("coinche_level", 1)
+            state.bid_effect_level = state.coinche_level
             who = state.players.get(Seat(payload["seat"]), payload["seat"])
             points = "Capot" if payload["points"] == "capot" else payload["points"]
             state.last_action = f"Contrat retenu : {points} {_trump_label(payload['trump'])} par {who}"
+            final_action = payload.get("final_bid_action")
+            final_seat = payload.get("final_bid_seat")
+            if final_action is not None and final_seat is not None:
+                _append_bid_announcement(
+                    state,
+                    Seat(final_seat),
+                    {"action": final_action},
+                )
             state.whose_turn = Seat(payload["first_leader"])
 
     elif msg_type == protocol.PLAY_REQUEST:
@@ -424,6 +462,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.whose_turn = Seat(next_to_act) if next_to_act is not None else None
         if played_seat == state.seat and payload["card"] in state.hand:
             state.hand.remove(payload["card"])
+        state.bid_effect_level = 1
 
     elif msg_type == protocol.TRICK_RESULT:
         # Deliberately do NOT clear `current_trick` here (it already holds
@@ -482,6 +521,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.round_over_screen = False
         state.final_scores = {"NS": 0, "EW": 0}
         state.winning_team = None
+        state.bid_effect_level = 1
         state.last_round_score = None
         state.last_round_contract = None
         state.cumulative_scores = {"NS": 0, "EW": 0}
@@ -570,6 +610,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "contract_points": state.contract_points,
         "contract_bidder": state.contract_bidder.value if state.contract_bidder is not None else None,
         "coinche_level": state.coinche_level,
+        "bid_effect_level": state.bid_effect_level,
         "current_bid": {
             "trump": state.current_bid_trump,
             "points": state.current_bid_points,

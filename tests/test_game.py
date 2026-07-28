@@ -121,6 +121,8 @@ def test_surcoinche_ends_bidding_and_starts_play():
     # No further passes needed: play begins right away with a ×4 contract.
     assert result["outcome"] == "contract"
     assert result["coinche_level"] == 4
+    assert result["final_bid_action"] == "surcoinche"
+    assert result["final_bid_seat"] == surcoincher
     assert game.phase == "trick_play"
 
 

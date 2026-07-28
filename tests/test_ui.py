@@ -17,12 +17,14 @@ from coinche.ui import (
     build_chat_panel,
     build_hand,
     build_split_view,
+    build_table_view,
     build_table_layout,
     card_text,
     center_panel,
     contract_text,
     player_panel,
     render_bid_menu,
+    render_bid_effect,
     render_bid_value_prompt,
     render_connection_banner,
     render_game_over,
@@ -105,6 +107,36 @@ def test_contract_text_shows_coinche_badge_when_doubled():
 
     surcoinched = contract_text("♥", 90, "Paul", coinche_level=4).plain
     assert "Surcoinché" in surcoinched and "×4" in surcoinched
+
+
+def test_render_bid_effect_emphasizes_coinche_and_surcoinche():
+    coinche = render_bid_effect(2)
+    surcoinche = render_bid_effect(4)
+    assert coinche is not None and "COINCHE" in _plain(coinche)
+    assert surcoinche is not None and "SURCOINCHE" in _plain(surcoinche)
+    assert render_bid_effect(1) is None
+
+
+def test_build_table_view_places_contract_in_a_banner_before_the_player_grid():
+    players = {Seat.N: "Nord", Seat.E: "Est", Seat.S: "Sud", Seat.W: "Ouest"}
+    team_of = {Seat.N: "NS", Seat.E: "EW", Seat.S: "NS", Seat.W: "EW"}
+    view = build_table_view(
+        Seat.S,
+        players,
+        team_of,
+        current_trick={},
+        whose_turn=None,
+        hand=[],
+        cumulative_scores={"NS": 0, "EW": 0},
+        local_team="NS",
+        last_action="",
+        trump="♥",
+        contract_points=90,
+        contract_bidder_name="Nord",
+    )
+    banner = view.renderables[0].renderable
+    assert banner.title == "Contrat en cours"
+    assert "Annonce : 90 ♥ (Nord)" in _plain(banner)
 
 
 # --- Numbered menus (no raw card-string typing) -------------------------------
@@ -234,6 +266,9 @@ def test_render_round_score_contains_totals_for_both_teams():
     cumulative = {"NS": 162, "EW": 0}
     panel = render_round_score(round_score, cumulative, local_team="NS")
     assert panel.title == "Score de la manche"
+    plain = _plain(panel)
+    assert "SCORE CUMULÉ" in plain
+    assert plain.index("SCORE CUMULÉ") < plain.index("Cette manche")
 
 
 def test_render_round_score_with_contract_shows_result_and_untrusted_name_unparsed():

@@ -220,6 +220,10 @@ async def _handle_bid_result(table: Table, seat: Seat, result: dict) -> None:
                 "points": result["points"],
                 "coinche_level": result["coinche_level"],
                 "first_leader": _seat_to_str(result["first_leader"]),
+                "final_bid_action": result.get("final_bid_action"),
+                "final_bid_seat": (
+                    _seat_to_str(result["final_bid_seat"]) if result.get("final_bid_seat") is not None else None
+                ),
             },
         )
         await _send_play_request(table, result["first_leader"])

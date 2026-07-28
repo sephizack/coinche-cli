@@ -231,6 +231,7 @@ def test_bidding_result_contract_settles_and_clears_marks():
     assert state.contract_points == 90
     assert state.contract_bidder == Seat.N
     assert state.coinche_level == 2
+    assert state.bid_effect_level == 2
     assert state.last_action == "Contrat retenu : 90 ♥ par Nord"
     assert state.whose_turn == Seat.E
 
@@ -358,6 +359,7 @@ def test_round_score_sets_recap_and_requests_action():
         "bidder_name": "Nord",
         "attacking_team": "NS",
         "result": "made",
+        "coinche_level": 1,
     }
     assert state.round_over_screen is True
     assert state.whose_turn is None
@@ -384,6 +386,7 @@ def test_new_game_resets_scores_and_flags():
     state = ClientState()
     _join(state)
     state.game_over = True
+    state.bid_effect_level = 4
     state.cumulative_scores = {"NS": 1500, "EW": 800}
     state.last_round_contract = {"trump": "♥"}
     result = apply_message(state, protocol.NEW_GAME, {})
@@ -392,6 +395,7 @@ def test_new_game_resets_scores_and_flags():
     assert state.round_over_screen is False
     assert state.final_scores == {"NS": 0, "EW": 0}
     assert state.winning_team is None
+    assert state.bid_effect_level == 1
     assert state.last_round_score is None
     assert state.last_round_contract is None
     assert state.cumulative_scores == {"NS": 0, "EW": 0}
@@ -489,6 +493,47 @@ def test_chat_appends_message_with_team():
     name, text, team, ts = state.chat_messages[0]
     assert (name, text, team) == ("Nord", "Salut", "NS")
     assert isinstance(ts, float)
+
+
+def test_bid_announcements_are_added_to_chat_and_trigger_coinche_effect():
+    state = ClientState()
+    _join(state)
+    apply_message(
+        state,
+        protocol.BID_UPDATE,
+        {"seat": "N", "action": "bid", "trump": "♥", "points": 90, "next_to_act": "E"},
+    )
+    apply_message(state, protocol.BID_UPDATE, {"seat": "E", "action": "coinche", "next_to_act": "S"})
+
+    assert [(name, text, team) for name, text, team, _ts in state.chat_messages] == [
+        ("Nord", "Annonce : 90 ♥", "NS"),
+        ("Est", "Coinche ! ×2", "EW"),
+    ]
+    assert state.bid_effect_level == 2
+
+
+def test_surcoinche_result_is_added_to_chat_and_triggers_effect():
+    state = ClientState()
+    _join(state)
+    apply_message(
+        state,
+        protocol.BIDDING_RESULT,
+        {
+            "outcome": "contract",
+            "trump": "♥",
+            "points": 90,
+            "seat": "N",
+            "coinche_level": 4,
+            "first_leader": "E",
+            "final_bid_action": "surcoinche",
+            "final_bid_seat": "S",
+        },
+    )
+
+    assert [(name, text, team) for name, text, team, _ts in state.chat_messages] == [
+        ("Moi", "Surcoinche ! ×4", "NS"),
+    ]
+    assert state.bid_effect_level == 4
 
 
 def test_error_appends_and_sets_last_action():
@@ -595,6 +640,7 @@ def test_snapshot_includes_last_round_contract():
         "bidder_name": "Nord",
         "attacking_team": "NS",
         "result": "made",
+        "coinche_level": 1,
     }
 
 

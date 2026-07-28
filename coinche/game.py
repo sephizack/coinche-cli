@@ -226,7 +226,10 @@ class Game:
             bid.history.append({"seat": seat, "action": "surcoinche"})
             # A surcoinche ends the auction immediately: nothing outranks it,
             # so play starts right away with the surcoinched contract.
-            return self._finalize_contract()
+            result = self._finalize_contract()
+            result["final_bid_action"] = "surcoinche"
+            result["final_bid_seat"] = seat
+            return result
 
         raise IllegalBidError(f"Unknown bid action: {action!r}")
 
