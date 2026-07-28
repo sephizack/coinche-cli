@@ -697,13 +697,15 @@ const App = {
       const s = snapshot.value;
       const rs = s && s.last_round_score;
       if (!rs) return null;
-      // Per-team dict from rules.score_round carries the manche score under `total`.
-      const val = (team) => {
+      // Per-team results distinguish points captured in tricks from the score
+      // awarded for the round (which can include a contract or belote bonus).
+      const scoreFor = (team) => {
         const t = rs[team];
-        if (t == null) return 0;
-        return typeof t === "object" ? (t.total ?? 0) : t;
+        if (t == null) return { cardPoints: 0, total: 0 };
+        if (typeof t !== "object") return { cardPoints: 0, total: t };
+        return { cardPoints: t.card_points ?? 0, total: t.total ?? 0 };
       };
-      return { nous: val(localTeam.value), eux: val(otherTeam.value) };
+      return { nous: scoreFor(localTeam.value), eux: scoreFor(otherTeam.value) };
     });
 
     const winnerLabel = computed(() => {
@@ -917,9 +919,22 @@ const App = {
     <div v-else-if="flags.round_over_screen" class="recap">
       <div class="recap__card" role="dialog" aria-labelledby="rr-title">
         <h2 class="recap__title" id="rr-title">Fin de la manche</h2>
+        <p class="recap__scores-title">Points faits</p>
         <div class="recap__scores" v-if="roundScores">
-          <div><div class="recap__score-team recap__team--nous">{{ nousLabel }}</div><div class="recap__score-players">{{ teamPlayers.nous }}</div><div class="recap__score-value">{{ roundScores.nous }}</div></div>
-          <div><div class="recap__score-team recap__team--eux">{{ euxLabel }}</div><div class="recap__score-players">{{ teamPlayers.eux }}</div><div class="recap__score-value">{{ roundScores.eux }}</div></div>
+          <div>
+            <div class="recap__score-team recap__team--nous">{{ nousLabel }}</div>
+            <div class="recap__score-players">{{ teamPlayers.nous }}</div>
+            <div class="recap__score-value">{{ roundScores.nous.cardPoints }}</div>
+            <div class="recap__score-caption">points aux cartes</div>
+            <div class="recap__score-total">Score de la manche : {{ roundScores.nous.total }} pts</div>
+          </div>
+          <div>
+            <div class="recap__score-team recap__team--eux">{{ euxLabel }}</div>
+            <div class="recap__score-players">{{ teamPlayers.eux }}</div>
+            <div class="recap__score-value">{{ roundScores.eux.cardPoints }}</div>
+            <div class="recap__score-caption">points aux cartes</div>
+            <div class="recap__score-total">Score de la manche : {{ roundScores.eux.total }} pts</div>
+          </div>
         </div>
         <p class="recap__contract" v-if="recapContract">
           Contrat {{ recapContract.label }} :
