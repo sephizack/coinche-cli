@@ -440,6 +440,8 @@ class Game:
             # completed round's original hands in the result for post-round
             # consumers such as the bot audit chat messages.
             "completed_round_hands": completed_round_hands,
+            # Contract trump lets those consumers sort hands trump-aware.
+            "contract_trump": contract["trump"],
         }
 
         if game_over:
