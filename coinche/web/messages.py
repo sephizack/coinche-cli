@@ -10,7 +10,7 @@ Frame shapes (see `domain-entities.md`):
 
 Browser -> client::
 
-    {"action": "play"|"bid"|"chat"|"join"|"rematch"|"lobby", ...fields}
+    {"action": "play"|"bid"|"chat"|"join"|"continue"|"rematch"|"lobby", ...fields}
 
 Client -> browser::
 
@@ -31,17 +31,18 @@ MAX_MESSAGE_BYTES = 64 * 1024
 # The closed set of browser action verbs the bridge relays to `ClientLink`.
 # Anything outside this set is rejected at parse time (BR-U2-5) rather than
 # reaching `on_browser_message`.
-ALLOWED_ACTIONS: frozenset[str] = frozenset({"play", "bid", "chat", "join", "rematch", "lobby"})
+ALLOWED_ACTIONS: frozenset[str] = frozenset({"play", "bid", "chat", "join", "continue", "rematch", "lobby"})
 
 # Required fields per action (BR-U2-5): a frame missing any of these is rejected
 # at parse time so `on_browser_message` never hits a KeyError (which would escape
 # and hard-close the socket with no error frame). Mirrors how `on_browser_message`
-# reads each action; `rematch`/`lobby` carry no payload.
+# reads each action; `continue`/`rematch`/`lobby` carry no payload.
 REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "play": ("card",),
     "bid": ("bid_action",),
     "chat": ("text",),
     "join": ("table_key", "player_name"),
+    "continue": (),
     "rematch": (),
     "lobby": (),
 }

@@ -14,7 +14,7 @@
 //    snapshot; we replace the whole reactive object (idempotent, no deltas).
 //
 // The action verbs sent over the WS are exactly U2's WebActionProtocol names:
-//   play | bid | chat | join | rematch | lobby   (card play is "play", NOT
+//   play | bid | chat | join | continue | rematch | lobby   (card play is "play", NOT
 //   "play_card" — play_card is the game-wire type, not the browser action).
 // =========================================================================
 
@@ -740,6 +740,9 @@ const App = {
     function doRematch() {
       sendAction("rematch", {});
     }
+    function continueRound() {
+      sendAction("continue", {});
+    }
     function joinTable() {
       if (!lobby.name.trim() || !lobby.table.trim()) return;
       const payload = {
@@ -816,6 +819,7 @@ const App = {
       submitBid,
       sendChat,
       doRematch,
+      continueRound,
       joinTable,
       toggleChat,
     };
@@ -897,6 +901,7 @@ const App = {
           <span :class="recapContract.honored ? 'ok' : 'ko'">{{ recapContract.honored ? '✓ réussi' : '✗ chuté' }}</span>
         </p>
         <p class="recap__contract">Score cumulé — {{ nousLabel }} {{ nousScore }} / {{ euxLabel }} {{ euxScore }}</p>
+        <button class="rematch-btn" data-testid="round-continue" @click="continueRound">Manche suivante</button>
       </div>
     </div>
 

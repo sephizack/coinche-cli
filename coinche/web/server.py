@@ -25,6 +25,7 @@ import logging
 import mimetypes
 import socket
 import struct
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from coinche.session_state import ClientState, snapshot_to_dict
@@ -185,6 +186,7 @@ class WebOverlayServer:
         host: str = "0.0.0.0",
         port: int = 0,
         on_ready: object | None = None,
+        on_round_continue: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.state = state
         self.link = link
@@ -194,6 +196,9 @@ class WebOverlayServer:
         # `self.urls` is populated, so the terminal UI can redraw immediately to
         # show the web address rather than waiting for the next server message.
         self.on_ready = on_ready
+        # The client owns the recap state. This callback mirrors the CLI
+        # keypress that dismisses it, then broadcasts the updated snapshot.
+        self.on_round_continue = on_round_continue
         self.clients: set[_WSConnection] = set()
         self._bound: tuple[str, int] | None = None
         # Reachable URL(s) resolved once the listener binds, cached so the
@@ -353,6 +358,8 @@ class WebOverlayServer:
             await self.link.send_chat(msg["text"])
         elif action == "join":
             await self.link.send_join(msg["table_key"], msg["player_name"], msg.get("team_name"))
+        elif action == "continue" and self.on_round_continue is not None:
+            await self.on_round_continue()
         elif action == "rematch":
             await self.link.send_rematch()
         elif action == "lobby":

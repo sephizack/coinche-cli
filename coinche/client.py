@@ -140,11 +140,10 @@ async def run_session(
     # browser and relays browser actions back through the same `link`. It runs
     # as a 3rd coroutine in the gather below and has its own error boundary, so
     # a web fault can never cancel receiver_loop/input_loop (BR-U2-3).
-    web = WebOverlayServer(state, link, host="0.0.0.0", port=web_port)
-
     action_event = asyncio.Event()
     live = Live(auto_refresh=False, screen=True)
     live.start()
+    web: WebOverlayServer
 
     def redraw() -> None:
         if state.server_version is not None and state.server_version != __version__ and not state.update_notice_shown:
@@ -260,6 +259,22 @@ async def run_session(
             live.update(ui.build_split_view(left_panel, chat, state.active_pane, height=live.console.size.height))
         live.refresh()
 
+    async def dismiss_round_recap() -> None:
+        """Dismiss the shared recap and immediately mirror it to web clients."""
+        if not state.round_over_screen:
+            return
+        state.round_over_screen = False
+        redraw()
+        await web.broadcast_state(state)
+
+    web = WebOverlayServer(
+        state,
+        link,
+        host="0.0.0.0",
+        port=web_port,
+        on_round_continue=dismiss_round_recap,
+    )
+
     async def receiver_loop() -> None:
         try:
             while True:
@@ -329,8 +344,7 @@ async def run_session(
                     key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
                     continue
                 if state.round_over_screen:
-                    state.round_over_screen = False
-                    redraw()
+                    await dismiss_round_recap()
                 elif key == "\t":
                     state.active_pane = "chat" if state.active_pane == "game" else "game"
                     redraw()

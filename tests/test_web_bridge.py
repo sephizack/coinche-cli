@@ -95,6 +95,7 @@ def test_parse_rejects_incomplete_action_frames(frame: dict) -> None:
         {"action": "bid", "bid_action": "pass"},
         {"action": "chat", "text": "salut"},
         {"action": "join", "table_key": "t1", "player_name": "Zoe"},
+        {"action": "continue"},
         {"action": "rematch"},  # no required fields
         {"action": "lobby"},  # no required fields
     ],
@@ -414,6 +415,43 @@ def test_on_browser_message_dispatch_direct() -> None:
         await server.on_browser_message({"action": "bid", "bid_action": "pass"})
         assert ("play", "7♦") in link.calls
         assert ("bid", "pass", None, None) in link.calls
+
+    asyncio.run(scenario())
+
+
+def test_round_continue_dismisses_and_broadcasts_recap() -> None:
+    async def scenario() -> None:
+        state = ClientState()
+        state.round_over_screen = True
+        link = FakeLink()
+        dismissed = False
+
+        async def dismiss_recap() -> None:
+            nonlocal dismissed
+            dismissed = True
+            state.round_over_screen = False
+            await server.broadcast_state(state)
+
+        server = WebOverlayServer(state, link, host=HOST, port=0, on_round_continue=dismiss_recap)
+        task = asyncio.ensure_future(server.serve())
+        for _ in range(100):
+            if server._bound is not None:
+                break
+            await asyncio.sleep(0.01)
+        assert server._bound is not None
+
+        try:
+            client = await WSTestClient.connect(server._bound[1])
+            initial = json.loads(await asyncio.wait_for(client.recv(), timeout=5))
+            assert initial["snapshot"]["flags"]["round_over_screen"] is True
+
+            await client.send(json.dumps({"action": "continue"}))
+            updated = json.loads(await asyncio.wait_for(client.recv(), timeout=5))
+            assert dismissed is True
+            assert updated["snapshot"]["flags"]["round_over_screen"] is False
+            await client.close()
+        finally:
+            await _stop(task)
 
     asyncio.run(scenario())
 
