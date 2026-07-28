@@ -563,6 +563,17 @@ const App = {
     }
     const nousLabel = computed(() => teamLabel(localTeam.value, "Nous"));
     const euxLabel = computed(() => teamLabel(otherTeam.value, "Eux"));
+    const teamPlayers = computed(() => {
+      const s = snapshot.value || {};
+      const players = s.players || {};
+      const teamOf = s.team_of || {};
+      const namesFor = (team) =>
+        Object.keys(players)
+          .filter((seatId) => teamOf[seatId] === team)
+          .map((seatId) => players[seatId])
+          .join(" & ");
+      return { nous: namesFor(localTeam.value), eux: namesFor(otherTeam.value) };
+    });
     const nousScore = computed(() => {
       const sc = (snapshot.value && snapshot.value.cumulative_scores) || {};
       return sc[localTeam.value] || 0;
@@ -798,6 +809,7 @@ const App = {
       localTeam,
       nousLabel,
       euxLabel,
+      teamPlayers,
       nousScore,
       euxScore,
       seats,
@@ -881,8 +893,8 @@ const App = {
         <h2 class="recap__title" id="go-title">Partie terminée</h2>
         <div class="recap__winner">🏆 {{ winnerLabel }} l'emporte</div>
         <div class="recap__scores">
-          <div><div class="recap__score-team recap__team--nous">{{ nousLabel }}</div><div class="recap__score-value">{{ finalNous }}</div></div>
-          <div><div class="recap__score-team recap__team--eux">{{ euxLabel }}</div><div class="recap__score-value">{{ finalEux }}</div></div>
+          <div><div class="recap__score-team recap__team--nous">{{ nousLabel }}</div><div class="recap__score-players">{{ teamPlayers.nous }}</div><div class="recap__score-value">{{ finalNous }}</div></div>
+          <div><div class="recap__score-team recap__team--eux">{{ euxLabel }}</div><div class="recap__score-players">{{ teamPlayers.eux }}</div><div class="recap__score-value">{{ finalEux }}</div></div>
         </div>
         <button class="rematch-btn" data-testid="rematch" @click="doRematch">Revanche</button>
       </div>
@@ -893,8 +905,8 @@ const App = {
       <div class="recap__card" role="dialog" aria-labelledby="rr-title">
         <h2 class="recap__title" id="rr-title">Fin de la manche</h2>
         <div class="recap__scores" v-if="roundScores">
-          <div><div class="recap__score-team recap__team--nous">{{ nousLabel }}</div><div class="recap__score-value">{{ roundScores.nous }}</div></div>
-          <div><div class="recap__score-team recap__team--eux">{{ euxLabel }}</div><div class="recap__score-value">{{ roundScores.eux }}</div></div>
+          <div><div class="recap__score-team recap__team--nous">{{ nousLabel }}</div><div class="recap__score-players">{{ teamPlayers.nous }}</div><div class="recap__score-value">{{ roundScores.nous }}</div></div>
+          <div><div class="recap__score-team recap__team--eux">{{ euxLabel }}</div><div class="recap__score-players">{{ teamPlayers.eux }}</div><div class="recap__score-value">{{ roundScores.eux }}</div></div>
         </div>
         <p class="recap__contract" v-if="recapContract">
           Contrat {{ recapContract.label }} :

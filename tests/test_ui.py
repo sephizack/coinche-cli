@@ -17,14 +17,14 @@ from coinche.ui import (
     build_chat_panel,
     build_hand,
     build_split_view,
-    build_table_view,
     build_table_layout,
+    build_table_view,
     card_text,
     center_panel,
     contract_text,
     player_panel,
-    render_bid_menu,
     render_bid_effect,
+    render_bid_menu,
     render_bid_value_prompt,
     render_connection_banner,
     render_game_over,
@@ -271,6 +271,24 @@ def test_render_round_score_contains_totals_for_both_teams():
     assert plain.index("SCORE CUMULÉ") < plain.index("Cette manche")
 
 
+def test_render_round_score_includes_players_for_each_team():
+    round_score = {
+        "NS": {"total": 162, "card_points": 152},
+        "EW": {"total": 0, "card_points": 10},
+    }
+    players = {Seat.N: "Alice", Seat.S: "Bob", Seat.E: "Chloé", Seat.W: MALICIOUS_NAME}
+    panel = render_round_score(
+        round_score,
+        {"NS": 162, "EW": 0},
+        local_team="NS",
+        team_names={"NS": "Les bleus", "EW": "Les rouges"},
+        players=players,
+    )
+    plain = _plain(panel)
+    assert "Les bleus — Alice & Bob" in plain
+    assert f"Les rouges — Chloé & {MALICIOUS_NAME}" in plain
+
+
 def test_render_round_score_with_contract_shows_result_and_untrusted_name_unparsed():
     round_score = {
         "NS": {"total": 162, "card_points": 152},
@@ -298,6 +316,19 @@ def test_render_game_over_declares_correct_winner_label():
     panel_lose = render_game_over(final_scores, winning_team="NS", local_team="EW")
     assert panel_win.title == "Partie terminée"
     assert panel_lose.title == "Partie terminée"
+
+
+def test_render_game_over_includes_players_for_each_team():
+    panel = render_game_over(
+        {"NS": 1010, "EW": 640},
+        winning_team="NS",
+        local_team="NS",
+        team_names={"NS": "Les bleus", "EW": "Les rouges"},
+        players={Seat.N: "Alice", Seat.S: "Bob", Seat.E: "Chloé", Seat.W: "David"},
+    )
+    plain = _plain(panel)
+    assert "Les bleus — Alice & Bob : 1010" in plain
+    assert "Les rouges — Chloé & David : 640" in plain
 
 
 def test_render_game_over_with_contract_shows_result_and_untrusted_name_unparsed():

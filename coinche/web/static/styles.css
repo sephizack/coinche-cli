@@ -1034,6 +1034,11 @@ button {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+.recap__score-players {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  min-height: 1.2em;
+}
 .recap__score-value {
   font-size: 2.4rem;
   font-weight: 800;

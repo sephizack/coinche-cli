@@ -23,6 +23,7 @@ from rich.table import Table
 from rich.text import Text
 
 from coinche.cards import Seat
+from coinche.game import TEAM_OF
 
 RED_SUITS = {"♥", "♦"}
 TEAM_COLORS = {"nous": "cyan", "eux": "magenta"}
@@ -527,12 +528,29 @@ def render_update_notice(current_version: str, server_version: str) -> Panel:
     return Panel(text, border_style="yellow", title="Mise à jour recommandée", title_align="left")
 
 
+def _team_players(players: dict[Seat, str] | None, team: str) -> list[str]:
+    """Return a team's player names in seat order for score recaps."""
+    if players is None:
+        return []
+    return [players[seat] for seat in Seat if TEAM_OF[seat] == team and seat in players]
+
+
+def _team_label(label: str, players: list[str], style: str) -> Text:
+    """Build a score label without parsing player-controlled names as markup."""
+    text = Text(label, style=style)
+    if players:
+        text.append(" — ")
+        text.append(" & ".join(players))
+    return text
+
+
 def render_round_score(
     round_score: dict,
     cumulative: dict,
     local_team: str,
     team_names: dict[str, str] | None = None,
     contract: dict | None = None,
+    players: dict[Seat, str] | None = None,
 ) -> Panel:
     """End-of-round recap: each team's points for the manche just played, the
     updated cumulative score, and (if `contract` is given) whether the
@@ -546,12 +564,14 @@ def render_round_score(
     other_team = "EW" if local_team == "NS" else "NS"
     local_label = (team_names or {}).get(local_team) or "Nous"
     other_label = (team_names or {}).get(other_team) or "Eux"
+    local_players = _team_players(players, local_team)
+    other_players = _team_players(players, other_team)
     cumulative_grid = Table.grid(expand=True, padding=(0, 4))
     cumulative_grid.add_column(justify="center")
     cumulative_grid.add_column(justify="center")
     cumulative_grid.add_row(
-        Text(local_label, style=f"bold {TEAM_COLORS['nous']}"),
-        Text(other_label, style=f"bold {TEAM_COLORS['eux']}"),
+        _team_label(local_label, local_players, f"bold {TEAM_COLORS['nous']}"),
+        _team_label(other_label, other_players, f"bold {TEAM_COLORS['eux']}"),
     )
     cumulative_grid.add_row(
         Text(str(cumulative[local_team]), style=f"bold white on {TEAM_COLORS['nous']}"),
@@ -562,15 +582,17 @@ def render_round_score(
     round_grid.add_column(justify="center")
     round_grid.add_column(justify="center")
     round_grid.add_row(
-        Text(
+        _team_label(
             f"{local_label} : {round_score[local_team]['total']} pts "
             f"(cartes : {round_score[local_team]['card_points']})",
-            style=f"{TEAM_COLORS['nous']}",
+            local_players,
+            TEAM_COLORS["nous"],
         ),
-        Text(
+        _team_label(
             f"{other_label} : {round_score[other_team]['total']} pts "
             f"(cartes : {round_score[other_team]['card_points']})",
-            style=f"{TEAM_COLORS['eux']}",
+            other_players,
+            TEAM_COLORS["eux"],
         ),
     )
 
@@ -614,6 +636,7 @@ def render_game_over(
     local_team: str,
     contract: dict | None = None,
     team_names: dict[str, str] | None = None,
+    players: dict[Seat, str] | None = None,
 ) -> Panel:
     """End-of-game screen: final cumulative score per team, the overall winner,
     and (if `contract` is given) whether the very last round's announced
@@ -627,19 +650,20 @@ def render_game_over(
     other_team = "EW" if local_team == "NS" else "NS"
     local_label = (team_names or {}).get(local_team) or "Nous"
     other_label = (team_names or {}).get(other_team) or "Eux"
+    local_players = _team_players(players, local_team)
+    other_players = _team_players(players, other_team)
     won = winning_team == local_team
     result_label = "Victoire !" if won else "Défaite"
     style = "bold green" if won else "bold red3"
+    score_line = Text("Score final — ", style="bold white")
+    score_line.append_text(_team_label(local_label, local_players, "bold white"))
+    score_line.append(f" : {final_scores[local_team]}   ")
+    score_line.append_text(_team_label(other_label, other_players, "bold white"))
+    score_line.append(f" : {final_scores[other_team]}")
 
     blocks = [
         Align.center(Text(result_label, style=style)),
-        Align.center(
-            Text(
-                f"Score final — {local_label} : {final_scores[local_team]}"
-                f"   {other_label} : {final_scores[other_team]}",
-                style="bold white",
-            )
-        ),
+        Align.center(score_line),
     ]
 
     if contract is not None:

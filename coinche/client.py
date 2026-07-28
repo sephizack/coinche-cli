@@ -168,6 +168,7 @@ async def run_session(
                     local_team,
                     team_names=state.team_names,
                     contract=state.last_round_contract,
+                    players=state.players,
                 )
             )
         else:
@@ -496,7 +497,14 @@ async def _prompt_game_over_screen(live: Live, state: ClientState) -> str:
     ``"rematch"`` or ``"quit"`` (also ``"quit"`` if stdin closes)."""
     local_team = state.team_of.get(state.seat, "NS") if state.seat is not None else "NS"
     contract = _build_last_round_contract(state)
-    screen = ui.render_game_over(state.final_scores, state.winning_team or "", local_team, contract, state.team_names)
+    screen = ui.render_game_over(
+        state.final_scores,
+        state.winning_team or "",
+        local_team,
+        contract,
+        state.team_names,
+        state.players,
+    )
     live.console.print(screen)
     while True:
         key = await asyncio.to_thread(_read_single_key)
