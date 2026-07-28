@@ -597,3 +597,19 @@ def test_round_recap_shows_captured_and_awarded_points() -> None:
     assert "{{ roundScores.eux.cardPoints }}" in app
     assert "Score de la manche : {{ roundScores.nous.total }} pts" in app
     assert "Score de la manche : {{ roundScores.eux.total }} pts" in app
+
+
+def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:
+    """A confirmed Coinche/Surcoinche must produce the same prominent feedback as the CLI."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert "snap.bid_effect_level > (prev.bid_effect_level || 1)" in app
+    assert "bidEffectKey.value += 1" in app
+    assert "⚡ COINCHE ! ×2 ⚡" in app
+    assert "🔥 SURCOINCHE ! ×4 🔥" in app
+    assert "bid-effect--surcoinche" in app
+    assert ".bid-effect" in styles
+    assert ".bid-effect--surcoinche" in styles
+    assert "@keyframes bid-effect-pop" in styles

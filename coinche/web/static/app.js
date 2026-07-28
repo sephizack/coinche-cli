@@ -403,6 +403,8 @@ const App = {
     const shakeCard = ref(null);
     const dealing = ref(false);
     const badgeFlash = ref(false);
+    const bidEffect = ref(null);
+    const bidEffectKey = ref(0);
     const sweepClass = ref(null); // e.g. "sweep-north" while a trick sweeps out
     const confetti = ref([]);
     // Lobby form (there is no table-list in the snapshot contract; U2 pushes
@@ -412,6 +414,7 @@ const App = {
     let ws = null;
     let backoff = 500;
     let toastId = 0;
+    let bidEffectTimer = null;
 
     // -------- WebSocket (ConnectionLayer) --------
     function wsUrl() {
@@ -483,6 +486,21 @@ const App = {
       ) {
         badgeFlash.value = true;
         setTimeout(() => (badgeFlash.value = false), 700);
+      }
+
+      // Mirror the terminal's prominent Coinche/Surcoinche announcement as
+      // soon as the server confirms the bid, before the auction settles.
+      if (
+        prev &&
+        snap.bid_effect_level > (prev.bid_effect_level || 1)
+      ) {
+        bidEffect.value = snap.bid_effect_level;
+        bidEffectKey.value += 1;
+        if (bidEffectTimer) clearTimeout(bidEffectTimer);
+        bidEffectTimer = setTimeout(() => {
+          bidEffect.value = null;
+          bidEffectTimer = null;
+        }, 2400);
       }
 
       // Trick sweep (two-stage flip): when the just-completed 4-card trick
@@ -813,6 +831,8 @@ const App = {
       shakeCard,
       dealing,
       badgeFlash,
+      bidEffect,
+      bidEffectKey,
       sweepClass,
       confetti,
       lobby,
@@ -855,6 +875,13 @@ const App = {
     <!-- Toasts (transient errors / reconnection notice) -->
     <div class="toast-stack" aria-live="assertive">
       <div v-for="t in toasts" :key="t.id" class="toast" :class="{ 'toast--info': t.type === 'info' }">{{ t.message }}</div>
+    </div>
+
+    <!-- Coinche / Surcoinche confirmation from the server-authoritative bid state. -->
+    <div v-if="bidEffect" :key="bidEffectKey" class="bid-effect" :class="{ 'bid-effect--surcoinche': bidEffect >= 4 }"
+         role="status" aria-live="assertive">
+      <span v-if="bidEffect >= 4">🔥 SURCOINCHE ! ×4 🔥</span>
+      <span v-else>⚡ COINCHE ! ×2 ⚡</span>
     </div>
 
     <!-- ================= LOBBY (not joined) ================= -->

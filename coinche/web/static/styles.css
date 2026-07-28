@@ -1175,6 +1175,53 @@ button {
   }
 }
 
+/* Server-confirmed Coinche/Surcoinche announcement, matching the terminal effect
+   without blocking the bid controls underneath. */
+.bid-effect {
+  position: fixed;
+  top: 18%;
+  left: 50%;
+  z-index: 110;
+  padding: var(--sp-3) var(--sp-6);
+  border: 3px solid #ff847c;
+  border-radius: 999px;
+  background: #a81f25;
+  box-shadow: 0 0 0 5px rgba(255, 132, 124, 0.25), 0 0 48px rgba(231, 76, 60, 0.9);
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: clamp(1.2rem, 3vw, 2rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  text-align: center;
+  transform: translateX(-50%);
+  animation: bid-effect-pop 2.4s var(--ease-standard) both;
+}
+.bid-effect--surcoinche {
+  border-color: #ffb3a8;
+  background: #64131c;
+  box-shadow: 0 0 0 5px rgba(255, 179, 168, 0.25), 0 0 56px rgba(100, 19, 28, 0.95);
+}
+@keyframes bid-effect-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -36px) scale(0.65) rotate(-4deg);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.16) rotate(2deg);
+  }
+  34%,
+  72% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1) rotate(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -12px) scale(0.9);
+  }
+}
+
 /* Deal animation — cards drop/scale in when a fresh hand arrives. */
 .deal-enter {
   animation: deal-in var(--dur-card) var(--ease-standard) backwards;
