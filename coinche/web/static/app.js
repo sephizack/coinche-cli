@@ -1013,11 +1013,12 @@ const App = {
                 ></seat-panel>
 
                 <!-- Trick center / current bid -->
-                <div class="trick-area" :class="[sweepClass, { 'trick-area--sweeping': sweepClass }]">
+                <transition-group name="trick-card" tag="div" class="trick-area"
+                                  :class="[sweepClass, { 'trick-area--sweeping': sweepClass }]">
                   <div v-for="(tc, i) in trickCards" :key="tc.slot" class="trick-card" :class="'trick-card--' + tc.slot">
                     <card :card="tc.card"></card>
                   </div>
-                </div>
+                </transition-group>
                 <div v-if="!trickCards.length && currentBid" class="center-bid">
                   <div class="center-bid__label">Enchère</div>
                   <div class="center-bid__value">{{ currentBid }}</div>

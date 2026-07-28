@@ -613,3 +613,15 @@ def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:
     assert ".bid-effect" in styles
     assert ".bid-effect--surcoinche" in styles
     assert "@keyframes bid-effect-pop" in styles
+
+
+def test_web_client_animates_each_new_trick_card() -> None:
+    """Every CARD_PLAYED snapshot insertion, including bot plays, gets a Vue enter animation."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert '<transition-group name="trick-card" tag="div" class="trick-area"' in app
+    for position in ("south", "north", "west", "east"):
+        assert f".trick-card--{position}.trick-card-enter-active" in styles
+        assert f"@keyframes trick-card-enter-{position}" in styles
