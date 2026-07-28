@@ -3,12 +3,71 @@
 from __future__ import annotations
 
 import asyncio
+import random
 from dataclasses import dataclass
 
 from coinche import protocol, rules
 from coinche.game import PARTNER_OF, Game, Seat
 
 SEAT_ORDER: tuple[Seat, ...] = (Seat.N, Seat.E, Seat.S, Seat.W)
+
+BOT_NAMES: tuple[str, ...] = (
+    # Final Fantasy
+    "Cloud",
+    "Tifa",
+    "Aerith",
+    "Sephiroth",
+    "Barret",
+    "Yuffie",
+    "Vincent",
+    "Squall",
+    "Rinoa",
+    "Zell",
+    "Tidus",
+    "Yuna",
+    "Auron",
+    "Lightning",
+    "Noctis",
+    "Gladiolus",
+    "Ignis",
+    "Prompto",
+    # Metal Gear Solid
+    "Solid Snake",
+    "Liquid Snake",
+    "Meryl",
+    "Otacon",
+    "Raiden",
+    "Revolver Ocelot",
+    "Grey Fox",
+    "Big Boss",
+    "The Boss",
+    "Quiet",
+    "Miller",
+    "Naomi",
+    # Clair Obscur
+    "Gustave",
+    "Lune",
+    "Sciel",
+    "Maelle",
+    "Verso",
+    "Monoko",
+    "Renoir",
+    "Esquie",
+)
+
+
+def _pick_bot_name(used_names: set[str]) -> str:
+    """Return a random unused name from BOT_NAMES, or a suffixed fallback."""
+    available = [name for name in BOT_NAMES if name.lower() not in used_names]
+    if available:
+        return random.choice(available)
+    base = random.choice(BOT_NAMES)
+    suffix = 2
+    name = f"{base} {suffix}"
+    while name.lower() in used_names:
+        suffix += 1
+        name = f"{base} {suffix}"
+    return name
 
 
 class TableError(Exception):
@@ -156,21 +215,11 @@ class Table:
         if self.game is not None:
             raise GameInProgressError(self.table_key)
 
-        bot_names = {
-            Seat.N: "Bot Nord",
-            Seat.E: "Bot Est",
-            Seat.S: "Bot Sud",
-            Seat.W: "Bot Ouest",
-        }
         used_names = {session.name.lower() for session in self.seats.values() if session is not None}
         added: list[Seat] = []
         for seat in SEAT_ORDER:
             if self.seats[seat] is None:
-                name = bot_names[seat]
-                suffix = 2
-                while name.lower() in used_names:
-                    name = f"{bot_names[seat]} {suffix}"
-                    suffix += 1
+                name = _pick_bot_name(used_names)
                 used_names.add(name.lower())
                 self.seats[seat] = ClientSession(
                     seat=seat,

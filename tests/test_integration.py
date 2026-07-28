@@ -24,6 +24,7 @@ import asyncio
 import pytest
 
 from coinche import protocol, server
+from coinche.table import BOT_NAMES
 
 HOST = "127.0.0.1"
 
@@ -34,9 +35,7 @@ SEAT_JOIN_ORDER = ("N", "E", "S", "W")
 NAMES_BY_SEAT = {"N": "Alice", "E": "Bob", "S": "Carol", "W": "Dave"}
 
 
-async def _start_server(
-    target_score: int = 1000, bot_think_seconds: float = 0
-) -> tuple[asyncio.AbstractServer, int]:
+async def _start_server(target_score: int = 1000, bot_think_seconds: float = 0) -> tuple[asyncio.AbstractServer, int]:
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         # trick_pause_seconds=0/round_pause_seconds=0: these tests don't care
         # about the UX pauses after each trick/round (added per user request)
@@ -199,7 +198,10 @@ def test_one_player_can_fill_the_table_with_bots():
             lobby = await _read_until(reader, protocol.LOBBY_UPDATE)
             assert lobby["seats_filled"] == 4
             bots = [player for player in lobby["players"] if player["is_bot"]]
-            assert {player["name"] for player in bots} == {"Bot Est", "Bot Sud", "Bot Ouest"}
+            assert len(bots) == 3
+            bot_names = {player["name"] for player in bots}
+            assert bot_names <= set(BOT_NAMES)
+            assert len(bot_names) == len(bots)
 
             deal = await _read_until(reader, protocol.DEAL)
             assert len(deal["hand"]) == 8

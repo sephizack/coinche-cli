@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from coinche.game import Seat
-from coinche.table import GameInProgressError, NameTakenError, Table, TableFullError
+from coinche.table import BOT_NAMES, GameInProgressError, NameTakenError, Table, TableFullError
 
 
 class FakeWriter:
@@ -42,7 +42,9 @@ def test_fill_with_bots_occupies_open_seats_and_starts_game():
     assert table.game is not None
     assert table.seats[Seat.N].is_bot is False
     assert all(table.seats[seat].is_bot for seat in added)
-    assert [table.seats[seat].name for seat in added] == ["Bot Est", "Bot Sud", "Bot Ouest"]
+    bot_names = [table.seats[seat].name for seat in added]
+    assert all(name in BOT_NAMES for name in bot_names)
+    assert len(set(bot_names)) == len(bot_names)
 
 
 def test_add_player_rejects_fifth_join():
@@ -110,7 +112,7 @@ def test_add_player_team_name_full_falls_back_to_no_label_seating():
     (not inherit the saturated label on a wrong-side seat)."""
     table = Table("abcd")
     table.add_player("Alice", FakeWriter(), team_name="Equipe 1")  # N
-    table.add_player("Bob", FakeWriter(), team_name="Equipe 1")   # S (opposite Alice)
+    table.add_player("Bob", FakeWriter(), team_name="Equipe 1")  # S (opposite Alice)
     # Equipe 1 is now full; Carol uses the same label but gets normal seat-filling
     seat = table.add_player("Carol", FakeWriter(), team_name="Equipe 1")
     assert seat == Seat.E  # next seat in SEAT_ORDER after N, S
