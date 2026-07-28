@@ -967,7 +967,17 @@ const App = {
           Contrat {{ recapContract.label }} :
           <span :class="recapContract.honored ? 'ok' : 'ko'">{{ recapContract.honored ? '✓ réussi' : '✗ chuté' }}</span>
         </p>
-        <p class="recap__contract">Score cumulé — {{ nousLabel }} {{ nousScore }} / {{ euxLabel }} {{ euxScore }}</p>
+        <p class="recap__scores-title">Score cumulé</p>
+        <div class="recap__scores recap__scores--cumulative">
+          <div>
+            <div class="recap__score-team recap__team--nous">{{ nousLabel }}</div>
+            <div class="recap__score-value">{{ nousScore }}</div>
+          </div>
+          <div>
+            <div class="recap__score-team recap__team--eux">{{ euxLabel }}</div>
+            <div class="recap__score-value">{{ euxScore }}</div>
+          </div>
+        </div>
         <button class="rematch-btn" data-testid="round-continue" @click="continueRound">Manche suivante</button>
       </div>
     </div>

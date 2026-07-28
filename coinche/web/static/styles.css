@@ -1107,6 +1107,10 @@ button {
   gap: var(--sp-8);
   margin: var(--sp-4) 0;
 }
+.recap__scores--cumulative {
+  margin-top: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
 .recap__score-team {
   font-size: 0.85rem;
   letter-spacing: 0.06em;

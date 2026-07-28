@@ -597,6 +597,10 @@ def test_round_recap_shows_captured_and_awarded_points() -> None:
     assert "{{ roundScores.eux.cardPoints }}" in app
     assert "Score de la manche : {{ roundScores.nous.total }} pts" in app
     assert "Score de la manche : {{ roundScores.eux.total }} pts" in app
+    assert '<p class="recap__scores-title">Score cumulé</p>' in app
+    assert '<div class="recap__scores recap__scores--cumulative">' in app
+    assert "{{ nousScore }}" in app
+    assert "{{ euxScore }}" in app
 
 
 def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:
