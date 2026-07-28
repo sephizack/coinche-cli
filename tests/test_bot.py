@@ -179,6 +179,91 @@ def test_taker_leads_its_top_trump() -> None:
     assert choose_card(game, Seat.S) == Card("9", "♠")
 
 
+# A prior trick that burned the trump V, 9 and A (♠), so the 10 of trump left
+# in S's hand is now the outright master trump -- yet it is worth only 10 points
+# while a side Ace is worth 11. This is what separates "cash the higher-scoring
+# side Ace" (old behaviour) from "pull with the master trump first" (new).
+_TRUMP_HONORS_BURNED = {
+    "winner_seat": Seat.N,
+    "trick": [
+        (Seat.N, Card("V", "♠")),
+        (Seat.E, Card("9", "♠")),
+        (Seat.S, Card("8", "♠")),
+        (Seat.W, Card("A", "♠")),
+    ],
+    "points_won": 33,
+}
+
+
+def test_taker_pulls_master_trump_before_cashing_a_side_ace() -> None:
+    # S is the taker holding the master trump (10♠, since V/9/A♠ are gone) plus a
+    # side Ace worth MORE points. While opponents may still hold trump, S must
+    # LEAD the master trump to pull theirs out rather than cash the ace and risk
+    # being ruffed later -- even though the ace scores more on this one trick.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [_TRUMP_HONORS_BURNED]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♦")
+
+    assert _choose_tactical_card(game, Seat.S) == Card("10", "♠")
+
+
+def test_taker_stops_pulling_once_all_opponent_trumps_are_gone() -> None:
+    # Same master-trump-vs-side-ace hand, but now both of S's opponents (E and W)
+    # are provably void of trump: each discarded a side card when partner N led
+    # trump. With no opponent trump left to pull, the taker cashes the
+    # higher-scoring side Ace instead of leading the master trump into thin air.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.E, Card("7", "♥")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.W, Card("7", "♦")),
+            ],
+            "points_won": 22,
+        },
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("9", "♠")),
+                (Seat.E, Card("8", "♥")),
+                (Seat.S, Card("D", "♠")),
+                (Seat.W, Card("8", "♦")),
+            ],
+            "points_won": 17,
+        },
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("A", "♠")),
+                (Seat.E, Card("9", "♥")),
+                (Seat.S, Card("7", "♠")),
+                (Seat.W, Card("9", "♦")),
+            ],
+            "points_won": 11,
+        },
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♦")
+
+    # Assert against the rollout policy directly: it holds the pull-trumps rule
+    # and is deterministic, unlike the Monte-Carlo `choose_card` wrapper.
+    assert _choose_tactical_card(game, Seat.S) == Card("A", "♥")
+
+
 def test_discarding_on_a_side_lead_reveals_a_trump_void() -> None:
     # ♥ is led, W neither follows ♥ nor trumps (♠) while the winner so far (N)
     # is not W's partner: the rules would have forced a cut, so W holds no trump.

@@ -210,6 +210,36 @@ def _is_master(card: Card, hand: list[Card], game: Game, trump: str) -> bool:
     return all(Card(rank, card.suit) in known_cards for rank in stronger_ranks)
 
 
+def _outstanding_trumps(game: Game, seat: Seat, trump: str) -> int:
+    """Count trumps still unaccounted for from this seat's viewpoint.
+
+    A trump is "seen" if it's in the acting seat's own hand or has already been
+    played to any trick. The rest are outstanding in the three hidden hands
+    (partner or opponents).
+    """
+    assert game.round_state is not None
+    rs = game.round_state
+    seen = sum(1 for card in game.get_hand(seat) if card.suit == trump)
+    for trick in rs.trick_history:
+        seen += sum(1 for _, card in trick["trick"] if card.suit == trump)
+    seen += sum(1 for _, card in rs.current_trick if card.suit == trump)
+    return len(rules.TRUMP_ORDER) - seen
+
+
+def _opponents_may_hold_trump(game: Game, seat: Seat, trump: str) -> bool:
+    """True if an opponent could still hold a trump (used to decide whether to pull).
+
+    Requires at least one outstanding trump AND at least one opponent not yet
+    provably void of trump. Once every opponent is known void (or no trump is
+    left out), pulling is pointless and we stop.
+    """
+    assert game.round_state is not None
+    if _outstanding_trumps(game, seat, trump) <= 0:
+        return False
+    voids = _known_void_suits(game.round_state)
+    return any(other != seat and TEAM_OF[other] != TEAM_OF[seat] and trump not in voids[other] for other in Seat)
+
+
 def _choose_tactical_card(game: Game, seat: Seat) -> Card:
     """Fast rollout policy using only the acting player's hand and public cards."""
     assert game.round_state is not None
@@ -222,6 +252,20 @@ def _choose_tactical_card(game: Game, seat: Seat) -> Card:
     if not trick:
         hand = game.get_hand(seat)
         masters = [card for card in legal_cards if _is_master(card, hand, game, trump)]
+        contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
+        is_taker = contract is not None and contract["seat"] == seat
+
+        # As the taker, pull the opponents' trumps first: while they may still
+        # hold a trump and we still hold a *master* trump, lead the master
+        # trump to drag theirs out, instead of cashing side aces and leaving
+        # ourselves open to being ruffed later. Restricting to master trumps
+        # guarantees we win the trick; the next-highest trump becomes master
+        # once this one is gone, so successive leads keep pulling round by round.
+        if is_taker:
+            master_trumps = [card for card in masters if card.suit == trump]
+            if master_trumps and _opponents_may_hold_trump(game, seat, trump):
+                return max(master_trumps, key=lambda card: _card_strength(card, trump))
+
         if masters:
             return max(masters, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
 
@@ -230,8 +274,7 @@ def _choose_tactical_card(game: Game, seat: Seat) -> Card:
         # leading trump as the mere supporter forces the taker to overtrump
         # their own partner, burning two masters (e.g. the 9 dragging out the
         # partner's Valet) where they could have each won a trick.
-        contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
-        if contract is not None and contract["seat"] == seat:
+        if is_taker:
             trumps = [card for card in legal_cards if card.suit == trump]
             if trumps:
                 return max(trumps, key=lambda card: _card_strength(card, trump))
