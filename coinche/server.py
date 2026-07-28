@@ -361,6 +361,8 @@ async def _run_bot_turns(table: Table) -> None:
         if session is None or not session.is_bot:
             return
 
+        await asyncio.sleep(table.bot_think_seconds)
+
         if game.phase == "bidding":
             action = choose_bid(game, seat)
             result = game.submit_bid(
@@ -469,6 +471,7 @@ async def _resolve_join(
     target_score: int,
     trick_pause_seconds: float,
     round_pause_seconds: float,
+    bot_think_seconds: float,
 ) -> tuple[Table, Seat] | None:
     """Read messages from a fresh client connection until a JOIN arrives.
 
@@ -477,7 +480,9 @@ async def _resolve_join(
     SUBSCRIBE_LOBBY registers the writer for live push TABLE_LISTING updates.
     """
     try:
-        return await _resolve_join_inner(reader, writer, target_score, trick_pause_seconds, round_pause_seconds)
+        return await _resolve_join_inner(
+            reader, writer, target_score, trick_pause_seconds, round_pause_seconds, bot_think_seconds
+        )
     finally:
         LOBBY_SUBSCRIBERS.discard(writer)
 
@@ -488,6 +493,7 @@ async def _resolve_join_inner(
     target_score: int,
     trick_pause_seconds: float,
     round_pause_seconds: float,
+    bot_think_seconds: float,
 ) -> tuple[Table, Seat] | None:
     while True:
         try:
@@ -543,6 +549,7 @@ async def _resolve_join_inner(
         target_score=target_score,
         trick_pause_seconds=trick_pause_seconds,
         round_pause_seconds=round_pause_seconds,
+        bot_think_seconds=bot_think_seconds,
     )
 
     async with table.lock:
@@ -619,11 +626,14 @@ async def handle_connection(
     target_score: int,
     trick_pause_seconds: float = 2.5,
     round_pause_seconds: float = 4.0,
+    bot_think_seconds: float = 1.0,
 ) -> None:
     table: Table | None = None
     seat: Seat | None = None
     try:
-        joined = await _resolve_join(reader, writer, target_score, trick_pause_seconds, round_pause_seconds)
+        joined = await _resolve_join(
+            reader, writer, target_score, trick_pause_seconds, round_pause_seconds, bot_think_seconds
+        )
         if joined is None:
             return
         table, seat = joined
@@ -703,6 +713,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--bot-think",
+        type=float,
+        default=1.0,
+        help="Seconds each bot waits before bidding or playing a card (default: 1.0)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -759,6 +775,7 @@ async def main(argv: list[str] | None = None) -> None:
             args.target_score,
             trick_pause_seconds=args.trick_pause,
             round_pause_seconds=args.round_pause,
+            bot_think_seconds=args.bot_think,
         )
 
     server = await asyncio.start_server(_handler, args.host, args.port)
