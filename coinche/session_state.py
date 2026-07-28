@@ -28,6 +28,7 @@ from coinche.rules import NONTRUMP_ORDER, TRUMP_ORDER
 # original order for bid/trump enumeration elsewhere.
 BLACK_SUITS: tuple[str, ...] = ("♠", "♣")
 RED_SUITS: tuple[str, ...] = ("♥", "♦")
+SYSTEM_CHAT_NAME = "Système"
 
 
 @dataclass
@@ -138,7 +139,7 @@ class ClientState:
     team_names: dict[str, str] = field(default_factory=dict)
     # Chat: split-pane state.
     active_pane: str = "game"  # "game" or "chat"
-    chat_messages: deque[tuple[str, str, str | None, float]] = field(default_factory=lambda: deque(maxlen=20))
+    chat_messages: deque[tuple[str, str, str | None, float, bool]] = field(default_factory=lambda: deque(maxlen=20))
     chat_buffer: str = ""
     chat_error: bool = False
     chat_cursor: int = 0
@@ -273,7 +274,12 @@ def _append_bid_announcement(state: ClientState, seat: Seat, payload: dict) -> N
         text = "Surcoinche ! ×4"
 
     who = state.players.get(seat, seat.value)
-    state.chat_messages.append((who, text, state.team_of.get(seat), time.time()))
+    state.chat_messages.append((who, text, state.team_of.get(seat), time.time(), False))
+
+
+def _append_round_separator(state: ClientState, round_number: int) -> None:
+    """Add a local chat marker before the auction of a newly dealt round."""
+    state.chat_messages.append((SYSTEM_CHAT_NAME, f"── Manche {round_number} ──", None, time.time(), True))
 
 
 def _build_last_round_contract(state: ClientState) -> dict | None:
@@ -375,6 +381,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.whose_turn = Seat(payload["first_bidder_seat"])
         state.dealer_seat = Seat(payload["dealer_seat"])
         state.last_action = f"Nouvelle donne #{payload['round_number']} (donneur {payload['dealer_seat']})"
+        _append_round_separator(state, payload["round_number"])
         # Deliberately do NOT clear `round_over_screen` here: the end-of-round
         # recap stays on screen (holding this freshly-dealt state underneath it)
         # until the local player presses a key to dismiss it (see input_loop),
@@ -579,7 +586,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         seat = Seat(payload["seat"])
         who = state.players.get(seat, seat.value)
         team = state.team_of.get(seat)
-        state.chat_messages.append((who, payload["text"], team, time.time()))
+        state.chat_messages.append((who, payload["text"], team, time.time(), False))
 
     elif msg_type == protocol.ERROR:
         text = payload.get("message") or payload.get("code") or "Erreur inconnue"
@@ -633,7 +640,14 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "pending_bid_request": state.pending_bid_request,  # so the web can show the bid panel
         "pending_play_request": bool(state.legal_cards),
         "chat_messages": [
-            {"name": name, "text": text, "team": team, "ts": ts} for name, text, team, ts in state.chat_messages
+            {
+                "name": name,
+                "text": text,
+                "team": team,
+                "ts": ts,
+                "system": system,
+            }
+            for name, text, team, ts, system in state.chat_messages
         ],
         "flags": {
             "game_over": state.game_over,

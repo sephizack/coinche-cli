@@ -343,6 +343,7 @@ const ChatPanel = {
         name: m.name,
         text: m.text,
         cls: m.team === this.localTeam ? "nous" : "eux",
+        system: !!m.system,
       }));
     },
   },
@@ -373,9 +374,14 @@ const ChatPanel = {
       </div>
       <div class="chat-log" aria-live="polite">
         <p v-if="!view.length" class="chat-empty">Aucun message.</p>
-        <div v-for="(m, i) in view" :key="i" class="chat-msg">
-          <span class="chat-msg__name" :class="'chat-msg__name--' + m.cls">{{ m.name }}</span>
-          <span class="chat-msg__text">{{ m.text }}</span>
+        <div v-for="(m, i) in view" :key="i" class="chat-msg" :class="{ 'chat-msg--system': m.system }">
+          <template v-if="m.system">
+            <span class="chat-msg__separator">{{ m.text }}</span>
+          </template>
+          <template v-else>
+            <span class="chat-msg__name" :class="'chat-msg__name--' + m.cls">{{ m.name }}</span>
+            <span class="chat-msg__text">{{ m.text }}</span>
+          </template>
         </div>
       </div>
       <form class="chat-compose" @submit.prevent="submit">

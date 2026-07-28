@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.text import Text
 
 from coinche.cards import Seat
+from coinche.session_state import SYSTEM_CHAT_NAME
 from coinche.ui import (
     build_chat_panel,
     build_hand,
@@ -383,9 +384,9 @@ def test_build_chat_panel_shows_placeholder_when_empty():
 def test_build_chat_panel_renders_messages():
     from collections import deque
 
-    msgs: deque[tuple[str, str, str | None, float]] = deque(maxlen=20)
-    msgs.append(("Alice", "bonjour", "NS", 1700000000.0))
-    msgs.append(("Bob", "salut", "EW", 1700000060.0))
+    msgs: deque[tuple[str, str, str | None, float, bool]] = deque(maxlen=20)
+    msgs.append(("Alice", "bonjour", "NS", 1700000000.0, False))
+    msgs.append(("Bob", "salut", "EW", 1700000060.0, False))
     panel = build_chat_panel(msgs, buffer="", active=False, local_team="NS")
     plain = _plain(panel)
     assert "Alice" in plain
@@ -414,8 +415,8 @@ def test_build_chat_panel_active_border_differs():
 def test_build_chat_panel_name_not_parsed_as_markup():
     from collections import deque
 
-    msgs: deque[tuple[str, str, str | None, float]] = deque(maxlen=20)
-    msgs.append((MALICIOUS_NAME, "test", "NS", 1700000000.0))
+    msgs: deque[tuple[str, str, str | None, float, bool]] = deque(maxlen=20)
+    msgs.append((MALICIOUS_NAME, "test", "NS", 1700000000.0, False))
     panel = build_chat_panel(msgs, buffer="", active=False, local_team="NS")
     console = Console(record=True, width=100)
     console.print(panel)
@@ -427,13 +428,24 @@ def test_build_chat_panel_name_not_parsed_as_markup():
 def test_build_chat_panel_renders_timestamp():
     from collections import deque
 
-    msgs: deque[tuple[str, str, str | None, float]] = deque(maxlen=20)
-    msgs.append(("Alice", "bonjour", "NS", 1700000000.0))
+    msgs: deque[tuple[str, str, str | None, float, bool]] = deque(maxlen=20)
+    msgs.append(("Alice", "bonjour", "NS", 1700000000.0, False))
     panel = build_chat_panel(msgs, buffer="", active=False, local_team="NS")
     plain = _plain(panel)
     # 1700000000.0 is 2023-11-14 22:13:20 UTC; local time varies but HH:MM is always 5 chars
     assert ":" in plain
     assert "Alice" in plain
+
+
+def test_build_chat_panel_renders_system_round_separator_without_sender_name():
+    from collections import deque
+
+    messages = deque([(SYSTEM_CHAT_NAME, "── Manche 2 ──", None, 1700000000.0, True)], maxlen=20)
+
+    plain = _plain(build_chat_panel(messages, buffer="", active=False))
+
+    assert "── Manche 2 ──" in plain
+    assert SYSTEM_CHAT_NAME not in plain
 
 
 def test_build_chat_panel_cursor_shown_when_active():

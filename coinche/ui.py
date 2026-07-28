@@ -696,7 +696,7 @@ def render_game_over(
 
 
 def build_chat_panel(
-    messages: deque[tuple[str, str, str | None, float]],
+    messages: deque[tuple[str, str, str | None, float, bool]],
     buffer: str,
     active: bool,
     error: bool = False,
@@ -705,9 +705,10 @@ def build_chat_panel(
 ) -> Panel:
     """Right-side chat panel: message list + inline input buffer.
 
-    Each message is ``(name, text, team_id, ts)`` where *team_id* is
+    Each message is ``(name, text, team_id, ts, system)`` where *team_id* is
     ``"NS"``/``"EW"`` or ``None`` and *ts* is a client-side receive timestamp
-    (``time.time()``).  When *local_team* is given, the sender's name is
+    (``time.time()``). *system* marks a local, non-player separator. When
+    *local_team* is given, the sender's name is
     coloured with the matching ``TEAM_COLORS`` (``"nous"`` for same-team,
     ``"eux"`` for opposite-team).
 
@@ -721,7 +722,10 @@ def build_chat_panel(
         cursor = len(buffer)
     _NAME_WIDTH = 10
     lines: list[RenderableType] = []
-    for name, text, team, ts in messages:
+    for name, text, team, ts, system in messages:
+        if system:
+            lines.append(Align.center(Text(text, style="dim cyan")))
+            continue
         if team is not None and local_team is not None:
             camp = "nous" if team == local_team else "eux"
             name_style = f"bold {TEAM_COLORS[camp]}"

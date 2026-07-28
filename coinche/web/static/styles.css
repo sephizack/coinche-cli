@@ -935,6 +935,23 @@ button {
   color: var(--text-on-felt);
   word-break: break-word;
 }
+.chat-msg--system {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+.chat-msg--system::before,
+.chat-msg--system::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid rgba(212, 175, 55, 0.3);
+}
+.chat-msg__separator {
+  white-space: nowrap;
+}
 .chat-empty {
   color: var(--text-muted);
   font-style: italic;

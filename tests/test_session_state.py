@@ -19,6 +19,7 @@ import json
 from coinche import protocol
 from coinche.cards import Seat
 from coinche.session_state import (
+    SYSTEM_CHAT_NAME,
     ApplyResult,
     ClientState,
     apply_message,
@@ -103,6 +104,9 @@ def test_deal_resets_round_state_and_sorts_hand():
     assert state.whose_turn == Seat.N
     assert state.dealer_seat == Seat.W
     assert state.last_action == "Nouvelle donne #3 (donneur W)"
+    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
+        (SYSTEM_CHAT_NAME, "── Manche 3 ──", None),
+    ]
     assert state.round_over_screen is True  # preserved deliberately
 
 
@@ -508,9 +512,10 @@ def test_chat_appends_message_with_team():
     result = apply_message(state, protocol.CHAT, {"seat": "N", "text": "Salut"})
     assert result.action_requested is False
     assert len(state.chat_messages) == 1
-    name, text, team, ts = state.chat_messages[0]
+    name, text, team, ts, system = state.chat_messages[0]
     assert (name, text, team) == ("Nord", "Salut", "NS")
     assert isinstance(ts, float)
+    assert system is False
 
 
 def test_bid_announcements_are_added_to_chat_and_trigger_coinche_effect():
@@ -523,11 +528,33 @@ def test_bid_announcements_are_added_to_chat_and_trigger_coinche_effect():
     )
     apply_message(state, protocol.BID_UPDATE, {"seat": "E", "action": "coinche", "next_to_act": "S"})
 
-    assert [(name, text, team) for name, text, team, _ts in state.chat_messages] == [
+    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
         ("Nord", "Annonce : 90 ♥", "NS"),
         ("Est", "Coinche ! ×2", "EW"),
     ]
     assert state.bid_effect_level == 2
+
+
+def test_deal_adds_a_system_separator_after_prior_announcements():
+    state = ClientState()
+    _join(state)
+    apply_message(
+        state,
+        protocol.BID_UPDATE,
+        {"seat": "N", "action": "bid", "trump": "♥", "points": 90, "next_to_act": "E"},
+    )
+
+    apply_message(
+        state,
+        protocol.DEAL,
+        {"hand": ["7♥"], "first_bidder_seat": "S", "dealer_seat": "N", "round_number": 2},
+    )
+
+    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
+        ("Nord", "Annonce : 90 ♥", "NS"),
+        (SYSTEM_CHAT_NAME, "── Manche 2 ──", None),
+    ]
+    assert snapshot_to_dict(state)["chat_messages"][-1]["system"] is True
 
 
 def test_surcoinche_result_is_added_to_chat_and_triggers_effect():
@@ -548,7 +575,7 @@ def test_surcoinche_result_is_added_to_chat_and_triggers_effect():
         },
     )
 
-    assert [(name, text, team) for name, text, team, _ts in state.chat_messages] == [
+    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
         ("Moi", "Surcoinche ! ×4", "NS"),
     ]
     assert state.bid_effect_level == 4
