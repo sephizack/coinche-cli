@@ -476,9 +476,9 @@ button {
 
 .contract-badge {
   position: absolute;
-  left: 50%;
-  top: 74%;
-  transform: translate(-50%, -50%);
+  right: 12%;
+  top: 18%;
+  transform: translateY(-50%);
   padding: var(--sp-2) var(--sp-4);
   border-radius: 999px;
   background: linear-gradient(
@@ -499,17 +499,17 @@ button {
 }
 @keyframes coinche-flash {
   0% {
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateY(-50%) scale(1);
     box-shadow: 0 0 0 rgba(212, 175, 55, 0);
   }
   30% {
-    transform: translate(-50%, -50%) scale(1.35);
+    transform: translateY(-50%) scale(1.35);
     box-shadow: 0 0 40px rgba(232, 207, 122, 0.95);
     background: var(--gold-soft);
     color: var(--felt-green-dark);
   }
   100% {
-    transform: translate(-50%, -50%) scale(1);
+    transform: translateY(-50%) scale(1);
   }
 }
 
@@ -1038,6 +1038,14 @@ button {
   font-family: "Georgia", serif;
   font-size: 1.7rem;
 }
+.recap__scores-title {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .recap__scores {
   display: flex;
   justify-content: center;
@@ -1058,6 +1066,14 @@ button {
   font-size: 2.4rem;
   font-weight: 800;
   color: var(--text-on-felt);
+}
+.recap__score-caption,
+.recap__score-total {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.recap__score-total {
+  margin-top: var(--sp-2);
 }
 .recap__team--nous {
   color: var(--team-nous);

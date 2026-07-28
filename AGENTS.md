@@ -20,7 +20,7 @@ The core rule is a **strict separation between game logic and I/O**:
 | Layer | Files | Responsibility |
 |---|---|---|
 | Pure rules/state | `cards.py`, `rules.py`, `game.py` | I/O-free, no `await`/sockets. Methods return plain event/result dicts or raise a `GameError` subclass. |
-| Bot strategy | `bot.py` | I/O-free heuristic bidding/card selection. Reads `Game`; never mutates it directly or bypasses validation. |
+| Bot strategy | `bot.py` | I/O-free bidding plus imperfect-information Monte Carlo card selection. Never uses real hidden hands or bypasses validation. |
 | Wire protocol | `protocol.py` | Newline-delimited JSON encode/decode; centralizes enum↔string conversion. |
 | Transport / sessions | `server.py`, `table.py` | asyncio connection handling, seat assignment, disconnect/reconnect. Server-authoritative validation. |
 | Client / rendering | `client.py`, `ui.py` | Connects, renders live table view with `rich`. |

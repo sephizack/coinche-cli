@@ -1,8 +1,11 @@
 """Tests for the pure server-controlled bot strategy."""
 
-from coinche.bot import choose_bid, choose_card
+import copy
+import random
+
+from coinche.bot import _choose_tactical_card, choose_bid, choose_card
 from coinche.cards import Card, Seat
-from coinche.game import Game
+from coinche.game import TEAM_OF, Game
 
 
 def _cards(*values: str) -> list[Card]:
@@ -64,3 +67,50 @@ def test_bot_uses_the_cheapest_card_that_wins() -> None:
     game.round_state.hands[Seat.W] = _cards("A♥", "R♥")
 
     assert choose_card(game, Seat.W) == Card("R", "♥")
+
+
+def test_card_choice_does_not_depend_on_real_hidden_hands() -> None:
+    game = Game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+    assert game.round_state is not None
+
+    altered = copy.deepcopy(game)
+    assert altered.round_state is not None
+    altered.round_state.hands[Seat.N], altered.round_state.hands[Seat.E] = (
+        altered.round_state.hands[Seat.E],
+        altered.round_state.hands[Seat.N],
+    )
+
+    assert choose_card(game, Seat.W) == choose_card(altered, Seat.W)
+
+
+def test_monte_carlo_team_outscores_greedy_play_on_a_fixed_deal() -> None:
+    random_state = random.getstate()
+    try:
+        random.seed(0)
+        game = Game(target_score=99999)
+    finally:
+        random.setstate(random_state)
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+
+    def play_round(source: Game, optimize_ew: bool) -> int:
+        simulation = copy.deepcopy(source)
+        while simulation.phase == "trick_play":
+            acting_seat = simulation.next_to_act
+            if optimize_ew and TEAM_OF[acting_seat] == "EW":
+                card = choose_card(simulation, acting_seat)
+            else:
+                card = _choose_tactical_card(simulation, acting_seat)
+            result = simulation.submit_card(acting_seat, card)
+            if result.get("round_complete"):
+                score = result["round_score"]
+                return score["EW"]["total"] - score["NS"]["total"]
+        raise AssertionError("round did not complete")
+
+    assert play_round(game, optimize_ew=True) > play_round(game, optimize_ew=False)

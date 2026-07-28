@@ -15,6 +15,7 @@ import base64
 import json
 import os
 import struct
+from pathlib import Path
 
 import pytest
 
@@ -584,3 +585,15 @@ def test_static_index_served() -> None:
             await _stop(task)
 
     asyncio.run(scenario())
+
+
+def test_round_recap_shows_captured_and_awarded_points() -> None:
+    """The web recap must show points made by both teams, not only contract status."""
+    app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()
+
+    assert "cardPoints: t.card_points ?? 0" in app
+    assert "Points faits" in app
+    assert "{{ roundScores.nous.cardPoints }}" in app
+    assert "{{ roundScores.eux.cardPoints }}" in app
+    assert "Score de la manche : {{ roundScores.nous.total }} pts" in app
+    assert "Score de la manche : {{ roundScores.eux.total }} pts" in app
