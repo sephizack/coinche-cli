@@ -165,6 +165,23 @@ def test_partner_of_taker_does_not_lead_trump_under_the_taker() -> None:
     assert choose_card(game, Seat.S) == Card("7", "♣")
 
 
+def test_partner_of_taker_leads_a_master_trump_to_help_pull() -> None:
+    # N took the contract; S (the partner) is on lead. Unlike the 9 above, S now
+    # holds the trump Valet -- the outright master -- so leading it wins the trick
+    # outright and never forces N to overtrump their own partner. The whole
+    # declaring team pulls the opponents' trumps, not just the taker.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("V♠", "7♣", "8♦")
+
+    assert _choose_tactical_card(game, Seat.S) == Card("V", "♠")
+
+
 def test_taker_leads_its_top_trump() -> None:
     # When the bot IS the taker, pulling trump is correct.
     game = Game()
@@ -211,6 +228,24 @@ def test_taker_pulls_master_trump_before_cashing_a_side_ace() -> None:
     game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♦")
 
     assert _choose_tactical_card(game, Seat.S) == Card("10", "♠")
+
+
+def test_taker_leads_a_non_master_trump_before_cashing_a_side_ace() -> None:
+    # S is the taker holding a NON-master trump (9♠ -- V♠ is still out) alongside
+    # a side Ace. With opponents still able to hold trump, S must lead the trump
+    # to force theirs out before cashing the ace, rather than cashing the ace and
+    # leaving the side suit open to a later ruff. This is the "dumb bot cashes the
+    # ace first" case for the taker himself, not just the partner.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("9♠", "A♥", "7♦")
+
+    assert _choose_tactical_card(game, Seat.S) == Card("9", "♠")
 
 
 def test_taker_stops_pulling_once_all_opponent_trumps_are_gone() -> None:

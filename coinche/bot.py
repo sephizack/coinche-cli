@@ -254,26 +254,35 @@ def _choose_tactical_card(game: Game, seat: Seat) -> Card:
         masters = [card for card in legal_cards if _is_master(card, hand, game, trump)]
         contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
         is_taker = contract is not None and contract["seat"] == seat
+        is_declarer = contract is not None and contract["team"] == TEAM_OF[seat]
 
-        # As the taker, pull the opponents' trumps first: while they may still
-        # hold a trump and we still hold a *master* trump, lead the master
-        # trump to drag theirs out, instead of cashing side aces and leaving
-        # ourselves open to being ruffed later. Restricting to master trumps
-        # guarantees we win the trick; the next-highest trump becomes master
-        # once this one is gone, so successive leads keep pulling round by round.
-        if is_taker:
+        # Draw trumps first, cash side winners second. While an opponent may
+        # still hold a trump, the declaring team leads trump BEFORE cashing side
+        # masters -- cashing an ace early only to be ruffed later is the classic
+        # "dumb bot" move. Pulling early strips the opponents of ruffers so the
+        # side aces run safely once trumps are gone.
+        if is_declarer and _opponents_may_hold_trump(game, seat, trump):
+            # A master trump wins outright, so either declarer may lead one --
+            # a partner's master lead never forces the taker to overtrump their
+            # own side, and the next-highest trump becomes master afterwards, so
+            # successive leads keep pulling round by round.
             master_trumps = [card for card in masters if card.suit == trump]
-            if master_trumps and _opponents_may_hold_trump(game, seat, trump):
+            if master_trumps:
                 return max(master_trumps, key=lambda card: _card_strength(card, trump))
+            # No master trump left, but pulling is still the taker's job: lead
+            # the top trump to force out the opponents' higher ones. The partner
+            # stays out here -- a *non-master* lead would make the taker overtrump
+            # their own partner, burning two masters in one trick.
+            if is_taker:
+                trumps = [card for card in legal_cards if card.suit == trump]
+                if trumps:
+                    return max(trumps, key=lambda card: _card_strength(card, trump))
 
         if masters:
             return max(masters, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
 
-        # Pulling trumps is the taker's job, not the partner's. Only lead a
-        # (non-master) trump when this seat is the seat that won the contract:
-        # leading trump as the mere supporter forces the taker to overtrump
-        # their own partner, burning two masters (e.g. the 9 dragging out the
-        # partner's Valet) where they could have each won a trick.
+        # Opponents are out of trump (or this seat can't usefully pull): the
+        # taker may still lead a bare trump to squeeze the last ones out.
         if is_taker:
             trumps = [card for card in legal_cards if card.suit == trump]
             if trumps:
