@@ -298,6 +298,56 @@ def test_card_played_removes_own_card_and_updates_trick():
     assert state.whose_turn == Seat.W
 
 
+def test_card_played_belote_and_rebelote_announced_in_chat():
+    state = ClientState()
+    _join(state)
+    state.hand = ["R♥", "D♥"]
+    apply_message(
+        state,
+        protocol.CARD_PLAYED,
+        {
+            "seat": "S",
+            "card": "R♥",
+            "current_trick": [{"seat": "S", "card": "R♥"}],
+            "next_to_act": "W",
+            "belote_announcement": "belote",
+        },
+    )
+    apply_message(
+        state,
+        protocol.CARD_PLAYED,
+        {
+            "seat": "S",
+            "card": "D♥",
+            "current_trick": [{"seat": "S", "card": "D♥"}],
+            "next_to_act": "W",
+            "belote_announcement": "rebelote",
+        },
+    )
+    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
+        ("Moi", "Belote !", "NS"),
+        ("Moi", "Rebelote !", "NS"),
+    ]
+
+
+def test_card_played_without_belote_adds_no_chat_message():
+    state = ClientState()
+    _join(state)
+    state.hand = ["7♥"]
+    apply_message(
+        state,
+        protocol.CARD_PLAYED,
+        {
+            "seat": "S",
+            "card": "7♥",
+            "current_trick": [{"seat": "S", "card": "7♥"}],
+            "next_to_act": "W",
+            "belote_announcement": None,
+        },
+    )
+    assert len(state.chat_messages) == 0
+
+
 def test_card_played_other_seat_keeps_local_hand():
     state = ClientState()
     _join(state)

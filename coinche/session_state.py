@@ -277,6 +277,13 @@ def _append_bid_announcement(state: ClientState, seat: Seat, payload: dict) -> N
     state.chat_messages.append((who, text, state.team_of.get(seat), time.time(), False))
 
 
+def _append_belote_announcement(state: ClientState, seat: Seat, announcement: str) -> None:
+    """Add a Belote/Rebelote declaration to the shared client-side chat."""
+    text = "Belote !" if announcement == "belote" else "Rebelote !"
+    who = state.players.get(seat, seat.value)
+    state.chat_messages.append((who, text, state.team_of.get(seat), time.time(), False))
+
+
 def _append_round_separator(state: ClientState, round_number: int) -> None:
     """Add a local chat marker before the auction of a newly dealt round."""
     state.chat_messages.append((SYSTEM_CHAT_NAME, f"── Manche {round_number} ──", None, time.time(), True))
@@ -469,6 +476,8 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             state.last_action += " — Belote !"
         elif announcement == "rebelote":
             state.last_action += " — Rebelote !"
+        if announcement in ("belote", "rebelote"):
+            _append_belote_announcement(state, played_seat, announcement)
         next_to_act = payload.get("next_to_act")
         state.whose_turn = Seat(next_to_act) if next_to_act is not None else None
         if played_seat == state.seat and payload["card"] in state.hand:
