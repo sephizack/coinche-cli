@@ -743,6 +743,7 @@ button {
   padding: var(--sp-4);
 }
 .bid-panel {
+  position: relative;
   width: min(460px, 100%);
   background: var(--panel-bg-solid);
   border: 2px solid var(--gold);
@@ -751,12 +752,88 @@ button {
   padding: var(--sp-6);
   font-family: system-ui, sans-serif;
 }
+.bid-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
 .bid-panel__title {
-  margin: 0 0 var(--sp-4);
+  margin: 0;
   color: var(--gold);
   font-family: "Georgia", serif;
   font-size: 1.3rem;
   text-align: center;
+}
+/* Bouton « replier » : masque le panneau pour découvrir la main. */
+.bid-collapse {
+  position: absolute;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 2px solid rgba(212, 175, 55, 0.4);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--gold-soft);
+  font-size: 1rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.bid-collapse:hover,
+.bid-collapse:focus-visible {
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.18);
+}
+/* Barre flottante affichée quand le panneau est replié : « Passe » agit
+   directement, « Annoncer » rouvre le panneau. Elle laisse voir la main. */
+.bid-collapsed-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  gap: var(--sp-2);
+}
+.bid-collapsed-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-6);
+  min-height: 44px;
+  border-radius: 999px;
+  border: 2px solid var(--gold);
+  font-family: system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-panel);
+  transition: filter var(--dur-fast) var(--ease-standard);
+}
+.bid-collapsed-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.bid-collapsed-btn:not(:disabled):hover,
+.bid-collapsed-btn:focus-visible {
+  filter: brightness(1.12);
+}
+.bid-collapsed-btn--pass {
+  background: rgba(6, 40, 27, 0.92);
+  color: var(--text-on-felt);
+  border-color: rgba(212, 175, 55, 0.5);
+}
+.bid-collapsed-btn--reopen {
+  background: linear-gradient(180deg, var(--gold-soft), var(--gold));
+  color: var(--felt-green-dark);
+}
+.bid-reopen__chevron {
+  font-size: 0.85rem;
 }
 .bid-panel__group {
   margin-bottom: var(--sp-4);
@@ -1262,7 +1339,9 @@ button {
   border: 3px solid #ff847c;
   border-radius: 999px;
   background: #a81f25;
-  box-shadow: 0 0 0 5px rgba(255, 132, 124, 0.25), 0 0 48px rgba(231, 76, 60, 0.9);
+  box-shadow:
+    0 0 0 5px rgba(255, 132, 124, 0.25),
+    0 0 48px rgba(231, 76, 60, 0.9);
   color: #fff;
   font-family: system-ui, sans-serif;
   font-size: clamp(1.2rem, 3vw, 2rem);
@@ -1276,7 +1355,9 @@ button {
 .bid-effect--surcoinche {
   border-color: #ffb3a8;
   background: #64131c;
-  box-shadow: 0 0 0 5px rgba(255, 179, 168, 0.25), 0 0 56px rgba(100, 19, 28, 0.95);
+  box-shadow:
+    0 0 0 5px rgba(255, 179, 168, 0.25),
+    0 0 56px rgba(100, 19, 28, 0.95);
 }
 .bid-effect--announcement {
   top: 16%;
@@ -1285,7 +1366,9 @@ button {
   gap: var(--sp-2);
   border-color: var(--gold-soft);
   background: linear-gradient(135deg, #6e5010, #b58016 52%, #6e5010);
-  box-shadow: 0 0 0 5px rgba(232, 207, 122, 0.2), 0 0 48px rgba(212, 175, 55, 0.8);
+  box-shadow:
+    0 0 0 5px rgba(232, 207, 122, 0.2),
+    0 0 48px rgba(212, 175, 55, 0.8);
   color: #fff9df;
   letter-spacing: 0.04em;
   animation: bid-announcement-pop 2.2s var(--ease-standard) both;

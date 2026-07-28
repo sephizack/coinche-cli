@@ -196,7 +196,9 @@ const BidPanel = {
   },
   emits: ["bid"],
   data() {
-    return { selectedTrump: null, pointsIndex: 0 };
+    // Replié par défaut : on voit ses cartes tout de suite, et « Passe » reste
+    // accessible sans ouvrir le panneau. On n'ouvre que pour annoncer/coincher.
+    return { selectedTrump: null, pointsIndex: 0, collapsed: true };
   },
   computed: {
     legalActions() {
@@ -264,6 +266,11 @@ const BidPanel = {
     surcoinche() {
       this.$emit("bid", { bid_action: "surcoinche" });
     },
+    toggleCollapsed() {
+      // Replier le panneau libère la vue sur la main (surtout en mobile, où
+      // il occupe le bas de l'écran) sans quitter l'enchère en cours.
+      this.collapsed = !this.collapsed;
+    },
   },
   mounted() {
     // Focus into the dialog (a11y: BidPanel role=dialog with focus handling).
@@ -273,10 +280,26 @@ const BidPanel = {
     });
   },
   template: `
-    <div class="scrim">
+    <!-- Replié : une barre flottante qui laisse voir la main dessous. « Passe »
+         est directement accessible ; « Annoncer » rouvre le panneau. -->
+    <div v-if="collapsed" class="bid-collapsed-bar">
+      <button class="bid-collapsed-btn bid-collapsed-btn--pass" data-testid="bid-pass-collapsed"
+              :disabled="sending" @click="pass">Passe</button>
+      <button class="bid-collapsed-btn bid-collapsed-btn--reopen" data-testid="bid-reopen"
+              :disabled="sending" @click="toggleCollapsed" aria-label="Ouvrir l'annonce">
+        Annoncer <span class="bid-reopen__chevron" aria-hidden="true">▲</span>
+      </button>
+    </div>
+    <div v-else class="scrim">
       <div class="bid-panel" :class="{ 'bid-panel--sending': sending }"
            role="dialog" aria-modal="true" aria-labelledby="bid-title">
-        <h2 class="bid-panel__title" id="bid-title">À vous d'annoncer</h2>
+        <div class="bid-panel__header">
+          <h2 class="bid-panel__title" id="bid-title">À vous d'annoncer</h2>
+          <button class="bid-collapse" data-testid="bid-collapse" @click="toggleCollapsed"
+                  aria-label="Masquer pour voir mes cartes">
+            <span aria-hidden="true">▼</span>
+          </button>
+        </div>
         <p class="bid-panel__legend">Enchère actuelle : {{ highestLabel }}</p>
 
         <div class="bid-panel__group">
@@ -499,10 +522,7 @@ const App = {
 
       // Mirror the terminal's prominent Coinche/Surcoinche announcement as
       // soon as the server confirms the bid, before the auction settles.
-      if (
-        prev &&
-        snap.bid_effect_level > (prev.bid_effect_level || 1)
-      ) {
+      if (prev && snap.bid_effect_level > (prev.bid_effect_level || 1)) {
         bidEffect.value = snap.bid_effect_level;
         bidEffectKey.value += 1;
         if (bidEffectTimer) clearTimeout(bidEffectTimer);
@@ -524,7 +544,8 @@ const App = {
           currentBid.points !== previousBid.points ||
           currentBid.seat !== previousBid.seat)
       ) {
-        const points = currentBid.points === "capot" ? "Capot" : currentBid.points;
+        const points =
+          currentBid.points === "capot" ? "Capot" : currentBid.points;
         bidAnnouncement.value = {
           name: (snap.players || {})[currentBid.seat] || currentBid.seat,
           label: `${points} ${currentBid.trump}`,
@@ -627,7 +648,10 @@ const App = {
           .filter((seatId) => teamOf[seatId] === team)
           .map((seatId) => players[seatId])
           .join(" & ");
-      return { nous: namesFor(localTeam.value), eux: namesFor(otherTeam.value) };
+      return {
+        nous: namesFor(localTeam.value),
+        eux: namesFor(otherTeam.value),
+      };
     });
     const nousScore = computed(() => {
       const sc = (snapshot.value && snapshot.value.cumulative_scores) || {};
@@ -721,8 +745,8 @@ const App = {
     const bidRequest = computed(() =>
       snapshot.value ? snapshot.value.pending_bid_request : null,
     );
-    const canFillBots = computed(() =>
-      !!(snapshot.value && snapshot.value.can_fill_bots),
+    const canFillBots = computed(
+      () => !!(snapshot.value && snapshot.value.can_fill_bots),
     );
 
     const turnText = computed(() => {
@@ -757,7 +781,10 @@ const App = {
         if (typeof t !== "object") return { cardPoints: 0, total: t };
         return { cardPoints: t.card_points ?? 0, total: t.total ?? 0 };
       };
-      return { nous: scoreFor(localTeam.value), eux: scoreFor(otherTeam.value) };
+      return {
+        nous: scoreFor(localTeam.value),
+        eux: scoreFor(otherTeam.value),
+      };
     });
 
     const winnerLabel = computed(() => {
