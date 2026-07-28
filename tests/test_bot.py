@@ -21,21 +21,53 @@ def _cards(*values: str) -> list[Card]:
 
 
 def test_bot_bids_a_strong_trump_hand() -> None:
+    # V-9-A-10 (the four boss trumps) plus two side aces: near-total trump
+    # control makes both aces cash and promises heavy partner help, so the pair
+    # contract is worth well above the bare minimum.
     game = Game()
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "A♠", "10♠", "A♥", "A♦", "7♣", "8♣")
 
     action = choose_bid(game, Seat.W)
 
-    assert action == {"action": "bid", "trump": "♠", "points": 120}
+    assert action == {"action": "bid", "trump": "♠", "points": 130}
 
 
-def test_bot_does_not_add_side_aces_without_four_jack_nine_trumps() -> None:
+def test_bot_values_side_aces_behind_a_jack_nine_even_with_only_three_trumps() -> None:
+    # V♠+9♠ give firm trump control, so the three outside aces are cashable and
+    # count toward the bid -- and, controlled like this, promise the partner will
+    # cash behind them. Point potential plus that partner help, not raw trump
+    # count, drives the opening well past a bare 90.
     game = Game()
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "A♥", "A♦", "A♣", "8♥", "7♦")
 
-    assert choose_bid(game, Seat.W) == {"action": "bid", "trump": "♠", "points": 90}
+    assert choose_bid(game, Seat.W) == {"action": "bid", "trump": "♠", "points": 120}
+
+
+def test_side_aces_raise_the_opening_over_the_same_trumps_without_them() -> None:
+    # Same three-card Valet-9 trump holding in both hands; the only difference
+    # is outside aces. The hand with the aces must be valued strictly higher --
+    # opening value tracks point potential, not the (identical) trump count.
+    from coinche.bot import _point_potential
+
+    with_aces = _cards("V♠", "9♠", "7♠", "A♥", "A♦", "A♣", "8♥", "7♦")
+    without_aces = _cards("V♠", "9♠", "7♠", "8♥", "7♥", "8♦", "7♦", "8♣")
+
+    assert _point_potential(with_aces, "♠") > _point_potential(without_aces, "♠")
+
+
+def test_partner_allowance_lifts_a_controlled_ace_hand_toward_a_pair_contract() -> None:
+    # A bid is a pair contract. With firm trump control (V+9) the partner will
+    # cash behind the bidder's side aces, so the opening ceiling exceeds what the
+    # hand takes on its own. No control, no meaningful allowance.
+    from coinche.bot import _opening_ceiling, _partner_allowance, _point_potential
+
+    controlled = _cards("V♠", "9♠", "7♠", "A♥", "A♦", "A♣", "8♥", "7♦")
+    uncontrolled = _cards("7♠", "8♠", "A♥", "A♦", "A♣", "8♥", "7♦", "8♦")
+
+    assert _partner_allowance(controlled, "♠") > _partner_allowance(uncontrolled, "♠")
+    assert _opening_ceiling(controlled, "♠") > _point_potential(controlled, "♠")
 
 
 def test_bot_supports_partner_eighty_with_the_missing_jack() -> None:

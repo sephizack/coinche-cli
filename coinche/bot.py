@@ -52,29 +52,75 @@ def _side_aces(hand: list[Card], trump: str) -> int:
     return sum(card.rank == "A" and card.suit != trump for card in hand)
 
 
-def _opening_ceiling(hand: list[Card], trump: str) -> int | str | None:
-    """Return a conservative opening ceiling for a proposed trump suit.
+def _trump_control(hand: list[Card], trump: str) -> float:
+    """Fraction (0..1) of how much this hand dominates the trump suit.
 
-    The bot only converts the clearly described J-9 four-trump pattern into
-    extra contract points. In particular, isolated honour cards and voids do
-    not inflate an opening because their trick value depends too heavily on
-    hidden hands.
+    Control is what lets side aces actually cash and lets ruffs land: it rises
+    with trump length and, above all, with the two boss trumps -- the Valet
+    (worth twice) and the 9. A lone Valet already controls more than three low
+    trumps, which is why raw trump *count* is a poor guide on its own.
     """
     trump_cards = [card for card in hand if card.suit == trump]
     trump_ranks = {card.rank for card in trump_cards}
-    trump_count = len(trump_cards)
+    top = (2 if "V" in trump_ranks else 0) + (1 if "9" in trump_ranks else 0)
+    return min(1.0, 0.16 * len(trump_cards) + 0.22 * top)
 
-    if trump_count == len(hand):
+
+def _point_potential(hand: list[Card], trump: str) -> float:
+    """Estimate the point-taking power of a hand for a given trump suit.
+
+    Not a raw trump count: it sums what the hand can actually *bring in* --
+    trump honours (the Valet and 9 dominate), side aces, ruffs from short
+    suits, and the belote -- each discounted by how firmly the hand controls
+    the trump suit, because an uncontrolled ace or ruff is easily denied.
+    """
+    trump_cards = [card for card in hand if card.suit == trump]
+    trump_ranks = {card.rank for card in trump_cards}
+    control = _trump_control(hand, trump)
+
+    trump_points = sum(rules.TRUMP_POINTS[card.rank] for card in trump_cards)
+    trump_take = trump_points * (0.55 + 0.45 * control) + control * len(trump_cards) * 6
+
+    side_take = _side_aces(hand, trump) * 11 * (0.35 + 0.65 * control)
+
+    spare_trumps = max(0, len(trump_cards) - 2)
+    short_side_suits = sum(
+        1 for suit in rules.ALLOWED_TRUMPS if suit != trump and 0 < sum(card.suit == suit for card in hand) <= 1
+    )
+    ruff_take = min(spare_trumps, short_side_suits) * 6
+
+    belote = rules.BELOTE_BONUS if {"R", "D"}.issubset(trump_ranks) else 0
+    return trump_take + side_take + ruff_take + belote
+
+
+def _partner_allowance(hand: list[Card], trump: str) -> float:
+    """Estimate the extra points the *partner's* hidden hand will contribute.
+
+    A bid is a pair contract, not a solo one: the partner holds eight cards too
+    and will pitch into tricks the bidder controls. That help is worth the most
+    exactly when the bidder controls trump and holds firm side winners -- then
+    the partner's own cards cash behind them -- so the allowance scales with
+    controlled side aces rather than being a flat bonus.
+    """
+    return min(_side_aces(hand, trump), 3) * _trump_control(hand, trump) * 8
+
+
+def _opening_ceiling(hand: list[Card], trump: str) -> int | str | None:
+    """Return a conservative opening ceiling for a proposed trump suit.
+
+    Driven by estimated point potential rather than a fixed trump-count
+    pattern: the Valet, the 9 and side aces are what a bid promises, so a hand
+    with three trumps headed by the Valet-9 plus outside aces outbids a hand
+    with four low trumps and nothing else. The estimate is a *pair* contract --
+    the partner's likely contribution is added -- not just what this hand takes.
+    """
+    if len(hand) == sum(card.suit == trump for card in hand):
         return rules.CAPOT
-    if trump_count >= 4 and {"V", "9"}.issubset(trump_ranks):
-        return min(rules.BID_MAX, 100 + 10 * min(_side_aces(hand, trump), 3))
-    if trump_count >= 3 and ({"V", "9"}.issubset(trump_ranks) or {"V", "A"}.issubset(trump_ranks)):
-        return 90
-    if trump_count >= 4 and ({"V", "9"} & trump_ranks):
-        return 90
-    if trump_count >= 3 and ({"V", "9"} & trump_ranks):
-        return 80
-    return None
+    potential = _point_potential(hand, trump) + _partner_allowance(hand, trump)
+    ceiling = rules.round_to_nearest_ten(int(17 + potential * 0.91))
+    if ceiling < rules.BID_MIN:
+        return None
+    return min(rules.BID_MAX, ceiling)
 
 
 def _support_ceiling(hand: list[Card], trump: str, current_points: int) -> int | None:
