@@ -54,6 +54,7 @@ BOT_NAMES: tuple[str, ...] = (
     "Renoir",
     "Esquie",
 )
+BOT_THINK_JITTER_SECONDS = 1.0
 
 
 def _pick_bot_name(used_names: set[str]) -> str:
@@ -118,12 +119,23 @@ class Table:
         # time to read the end-of-round recap (contract result, cumulative
         # score) shown by the client instead of it flashing by unseen.
         self.round_pause_seconds = round_pause_seconds
-        # Brief pause before each server-controlled bot decision, so bot turns
-        # are visible to players instead of resolving instantly.
+        # Minimum pause before each server-controlled bot decision. A further
+        # random delay makes consecutive bot turns feel less mechanical.
         self.bot_think_seconds = bot_think_seconds
         self.lock = asyncio.Lock()
         self.seats: dict[Seat, ClientSession | None] = {seat: None for seat in SEAT_ORDER}
         self.game: Game | None = None
+
+    def bot_think_delay(self) -> float:
+        """Return a human-like delay before one bot decision.
+
+        A zero minimum keeps automated tests and fast local demonstrations
+        immediate. Otherwise each decision waits from the configured minimum
+        through one additional second.
+        """
+        if self.bot_think_seconds <= 0:
+            return 0
+        return random.uniform(self.bot_think_seconds, self.bot_think_seconds + BOT_THINK_JITTER_SECONDS)
 
     def add_player(self, name: str, writer: asyncio.StreamWriter | None, team_name: str | None = None) -> Seat:
         """Seat a new player (A14/A15). Raises TableError subclasses on rejection.

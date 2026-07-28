@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 
+import coinche.table as table_mod
 from coinche.game import Seat
 from coinche.table import BOT_NAMES, GameInProgressError, NameTakenError, Table, TableFullError
 
@@ -45,6 +46,31 @@ def test_fill_with_bots_occupies_open_seats_and_starts_game():
     bot_names = [table.seats[seat].name for seat in added]
     assert all(name in BOT_NAMES for name in bot_names)
     assert len(set(bot_names)) == len(bot_names)
+
+
+def test_bot_think_delay_adds_one_second_of_random_jitter(monkeypatch):
+    table = Table("abcd", bot_think_seconds=1.0)
+    bounds: list[tuple[float, float]] = []
+
+    def uniform(minimum: float, maximum: float) -> float:
+        bounds.append((minimum, maximum))
+        return 1.6
+
+    monkeypatch.setattr(table_mod.random, "uniform", uniform)
+
+    assert table.bot_think_delay() == 1.6
+    assert bounds == [(1.0, 2.0)]
+
+
+def test_bot_think_delay_zero_disables_waiting(monkeypatch):
+    table = Table("abcd", bot_think_seconds=0)
+
+    def unexpected_random_delay(_minimum: float, _maximum: float) -> float:
+        raise AssertionError("zero bot thinking time must not be randomized")
+
+    monkeypatch.setattr(table_mod.random, "uniform", unexpected_random_delay)
+
+    assert table.bot_think_delay() == 0
 
 
 def test_add_player_rejects_fifth_join():

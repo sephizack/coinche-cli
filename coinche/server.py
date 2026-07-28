@@ -361,7 +361,7 @@ async def _run_bot_turns(table: Table) -> None:
         if session is None or not session.is_bot:
             return
 
-        await asyncio.sleep(table.bot_think_seconds)
+        await asyncio.sleep(table.bot_think_delay())
 
         if game.phase == "bidding":
             action = choose_bid(game, seat)
@@ -716,7 +716,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--bot-think",
         type=float,
         default=1.0,
-        help="Seconds each bot waits before bidding or playing a card (default: 1.0)",
+        help="Minimum seconds each bot waits before bidding or playing; up to one random extra second (default: 1.0)",
     )
     parser.add_argument(
         "--log-level",
