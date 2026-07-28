@@ -1278,6 +1278,26 @@ button {
   background: #64131c;
   box-shadow: 0 0 0 5px rgba(255, 179, 168, 0.25), 0 0 56px rgba(100, 19, 28, 0.95);
 }
+.bid-effect--announcement {
+  top: 16%;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  border-color: var(--gold-soft);
+  background: linear-gradient(135deg, #6e5010, #b58016 52%, #6e5010);
+  box-shadow: 0 0 0 5px rgba(232, 207, 122, 0.2), 0 0 48px rgba(212, 175, 55, 0.8);
+  color: #fff9df;
+  letter-spacing: 0.04em;
+  animation: bid-announcement-pop 2.2s var(--ease-standard) both;
+}
+.bid-effect__actor {
+  font-size: 0.62em;
+  font-weight: 700;
+}
+.bid-effect__value {
+  color: #fff;
+  font-size: 1.15em;
+}
 @keyframes bid-effect-pop {
   0% {
     opacity: 0;
@@ -1295,6 +1315,25 @@ button {
   100% {
     opacity: 0;
     transform: translate(-50%, -12px) scale(0.9);
+  }
+}
+@keyframes bid-announcement-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -42px) scale(0.72) rotate(-3deg);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.1) rotate(1deg);
+  }
+  34%,
+  72% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1) rotate(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -10px) scale(0.92);
   }
 }
 

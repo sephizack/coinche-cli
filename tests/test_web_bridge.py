@@ -28,6 +28,7 @@ from coinche.web.messages import (
     encode_state_frame,
     parse_browser_message,
 )
+from coinche.web.server import _terminal_hyperlink
 
 HOST = "127.0.0.1"
 
@@ -603,6 +604,13 @@ def test_round_recap_shows_captured_and_awarded_points() -> None:
     assert "{{ euxScore }}" in app
 
 
+def test_overlay_startup_url_uses_an_osc8_terminal_hyperlink() -> None:
+    """The launch URL remains readable and opens directly in capable terminals."""
+    url = "http://127.0.0.1:8765"
+
+    assert _terminal_hyperlink(url) == f"\x1b]8;;{url}\x1b\\{url}\x1b]8;;\x1b\\"
+
+
 def test_web_client_shows_final_round_recap_before_game_over() -> None:
     """The final round remains reviewable before the player sees the game result."""
     app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()
@@ -625,6 +633,22 @@ def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:
     assert ".bid-effect" in styles
     assert ".bid-effect--surcoinche" in styles
     assert "@keyframes bid-effect-pop" in styles
+
+
+def test_web_client_animates_each_server_confirmed_contract_bid() -> None:
+    """A new standing bid must visibly acknowledge the announcing player."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert "const bidAnnouncement = ref(null);" in app
+    assert "currentBid.trump !== previousBid.trump" in app
+    assert "currentBid.points !== previousBid.points" in app
+    assert "{{ bidAnnouncement.name }} annonce" in app
+    assert "{{ bidAnnouncement.label }}" in app
+    assert "bid-effect--announcement" in app
+    assert ".bid-effect--announcement" in styles
+    assert "@keyframes bid-announcement-pop" in styles
 
 
 def test_web_client_animates_each_new_trick_card() -> None:

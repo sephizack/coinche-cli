@@ -411,6 +411,8 @@ const App = {
     const badgeFlash = ref(false);
     const bidEffect = ref(null);
     const bidEffectKey = ref(0);
+    const bidAnnouncement = ref(null);
+    const bidAnnouncementKey = ref(0);
     const sweepClass = ref(null); // e.g. "sweep-north" while a trick sweeps out
     const confetti = ref([]);
     // Lobby form (there is no table-list in the snapshot contract; U2 pushes
@@ -421,6 +423,7 @@ const App = {
     let backoff = 500;
     let toastId = 0;
     let bidEffectTimer = null;
+    let bidAnnouncementTimer = null;
 
     // -------- WebSocket (ConnectionLayer) --------
     function wsUrl() {
@@ -507,6 +510,31 @@ const App = {
           bidEffect.value = null;
           bidEffectTimer = null;
         }, 2400);
+      }
+
+      // A contract bid is a server-confirmed announcement. Compare the
+      // authoritative standing bid rather than local clicks so bot and remote
+      // player announcements receive the same feedback.
+      const previousBid = (prev && prev.current_bid) || {};
+      const currentBid = snap.current_bid || {};
+      if (
+        prev &&
+        currentBid.trump &&
+        (currentBid.trump !== previousBid.trump ||
+          currentBid.points !== previousBid.points ||
+          currentBid.seat !== previousBid.seat)
+      ) {
+        const points = currentBid.points === "capot" ? "Capot" : currentBid.points;
+        bidAnnouncement.value = {
+          name: (snap.players || {})[currentBid.seat] || currentBid.seat,
+          label: `${points} ${currentBid.trump}`,
+        };
+        bidAnnouncementKey.value += 1;
+        if (bidAnnouncementTimer) clearTimeout(bidAnnouncementTimer);
+        bidAnnouncementTimer = setTimeout(() => {
+          bidAnnouncement.value = null;
+          bidAnnouncementTimer = null;
+        }, 2200);
       }
 
       // Trick sweep (two-stage flip): when the just-completed 4-card trick
@@ -839,6 +867,8 @@ const App = {
       badgeFlash,
       bidEffect,
       bidEffectKey,
+      bidAnnouncement,
+      bidAnnouncementKey,
       sweepClass,
       confetti,
       lobby,
@@ -888,6 +918,11 @@ const App = {
          role="status" aria-live="assertive">
       <span v-if="bidEffect >= 4">🔥 SURCOINCHE ! ×4 🔥</span>
       <span v-else>⚡ COINCHE ! ×2 ⚡</span>
+    </div>
+    <div v-if="bidAnnouncement" :key="bidAnnouncementKey" class="bid-effect bid-effect--announcement"
+         role="status" aria-live="polite">
+      <span class="bid-effect__actor">{{ bidAnnouncement.name }} annonce</span>
+      <strong class="bid-effect__value">{{ bidAnnouncement.label }}</strong>
     </div>
 
     <!-- ================= LOBBY (not joined) ================= -->

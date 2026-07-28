@@ -51,6 +51,11 @@ BROADCAST_TIMEOUT = 2.0
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
+def _terminal_hyperlink(url: str) -> str:
+    """Wrap a locally generated URL in an OSC 8 hyperlink for terminal output."""
+    return f"\x1b]8;;{url}\x1b\\{url}\x1b]8;;\x1b\\"
+
+
 def _detect_lan_ip() -> str | None:
     """Best-effort local (LAN) IP, without any external call.
 
@@ -219,7 +224,7 @@ class WebOverlayServer:
             self._bound = server.sockets[0].getsockname()[:2] if server.sockets else (self.host, self.port)
             self.urls = await self.bound_url()
             for url in self.urls:
-                print(f"Interface web disponible : {url}")
+                print(f"Interface web disponible : {_terminal_hyperlink(url)}")
             if self.on_ready is not None:
                 try:
                     self.on_ready()
