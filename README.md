@@ -26,6 +26,7 @@ python -m coinche.server [--host HOST] [--port PORT] [--target-score N]
 - `--host` — address to bind (default `0.0.0.0`)
 - `--port` — port to listen on (default `8765`)
 - `--target-score` — cumulative points needed to win the game (default `1000`)
+- `--bot-think` — seconds each bot waits before announcing or playing (default `1.0`)
 
 Example:
 
@@ -112,6 +113,8 @@ game. Bots evaluate their hand before bidding. For card play, they simulate
 multiple plausible distributions of the unseen cards, play each legal choice
 to the end of the round, and select the best average result. Those simulations
 use only their own cards and public play history—not the real hidden hands.
+They wait one second before each decision by default, so their turns remain
+visible; hosts can adjust this with `--bot-think`.
 All bot actions pass through the same server-side legality checks as human moves.
 
 Once all 4 seats are filled, by people or bots, the server deals a hand and the game begins.

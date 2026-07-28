@@ -34,14 +34,21 @@ SEAT_JOIN_ORDER = ("N", "E", "S", "W")
 NAMES_BY_SEAT = {"N": "Alice", "E": "Bob", "S": "Carol", "W": "Dave"}
 
 
-async def _start_server(target_score: int = 1000) -> tuple[asyncio.AbstractServer, int]:
+async def _start_server(
+    target_score: int = 1000, bot_think_seconds: float = 0
+) -> tuple[asyncio.AbstractServer, int]:
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         # trick_pause_seconds=0/round_pause_seconds=0: these tests don't care
         # about the UX pauses after each trick/round (added per user request)
         # and would otherwise take much longer per round played (8 tricks *
         # 2.5s, plus 4s between rounds).
         await server.handle_connection(
-            reader, writer, target_score, trick_pause_seconds=0, round_pause_seconds=0
+            reader,
+            writer,
+            target_score,
+            trick_pause_seconds=0,
+            round_pause_seconds=0,
+            bot_think_seconds=bot_think_seconds,
         )
 
     srv = await asyncio.start_server(_handler, HOST, 0)
@@ -215,6 +222,35 @@ def test_one_player_can_fill_the_table_with_bots():
             else:
                 raise AssertionError("the human-plus-bots table did not complete a round")
             assert bot_played
+        finally:
+            if writer is not None:
+                writer.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_bot_waits_before_its_first_bid():
+    """Bots wait for the configured thinking delay before any authoritative action."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server(bot_think_seconds=0.3)
+        writer = None
+        try:
+            reader, writer = await _connect(port)
+            await _send(writer, protocol.JOIN, {"table_key": "botwait1", "player_name": "Alice"})
+            await _read_until(reader, protocol.JOINED)
+            await _send(writer, protocol.FILL_BOTS, {})
+
+            await _read_until(reader, protocol.LOBBY_UPDATE)
+            await _read_until(reader, protocol.DEAL)
+            start = asyncio.get_running_loop().time()
+            bid_update = await _read_until(reader, protocol.BID_UPDATE)
+            elapsed = asyncio.get_running_loop().time() - start
+
+            assert bid_update["seat"] == "W"
+            assert elapsed >= 0.25, f"bot bid arrived too early ({elapsed:.3f}s < ~0.3s delay)"
         finally:
             if writer is not None:
                 writer.close()

@@ -433,6 +433,61 @@ button {
 .trick-card--east {
   transform: translate(-10%, -35%) rotate(6deg);
 }
+/* Vue applies these classes whenever a newly played card is inserted into the
+   trick. Each direction begins near its player's seat and lands at its fixed
+   position in the central trick, so human and bot plays animate identically. */
+.trick-card--south.trick-card-enter-active {
+  animation: trick-card-enter-south var(--dur-card) var(--ease-standard) both;
+}
+.trick-card--north.trick-card-enter-active {
+  animation: trick-card-enter-north var(--dur-card) var(--ease-standard) both;
+}
+.trick-card--west.trick-card-enter-active {
+  animation: trick-card-enter-west var(--dur-card) var(--ease-standard) both;
+}
+.trick-card--east.trick-card-enter-active {
+  animation: trick-card-enter-east var(--dur-card) var(--ease-standard) both;
+}
+@keyframes trick-card-enter-south {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 150%) scale(0.65);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 10%) scale(1);
+  }
+}
+@keyframes trick-card-enter-north {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -220%) scale(0.65);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -80%) scale(1);
+  }
+}
+@keyframes trick-card-enter-west {
+  from {
+    opacity: 0;
+    transform: translate(-240%, -35%) scale(0.65) rotate(-12deg);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-90%, -35%) scale(1) rotate(-6deg);
+  }
+}
+@keyframes trick-card-enter-east {
+  from {
+    opacity: 0;
+    transform: translate(140%, -35%) scale(0.65) rotate(12deg);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-10%, -35%) scale(1) rotate(6deg);
+  }
+}
 .trick-area--sweeping .trick-card {
   opacity: 0;
 }
@@ -1051,6 +1106,10 @@ button {
   justify-content: center;
   gap: var(--sp-8);
   margin: var(--sp-4) 0;
+}
+.recap__scores--cumulative {
+  margin-top: var(--sp-2);
+  margin-bottom: var(--sp-4);
 }
 .recap__score-team {
   font-size: 0.85rem;

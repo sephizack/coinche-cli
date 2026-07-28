@@ -597,6 +597,10 @@ def test_round_recap_shows_captured_and_awarded_points() -> None:
     assert "{{ roundScores.eux.cardPoints }}" in app
     assert "Score de la manche : {{ roundScores.nous.total }} pts" in app
     assert "Score de la manche : {{ roundScores.eux.total }} pts" in app
+    assert '<p class="recap__scores-title">Score cumulé</p>' in app
+    assert '<div class="recap__scores recap__scores--cumulative">' in app
+    assert "{{ nousScore }}" in app
+    assert "{{ euxScore }}" in app
 
 
 def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:
@@ -613,3 +617,15 @@ def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:
     assert ".bid-effect" in styles
     assert ".bid-effect--surcoinche" in styles
     assert "@keyframes bid-effect-pop" in styles
+
+
+def test_web_client_animates_each_new_trick_card() -> None:
+    """Every CARD_PLAYED snapshot insertion, including bot plays, gets a Vue enter animation."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert '<transition-group name="trick-card" tag="div" class="trick-area"' in app
+    for position in ("south", "north", "west", "east"):
+        assert f".trick-card--{position}.trick-card-enter-active" in styles
+        assert f"@keyframes trick-card-enter-{position}" in styles
