@@ -770,9 +770,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Target seconds per bot card decision. At startup the server benchmarks the bot's "
             "Monte Carlo search and picks the largest sample count that fits this budget, so a "
-            "faster host automatically fields a stronger bot. Set to 0 to skip calibration and "
+            "faster host automatically fields a stronger bot. The result is cached in a .bot-bench "
+            "file so later startups skip the benchmark. Set to 0 to skip calibration and "
             "keep the built-in default (default: 1.0)"
         ),
+    )
+    parser.add_argument(
+        "--bot-recalibrate",
+        action="store_true",
+        help="Ignore any cached .bot-bench result and force a fresh Monte Carlo benchmark",
     )
     parser.add_argument(
         "--log-level",
@@ -829,7 +835,9 @@ async def main(argv: list[str] | None = None) -> None:
     # thereby fields a stronger bot with no manual tuning.
     if args.bot_calibrate_seconds > 0:
         print("Calibrating bot strength for this host...", flush=True)
-        chosen = calibrate_samples(args.bot_calibrate_seconds)
+        chosen = calibrate_samples(
+            args.bot_calibrate_seconds, use_cache=not args.bot_recalibrate
+        )
         print(f"  bot Monte Carlo samples: {chosen} (target {args.bot_calibrate_seconds:.2f}s/decision)", flush=True)
 
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:

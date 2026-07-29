@@ -1,6 +1,7 @@
 """Tests for the pure server-controlled bot strategy."""
 
 import copy
+import json
 import random
 from collections import Counter
 
@@ -462,13 +463,69 @@ def test_calibrate_samples_picks_a_candidate_within_budget() -> None:
     try:
         # A tiny budget must still land on the smallest candidate rather than
         # failing -- a bot always needs *some* samples.
-        chosen = calibrate_samples(target_seconds=0.0001)
+        chosen = calibrate_samples(target_seconds=0.0001, use_cache=False)
         assert chosen == MONTE_CARLO_CANDIDATES[0]
         assert bot.MONTE_CARLO_SAMPLES == chosen
 
         # A generous budget must never exceed the largest offered candidate.
-        chosen_big = calibrate_samples(target_seconds=3600.0)
+        chosen_big = calibrate_samples(target_seconds=3600.0, use_cache=False)
         assert chosen_big == MONTE_CARLO_CANDIDATES[-1]
         assert bot.MONTE_CARLO_SAMPLES == chosen_big
+    finally:
+        bot.MONTE_CARLO_SAMPLES = original
+
+
+def test_calibrate_samples_caches_and_reuses_result(tmp_path, monkeypatch) -> None:
+    original = bot.MONTE_CARLO_SAMPLES
+    cache_file = tmp_path / ".bot-bench"
+    monkeypatch.setattr(bot, "CALIBRATION_CACHE_PATH", str(cache_file))
+    try:
+        # First call benchmarks and writes the cache file.
+        chosen = calibrate_samples(target_seconds=3600.0)
+        assert chosen == MONTE_CARLO_CANDIDATES[-1]
+        assert cache_file.exists()
+
+        # A second call with a *tiny* budget would normally land on the smallest
+        # candidate -- but the cache is keyed on the budget, so this benchmarks
+        # afresh rather than reusing the generous-budget result.
+        chosen_tiny = calibrate_samples(target_seconds=0.0001)
+        assert chosen_tiny == MONTE_CARLO_CANDIDATES[0]
+
+        # Re-running the tiny budget now hits the cache: even a value the live
+        # benchmark could never produce is returned verbatim, proving no
+        # re-measurement happened.
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "fingerprint": bot._calibration_fingerprint(0.0001),
+                    "samples": MONTE_CARLO_CANDIDATES[-1],
+                }
+            ),
+            encoding="utf-8",
+        )
+        reused = calibrate_samples(target_seconds=0.0001)
+        assert reused == MONTE_CARLO_CANDIDATES[-1]
+        assert bot.MONTE_CARLO_SAMPLES == reused
+    finally:
+        bot.MONTE_CARLO_SAMPLES = original
+
+
+def test_calibrate_samples_use_cache_false_ignores_cache(tmp_path, monkeypatch) -> None:
+    original = bot.MONTE_CARLO_SAMPLES
+    cache_file = tmp_path / ".bot-bench"
+    monkeypatch.setattr(bot, "CALIBRATION_CACHE_PATH", str(cache_file))
+    try:
+        # Seed a bogus cache that a tiny-budget benchmark could never produce.
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "fingerprint": bot._calibration_fingerprint(0.0001),
+                    "samples": MONTE_CARLO_CANDIDATES[-1],
+                }
+            ),
+            encoding="utf-8",
+        )
+        chosen = calibrate_samples(target_seconds=0.0001, use_cache=False)
+        assert chosen == MONTE_CARLO_CANDIDATES[0]
     finally:
         bot.MONTE_CARLO_SAMPLES = original
