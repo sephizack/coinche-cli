@@ -241,6 +241,24 @@ class Table:
         assert self.game is None
         self.seats[seat] = None
 
+    def replace_with_bot(self, seat: Seat) -> str:
+        """Hand a seated player's chair over to a server-controlled bot in place.
+
+        Used when a player leaves mid-game: the seat can't simply be vacated
+        (the Game holds four hands and expects four actors), so instead the
+        session keeps its seat/name but becomes bot-driven -- `writer` is
+        dropped (nothing more is pushed to the departed client) and `is_bot`
+        flips on so `_run_bot_turns` will act for it. The remaining players are
+        never left blocked waiting on an empty seat. Returns the departing name.
+        """
+        session = self.seats[seat]
+        assert session is not None
+        name = session.name
+        session.writer = None
+        session.connected = True
+        session.is_bot = True
+        return name
+
     def fill_with_bots(self) -> list[Seat]:
         """Fill every open pre-game seat with a server-controlled bot."""
         if self.game is not None:

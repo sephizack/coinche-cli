@@ -869,9 +869,19 @@ const App = {
       sendAction("fill_bots", {});
     }
     function leaveTable() {
-      // Only offered before a game starts (see the template guard); the server
-      // rejects a mid-game leave and the snapshot flips back to the lobby on
-      // the LEFT it sends when the seat is actually freed.
+      // Available before AND during a game. Pre-game the seat is freed; mid-game
+      // the server hands the seat to a bot so the other players can finish, so
+      // ask for confirmation first. Either way the snapshot flips back to the
+      // lobby on the LEFT the server sends.
+      const midGame = !canFillBots.value;
+      if (
+        midGame &&
+        !window.confirm(
+          "Quitter la partie en cours ? Un bot prendra votre place jusqu'à la fin de la partie.",
+        )
+      ) {
+        return;
+      }
       sendAction("leave", {});
     }
     function joinTable() {
@@ -1287,7 +1297,7 @@ const App = {
                     :disabled="fillingBots" @click="fillBots">
               {{ fillingBots ? 'Ajout des bots…' : 'Remplir avec des bots' }}
             </button>
-            <button v-if="canFillBots" class="leave-btn" data-testid="leave-table"
+            <button class="leave-btn" data-testid="leave-table"
                     @click="leaveTable">
               Quitter la table
             </button>

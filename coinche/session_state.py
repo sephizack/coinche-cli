@@ -340,6 +340,8 @@ def _connection_banner_text(name: str, status: str) -> str:
     itself only ever carries plain text."""
     if status == "disconnected":
         return f"⚠ En attente de {name} (reconnexion...)"
+    if status == "replaced_by_bot":
+        return f"👋 {name} a quitté — un bot prend la relève"
     return f"✓ {name} reconnecté"
 
 

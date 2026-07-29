@@ -520,28 +520,40 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
 
 
 async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) -> bool:
-    """Vacate a seat and return the connection to the lobby (pre-game only).
+    """Let a player leave their table and return the connection to the lobby.
 
-    Returns True if the player left (seat freed, LEFT confirmed, connection
-    re-subscribed to the live lobby listing so it can pick another table).
-    Returns False -- with a GAME_IN_PROGRESS error already sent -- when a game
-    is under way: leaving mid-game isn't supported (the seat stays bound so the
-    reconnect path keeps working), so the caller keeps the session as-is.
+    Pre-game the seat is freed outright. Mid-game the seat can't be vacated
+    (the running Game expects four actors), so it's handed over to a bot that
+    plays out the rest of the game for the remaining players -- nobody is left
+    blocked. Either way the leaver gets a LEFT confirmation and is re-subscribed
+    to the live lobby listing so it can immediately pick another table.
+
+    Always returns True (the caller returns the leaver to the join handshake).
     """
-    if table.game is not None:
-        await _send_error(writer, protocol.GAME_IN_PROGRESS, "Impossible de quitter une partie en cours")
-        return False
-
     session = table.seats.get(seat)
     name = session.name if session is not None else "?"
-    table.remove_player(seat)
-    logger.info("[%s] DEPART %s (%s)", table.table_key, name, _seat_to_str(seat))
 
-    players = _players_summary(table)
-    await table.broadcast(
-        protocol.LOBBY_UPDATE,
-        {"players": players, "seats_filled": len(players), "waiting_for": 4 - len(players)},
-    )
+    if table.game is not None:
+        # Mid-game: convert the seat to a bot rather than removing it, so the
+        # other three players' game keeps running instead of stalling on an
+        # empty chair.
+        table.replace_with_bot(seat)
+        logger.info("[%s] DEPART %s (%s) -> repris par un bot", table.table_key, name, _seat_to_str(seat))
+        # Let the table (and any lobby watchers) see the seat is now a bot.
+        await table.broadcast(
+            protocol.CONNECTION_STATUS,
+            {"seat": _seat_to_str(seat), "name": name, "status": "replaced_by_bot"},
+            exclude=seat,
+        )
+    else:
+        table.remove_player(seat)
+        logger.info("[%s] DEPART %s (%s)", table.table_key, name, _seat_to_str(seat))
+        players = _players_summary(table)
+        await table.broadcast(
+            protocol.LOBBY_UPDATE,
+            {"players": players, "seats_filled": len(players), "waiting_for": 4 - len(players)},
+        )
+
     # Confirm the departure to the leaver and immediately start streaming lobby
     # updates so its table picker is live again without an extra round trip.
     # (The next JOIN's `_resolve_join` will discard this writer from the set.)
@@ -553,6 +565,11 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
     except (ConnectionError, OSError):
         pass
     await notify_lobby_subscribers()
+
+    # If we just handed the seat to a bot and it's that bot's turn, drive it
+    # (and any following bot turns) so play resumes without waiting for a human.
+    if table.game is not None:
+        await _run_bot_turns(table)
     return True
 
 
