@@ -343,6 +343,56 @@ def _connection_banner_text(name: str, status: str) -> str:
     return f"✓ {name} reconnecté"
 
 
+def _reset_to_lobby(state: ClientState) -> None:
+    """Clear every table/game-scoped field so both UIs return to the lobby.
+
+    Used on LEFT (the player quit their table pre-game and is back in the
+    picker on the same connection). Deliberately keeps connection-scoped fields
+    -- `tables` (the live listing), `server_version`, and chat pane layout --
+    since those aren't tied to the table just left. The pivotal reset is
+    `seat = None` + `joined_once = False`: both the terminal redraw and the
+    web `joined` computed key off the seat/`joined_once` to show the picker."""
+    fresh = ClientState()
+    state.joined_once = False
+    state.seat = fresh.seat
+    state.table_key = fresh.table_key
+    state.players = fresh.players
+    state.team_of = fresh.team_of
+    state.team_names = fresh.team_names
+    state.hand = fresh.hand
+    state.legal_cards = fresh.legal_cards
+    state.current_trick = fresh.current_trick
+    state.last_trick = fresh.last_trick
+    state.pending_last_trick = fresh.pending_last_trick
+    state.whose_turn = fresh.whose_turn
+    state.dealer_seat = fresh.dealer_seat
+    state.trump = fresh.trump
+    state.contract_points = fresh.contract_points
+    state.contract_bidder = fresh.contract_bidder
+    state.coinche_level = fresh.coinche_level
+    state.bid_effect_level = fresh.bid_effect_level
+    state.current_bid_trump = fresh.current_bid_trump
+    state.current_bid_points = fresh.current_bid_points
+    state.current_bid_seat = fresh.current_bid_seat
+    state.bid_marks = fresh.bid_marks
+    state.cumulative_scores = fresh.cumulative_scores
+    state.connection_status = fresh.connection_status
+    state.can_fill_bots = fresh.can_fill_bots
+    state.pending_bid_request = fresh.pending_bid_request
+    state.pending_play_request = fresh.pending_play_request
+    state.active_bid_value_prompt = fresh.active_bid_value_prompt
+    state.bid_value_buffer = fresh.bid_value_buffer
+    state.bid_value_error = fresh.bid_value_error
+    state.game_over = fresh.game_over
+    state.final_scores = fresh.final_scores
+    state.winning_team = fresh.winning_team
+    state.last_round_score = fresh.last_round_score
+    state.round_over_screen = fresh.round_over_screen
+    state.last_round_contract = fresh.last_round_contract
+    state.status_message = "Vous avez quitté la table."
+    state.last_action = ""
+
+
 def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResult:
     """Reduce one decoded server message into `state` (mutating in place) and
     return an `ApplyResult`.
@@ -596,6 +646,13 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             _apply_current_highest_bid(state, None)
         state.status_message = "Reconnecté — synchronisation effectuée"
         state.last_action = "Reconnecté — synchronisation effectuée"
+
+    elif msg_type == protocol.LEFT:
+        # We left our table (pre-game) and are back in the lobby on the same
+        # connection. Reset every table/game-scoped field so both UIs flip back
+        # to the picker; `tables`/`server_version` are connection-scoped and
+        # kept (a fresh TABLE_LISTING follows this message anyway).
+        _reset_to_lobby(state)
 
     elif msg_type == protocol.CONNECTION_STATUS:
         seat = Seat(payload["seat"])

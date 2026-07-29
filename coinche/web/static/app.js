@@ -863,6 +863,12 @@ const App = {
       fillingBots.value = true;
       sendAction("fill_bots", {});
     }
+    function leaveTable() {
+      // Only offered before a game starts (see the template guard); the server
+      // rejects a mid-game leave and the snapshot flips back to the lobby on
+      // the LEFT it sends when the seat is actually freed.
+      sendAction("leave", {});
+    }
     function joinTable() {
       if (!lobby.name.trim() || !lobby.table.trim()) return;
       const payload = {
@@ -1026,6 +1032,7 @@ const App = {
       doRematch,
       continueRound,
       fillBots,
+      leaveTable,
       joinTable,
       toggleChat,
     };
@@ -1271,6 +1278,10 @@ const App = {
             <button v-if="canFillBots" class="fill-bots-btn" data-testid="fill-bots"
                     :disabled="fillingBots" @click="fillBots">
               {{ fillingBots ? 'Ajout des bots…' : 'Remplir avec des bots' }}
+            </button>
+            <button v-if="canFillBots" class="leave-btn" data-testid="leave-table"
+                    @click="leaveTable">
+              Quitter la table
             </button>
           </footer>
         </main>
