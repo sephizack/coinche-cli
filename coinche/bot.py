@@ -319,6 +319,12 @@ def _opponent_may_ruff_suit(game: Game, seat: Seat, suit: str, trump: str) -> bo
     )
 
 
+def _partner_is_known_void_of_trump(game: Game, seat: Seat, trump: str) -> bool:
+    """Whether public play proves the acting seat's partner has no trump left."""
+    assert game.round_state is not None
+    return trump in _known_void_suits(game.round_state)[PARTNER_OF[seat]]
+
+
 def _choose_tactical_card(game: Game, seat: Seat) -> Card:
     """Choose a team-oriented card for one simulated world.
 
@@ -359,6 +365,14 @@ def _choose_tactical_card(game: Game, seat: Seat) -> Card:
             # stays out here -- a *non-master* lead would make the taker overtrump
             # their own partner, burning two masters in one trick.
             if is_taker:
+                trumps = [card for card in legal_cards if card.suit == trump]
+                if trumps:
+                    return max(trumps, key=lambda card: _card_strength(card, trump))
+            # A non-taking partner normally keeps a non-master trump: leading
+            # it could force the taker to overtrump. If public play has already
+            # proved the taker void of trump, that risk is gone, so pull the
+            # opponents instead of preserving their future ruffing power.
+            if _partner_is_known_void_of_trump(game, seat, trump):
                 trumps = [card for card in legal_cards if card.suit == trump]
                 if trumps:
                     return max(trumps, key=lambda card: _card_strength(card, trump))
@@ -662,6 +676,7 @@ def _rollout_score(game: Game, seat: Seat, card: Card, hidden_hands: dict[Seat, 
 
 
 def choose_card(game: Game, seat: Seat) -> Card:
+    global MONTE_CARLO_SAMPLES
     """Choose the legal card with the best average result across plausible hidden deals.
 
     Determinizations are built from this bot's hand and public play history only.

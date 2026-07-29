@@ -217,6 +217,36 @@ def test_partner_of_taker_does_not_lead_trump_under_the_taker() -> None:
     assert choose_card(game, Seat.S) == Card("7", "♣")
 
 
+def test_partner_pulls_with_a_non_master_trump_when_taker_is_known_void(monkeypatch) -> None:
+    # N took the contract but publicly discarded on a side lead while S was not
+    # master, proving N has no trump. S may now lead the non-master 9♠ safely:
+    # N cannot overtrump a partner and the lead strips an opponent ruffer.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.W,
+            "trick": [
+                (Seat.W, Card("A", "♥")),
+                (Seat.S, Card("7", "♥")),
+                (Seat.E, Card("8", "♥")),
+                (Seat.N, Card("7", "♦")),
+            ],
+            "points_won": 11,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("9♠", "7♣", "8♦")
+
+    assert _choose_tactical_card(game, Seat.S) == Card("9", "♠")
+    monkeypatch.setattr(bot, "MONTE_CARLO_SAMPLES", 20)
+    assert choose_card(game, Seat.S) == Card("9", "♠")
+
+
 def test_partner_of_taker_leads_a_master_trump_to_help_pull() -> None:
     # N took the contract; S (the partner) is on lead. Unlike the 9 above, S now
     # holds the trump Valet -- the outright master -- so leading it wins the trick
