@@ -268,6 +268,24 @@ def test_new_without_name_bounces_to_landing() -> None:
     asyncio.run(scenario())
 
 
+def test_unknown_session_page_redirects_to_landing() -> None:
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            status, headers, _ = await http_get(port, "/s/unknown")
+
+            assert status == 302
+            assert headers["location"] == "/"
+            assert not server.sessions
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
 # --------------------------------------------------------------------------- #
 # WebSocket routing per session
 # --------------------------------------------------------------------------- #
@@ -341,9 +359,7 @@ def test_leave_forgets_remembered_join() -> None:
         session.bridge.link = _StubLink()  # type: ignore[assignment]
 
         # A browser join is remembered (drives auto-rejoin after a drop).
-        await session.bridge.on_browser_message(
-            {"action": "join", "table_key": "table1", "player_name": "Bob"}
-        )
+        await session.bridge.on_browser_message({"action": "join", "table_key": "table1", "player_name": "Bob"})
         assert session._join_args == ("table1", "Bob", None)
 
         # Leaving forgets it.

@@ -180,12 +180,11 @@ class MetaClientServer:
             await self._create_and_redirect(split.query, writer)
             return
 
-        if route.startswith("/s/"):
-            session_id = route[len("/s/") :].strip("/")
+        session_id = route[len("/s/") :].strip("/") if route.startswith("/s/") else ""
+        if session_id and "/" not in session_id:
             session = self.sessions.get(session_id)
             if session is None:
-                await WebOverlayServer._write_http(writer, 404, "text/plain; charset=utf-8", b"Unknown session")
-                _safe_close(writer)
+                await self._redirect(writer, "/")
                 return
             await self._serve_game_page(session, writer)
             return
