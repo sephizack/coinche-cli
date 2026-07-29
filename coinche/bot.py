@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 import copy
+import logging
 import random
+import time
 
 from coinche import rules
 from coinche.cards import Card, Seat, build_deck
 from coinche.game import PARTNER_OF, TEAM_OF, Game, RoundState
 
+# Number of imperfect-information determinizations `choose_card` averages over.
+# This is a *runtime-tunable* module global: `calibrate_samples()` overwrites it
+# at server startup with the largest value the host can afford within a target
+# per-decision budget, so a beefier machine automatically fields a stronger bot.
 MONTE_CARLO_SAMPLES = 100
+
+# Candidate sample counts probed by `calibrate_samples()`, ascending. Probing
+# stops at the first candidate that blows the time budget, and the last one that
+# fit is kept -- so a weak host lands on 20 and a fast one on 1000.
+MONTE_CARLO_CANDIDATES = (20, 50, 100, 200, 500, 1000)
+
+_LOGGER = logging.getLogger(__name__)
 
 _TRUMP_HAND_WEIGHTS = {
     "V": 30,
@@ -631,3 +644,98 @@ def choose_card(game: Game, seat: Seat) -> Card:
             tuple(-value for value in _discard_key(card, options["trump"])),
         ),
     )
+
+
+# --- Startup calibration ------------------------------------------------------
+
+_CALIBRATION_SEAT = Seat.S
+
+
+def _build_calibration_game() -> Game:
+    """Build a deterministic worst-case `choose_card` situation for benchmarking.
+
+    The heaviest decision the bot ever faces is *leading the opening trick as
+    declarer*: every one of its eight cards is legal (maximum branching) and each
+    rollout must play out all 32 remaining cards (maximum depth). Timing this
+    upper bound means any real in-game decision is guaranteed to fit the same
+    budget. The deal is fixed (no shuffle) so the benchmark is reproducible and
+    independent of the host's RNG.
+    """
+    game = Game()
+    deck = build_deck()
+    # A fixed, plausible split: deal the 32-card deck round-robin to the four
+    # seats. The exact hands don't matter for timing -- only that the acting seat
+    # has eight cards and leads with no trick history.
+    hands: dict[Seat, list[Card]] = {seat: [] for seat in Seat}
+    order = list(Seat)
+    for index, card in enumerate(deck):
+        hands[order[index % 4]].append(card)
+
+    trump = rules.ALLOWED_TRUMPS[0]
+    round_state = RoundState(
+        dealer=Seat.N,
+        dealt_hands={seat: list(cards) for seat, cards in hands.items()},
+        hands={seat: list(cards) for seat, cards in hands.items()},
+        trump=trump,
+        leader=_CALIBRATION_SEAT,
+    )
+    game.round_state = round_state
+    game.phase = "trick_play"
+    game.next_to_act = _CALIBRATION_SEAT
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {
+        "team": TEAM_OF[_CALIBRATION_SEAT],
+        "seat": _CALIBRATION_SEAT,
+        "trump": trump,
+        "points": rules.BID_MIN,
+    }
+    return game
+
+
+def calibrate_samples(target_seconds: float = 1.0) -> int:
+    """Pick and install the largest Monte Carlo sample count fitting a time budget.
+
+    Times one worst-case `choose_card` (see `_build_calibration_game`) at each
+    candidate in `MONTE_CARLO_CANDIDATES`, ascending, and keeps the largest whose
+    decision stayed within `target_seconds`. Probing stops at the first candidate
+    that overruns, since cost grows monotonically with the sample count. The
+    chosen value is written back to the module global `MONTE_CARLO_SAMPLES` (which
+    `choose_card` reads at call time) and returned.
+    """
+    global MONTE_CARLO_SAMPLES
+
+    game = _build_calibration_game()
+    # Warm up copy/deepcopy and import machinery so the first timed run isn't
+    # penalised by one-time costs that won't recur in real play.
+    _run_choose_card_with_samples(game, 1)
+
+    chosen = MONTE_CARLO_CANDIDATES[0]
+    for candidate in MONTE_CARLO_CANDIDATES:
+        start = time.perf_counter()
+        _run_choose_card_with_samples(game, candidate)
+        elapsed = time.perf_counter() - start
+        _LOGGER.info("Monte Carlo calibration: %d samples -> %.3fs", candidate, elapsed)
+        if elapsed > target_seconds:
+            break
+        chosen = candidate
+
+    MONTE_CARLO_SAMPLES = chosen
+    _LOGGER.info(
+        "Monte Carlo calibration: using %d samples (target %.2fs per decision)",
+        chosen,
+        target_seconds,
+    )
+    return chosen
+
+
+def _run_choose_card_with_samples(game: Game, sample_count: int) -> None:
+    """Run the full `choose_card` pipeline for a fixed sample count (timing helper)."""
+    seat = _CALIBRATION_SEAT
+    options = game.play_options_for(seat)
+    legal_cards: list[Card] = options["legal_cards"]
+    samples = _sample_hidden_hands(game, seat, sample_count)
+    if not samples:
+        return
+    for hidden_hands in samples:
+        for card in legal_cards:
+            _rollout_score(game, seat, card, hidden_hands)
