@@ -1117,7 +1117,8 @@ body > .lobby {
 /* ---- Lobby grid of mini-tables ---- */
 .lobby__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 300px));
+  justify-content: center;
   gap: var(--sp-4);
 }
 .minitable {
