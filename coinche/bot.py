@@ -277,6 +277,15 @@ def _is_master(card: Card, hand: list[Card], game: Game, trump: str) -> bool:
     return all(Card(rank, card.suit) in known_cards for rank in stronger_ranks)
 
 
+def _has_been_played(card: Card, round_state: RoundState) -> bool:
+    """Whether a card is visible in completed or current tricks."""
+    return any(
+        played == card
+        for trick in [*round_state.trick_history, {"trick": round_state.current_trick}]
+        for _, played in trick["trick"]
+    )
+
+
 def _outstanding_trumps(game: Game, seat: Seat, trump: str) -> int:
     """Count trumps still unaccounted for from this seat's viewpoint.
 
@@ -325,7 +334,7 @@ def _partner_is_known_void_of_trump(game: Game, seat: Seat, trump: str) -> bool:
     return trump in _known_void_suits(game.round_state)[PARTNER_OF[seat]]
 
 
-def _choose_tactical_card(game: Game, seat: Seat) -> Card:
+def _select_tactical_card_for_simulation(game: Game, seat: Seat) -> Card:
     """Choose a team-oriented card for one simulated world.
 
     The policy deliberately remains information-safe: it sees only the acting
@@ -665,7 +674,7 @@ def _rollout_score(game: Game, seat: Seat, card: Card, hidden_hands: dict[Seat, 
         if result.get("round_complete"):
             break
         actor = simulation.next_to_act
-        result = simulation.submit_card(actor, _choose_tactical_card(simulation, actor))
+        result = simulation.submit_card(actor, _select_tactical_card_for_simulation(simulation, actor))
     if not result.get("round_complete"):
         raise RuntimeError("Bot rollout did not complete the round")
 
@@ -676,28 +685,48 @@ def _rollout_score(game: Game, seat: Seat, card: Card, hidden_hands: dict[Seat, 
 
 
 def choose_card(game: Game, seat: Seat) -> Card:
-    global MONTE_CARLO_SAMPLES
     """Choose the legal card with the best average result across plausible hidden deals.
 
     Determinizations are built from this bot's hand and public play history only.
     The real hands stored by the authoritative server are deliberately ignored.
     """
+    assert game.round_state is not None
     options = game.play_options_for(seat)
     legal_cards: list[Card] = options["legal_cards"]
     assert legal_cards
     if len(legal_cards) == 1:
         return legal_cards[0]
 
+    # Hard safety rule for the actual choice, not only the rollout policy: a
+    # declaring-team player who leads may remove possible defensive ruffers
+    # before exposing an outside Ace or Ten. Monte-Carlo scores cannot override
+    # a master trump lead, or a lead while the trump Valet can still be with the
+    # partner. Once the Valet has fallen, a non-master trump is not forced.
+    contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
+    trump = options["trump"]
+    if (
+        not game.round_state.current_trick
+        and contract is not None
+        and contract["team"] == TEAM_OF[seat]
+        and trump is not None
+        and _opponents_may_hold_trump(game, seat, trump)
+    ):
+        trumps = [card for card in legal_cards if card.suit == trump]
+        best_trump = max(trumps, key=lambda card: _card_strength(card, trump), default=None)
+        jack_has_not_fallen = not _has_been_played(Card("V", trump), game.round_state)
+        if best_trump is not None and (jack_has_not_fallen or _is_master(best_trump, game.get_hand(seat), game, trump)):
+            return best_trump
+
     samples = _sample_hidden_hands(game, seat, MONTE_CARLO_SAMPLES)
     if not samples:
-        return _choose_tactical_card(game, seat)
+        return _select_tactical_card_for_simulation(game, seat)
 
     scores = {card: 0 for card in legal_cards}
     for hidden_hands in samples:
         for card in legal_cards:
             scores[card] += _rollout_score(game, seat, card, hidden_hands)
 
-    tactical = _choose_tactical_card(game, seat)
+    tactical = _select_tactical_card_for_simulation(game, seat)
     return max(
         legal_cards,
         key=lambda card: (

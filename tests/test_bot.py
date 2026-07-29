@@ -10,7 +10,7 @@ import coinche.bot as bot
 from coinche import server
 from coinche.bot import (
     _auction_card_weights,
-    _choose_tactical_card,
+    _select_tactical_card_for_simulation,
     _known_void_suits,
     _sample_hidden_hands,
     choose_bid,
@@ -168,7 +168,7 @@ def test_discard_shortens_the_shortest_side_suit() -> None:
     game.round_state.current_trick = [(Seat.N, Card("A", "♥"))]
     game.round_state.hands[Seat.S] = _cards("7♦", "7♣", "8♣", "9♣")
 
-    assert _choose_tactical_card(game, Seat.S) == Card("7", "♦")
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("7", "♦")
 
 
 def test_bot_uses_the_cheapest_card_that_wins() -> None:
@@ -242,7 +242,7 @@ def test_partner_pulls_with_a_non_master_trump_when_taker_is_known_void(monkeypa
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("9♠", "7♣", "8♦")
 
-    assert _choose_tactical_card(game, Seat.S) == Card("9", "♠")
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("9", "♠")
     monkeypatch.setattr(bot, "MONTE_CARLO_SAMPLES", 20)
     assert choose_card(game, Seat.S) == Card("9", "♠")
 
@@ -261,7 +261,7 @@ def test_partner_of_taker_leads_a_master_trump_to_help_pull() -> None:
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("V♠", "7♣", "8♦")
 
-    assert _choose_tactical_card(game, Seat.S) == Card("V", "♠")
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("V", "♠")
 
 
 def test_taker_leads_its_top_trump() -> None:
@@ -309,7 +309,7 @@ def test_taker_pulls_master_trump_before_cashing_a_side_ace() -> None:
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♦")
 
-    assert _choose_tactical_card(game, Seat.S) == Card("10", "♠")
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("10", "♠")
 
 
 def test_taker_leads_a_non_master_trump_before_cashing_a_side_ace() -> None:
@@ -327,7 +327,89 @@ def test_taker_leads_a_non_master_trump_before_cashing_a_side_ace() -> None:
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("9♠", "A♥", "7♦")
 
-    assert _choose_tactical_card(game, Seat.S) == Card("9", "♠")
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("9", "♠")
+
+
+def test_declaring_partner_hook_pulls_before_monte_carlo_when_protecting_ace_or_ten(monkeypatch) -> None:
+    # This tests the actual `choose_card` hook for the taker's partner. The
+    # Monte-Carlo sampler must not even run: a lead with an unprotected A/10
+    # and possible defensive trumps is forced to pull with the best available
+    # trump.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("9♠", "A♥", "10♦", "7♣")
+
+    def unexpected_sampling(*args: object) -> list[dict[Seat, list[Card]]]:
+        raise AssertionError("the hard trump-pull rule must run before Monte-Carlo sampling")
+
+    monkeypatch.setattr(bot, "_sample_hidden_hands", unexpected_sampling)
+
+    assert choose_card(game, Seat.S) == Card("9", "♠")
+
+
+def test_hard_trump_hook_pulls_a_master_after_jack_has_fallen(monkeypatch) -> None:
+    # V/9/A♠ have already fallen, so 10♠ is a certain winner even though the
+    # Valet is no longer available for the partner to cover the lead.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [_TRUMP_HONORS_BURNED]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♦")
+
+    def unexpected_sampling(*args: object) -> list[dict[Seat, list[Card]]]:
+        raise AssertionError("a master trump must be played before Monte-Carlo sampling")
+
+    monkeypatch.setattr(bot, "_sample_hidden_hands", unexpected_sampling)
+
+    assert choose_card(game, Seat.S) == Card("10", "♠")
+
+
+def test_hard_trump_hook_defers_when_jack_has_fallen_and_trump_is_not_master(monkeypatch) -> None:
+    # Once V♠ has been played, a 10♠ with higher trumps still outstanding is not
+    # guaranteed to win. The hard rule must let Monte-Carlo choose instead of
+    # forcing that losing trump lead.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.W, Card("7", "♠")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.E, Card("R", "♠")),
+            ],
+            "points_won": 24,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♣")
+
+    samples_called = False
+
+    def no_samples(*args: object) -> list[dict[Seat, list[Card]]]:
+        nonlocal samples_called
+        samples_called = True
+        return []
+
+    monkeypatch.setattr(bot, "_sample_hidden_hands", no_samples)
+    monkeypatch.setattr(bot, "_select_tactical_card_for_simulation", lambda *args: Card("7", "♣"))
+
+    assert choose_card(game, Seat.S) == Card("7", "♣")
+    assert samples_called
 
 
 def test_taker_stops_pulling_once_all_opponent_trumps_are_gone() -> None:
@@ -378,7 +460,7 @@ def test_taker_stops_pulling_once_all_opponent_trumps_are_gone() -> None:
 
     # Assert against the rollout policy directly: it holds the pull-trumps rule
     # and is deterministic, unlike the Monte-Carlo `choose_card` wrapper.
-    assert _choose_tactical_card(game, Seat.S) == Card("A", "♥")
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("A", "♥")
 
 
 def test_declarer_keeps_a_master_that_a_known_defender_can_ruff() -> None:
@@ -407,7 +489,7 @@ def test_declarer_keeps_a_master_that_a_known_defender_can_ruff() -> None:
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("A♥", "9♠", "7♣", "8♦")
 
-    assert _choose_tactical_card(game, Seat.S) == Card("7", "♣")
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("7", "♣")
 
 
 def test_discarding_on_a_side_lead_reveals_a_trump_void() -> None:
@@ -473,7 +555,7 @@ def _play_round(source: Game, optimize_ew: bool) -> int:
         if optimize_ew and TEAM_OF[acting_seat] == "EW":
             card = choose_card(simulation, acting_seat)
         else:
-            card = _choose_tactical_card(simulation, acting_seat)
+            card = _select_tactical_card_for_simulation(simulation, acting_seat)
         result = simulation.submit_card(acting_seat, card)
         if result.get("round_complete"):
             score = result["round_score"]
