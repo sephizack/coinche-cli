@@ -80,6 +80,31 @@ def test_lobby_update_refreshes_players_and_status():
     assert state.can_fill_bots is True
 
 
+def test_table_listing_stored_and_projected():
+    """TABLE_LISTING feeds the web lobby: stored verbatim on the state and
+    surfaced in the snapshot so the browser can render mini-tables."""
+    state = ClientState()
+    tables = [
+        {
+            "table_key": "table1",
+            "in_progress": False,
+            "seats_filled": 2,
+            "players": [
+                {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "connected": True, "is_bot": False},
+                {"seat": "E", "name": "Bob", "team_name": "Equipe 2", "connected": True, "is_bot": False},
+            ],
+        }
+    ]
+    result = apply_message(state, protocol.TABLE_LISTING, {"tables": tables})
+    assert result.action_requested is False
+    assert state.tables == tables
+    snap = snapshot_to_dict(state)
+    assert snap["tables"] == tables
+    # Projection copies each entry (mutating the snapshot must not touch state).
+    snap["tables"][0]["table_key"] = "mutated"
+    assert state.tables[0]["table_key"] == "table1"
+
+
 def test_deal_resets_round_state_and_sorts_hand():
     state = ClientState()
     _join(state)
@@ -785,58 +810,82 @@ def test_mirror_parity_scripted_sequence():
     same key fields the terminal renderer reads off `ClientState` directly."""
     state = ClientState()
     sequence = [
-        (protocol.JOINED, {
-            "table_key": "table1",
-            "seat": "S",
-            "players": [
-                {"seat": "N", "name": "Nord"},
-                {"seat": "E", "name": "Est"},
-                {"seat": "S", "name": "Moi"},
-                {"seat": "W", "name": "Ouest"},
-            ],
-        }),
-        (protocol.DEAL, {
-            "hand": ["7♥", "R♥", "A♠"],
-            "first_bidder_seat": "N",
-            "dealer_seat": "W",
-            "round_number": 1,
-        }),
-        (protocol.BID_REQUEST, {
-            "legal_actions": [{"trump": "♥"}],
-            "current_highest_bid": None,
-            "can_coinche": False,
-            "can_surcoinche": False,
-        }),
-        (protocol.BIDDING_RESULT, {
-            "outcome": "contract",
-            "trump": "♥",
-            "points": 90,
-            "seat": "S",
-            "coinche_level": 1,
-            "first_leader": "N",
-        }),
-        (protocol.PLAY_REQUEST, {
-            "legal_cards": ["7♥", "R♥"],
-            "trump": "♥",
-            "current_trick": [{"seat": "N", "card": "9♥"}],
-        }),
-        (protocol.CARD_PLAYED, {
-            "seat": "S",
-            "card": "7♥",
-            "current_trick": [{"seat": "N", "card": "9♥"}, {"seat": "S", "card": "7♥"}],
-            "next_to_act": "E",
-        }),
-        (protocol.TRICK_RESULT, {
-            "trick": [{"seat": "N", "card": "9♥"}, {"seat": "S", "card": "7♥"}],
-            "winner_seat": "N",
-            "points_won": 12,
-        }),
+        (
+            protocol.JOINED,
+            {
+                "table_key": "table1",
+                "seat": "S",
+                "players": [
+                    {"seat": "N", "name": "Nord"},
+                    {"seat": "E", "name": "Est"},
+                    {"seat": "S", "name": "Moi"},
+                    {"seat": "W", "name": "Ouest"},
+                ],
+            },
+        ),
+        (
+            protocol.DEAL,
+            {
+                "hand": ["7♥", "R♥", "A♠"],
+                "first_bidder_seat": "N",
+                "dealer_seat": "W",
+                "round_number": 1,
+            },
+        ),
+        (
+            protocol.BID_REQUEST,
+            {
+                "legal_actions": [{"trump": "♥"}],
+                "current_highest_bid": None,
+                "can_coinche": False,
+                "can_surcoinche": False,
+            },
+        ),
+        (
+            protocol.BIDDING_RESULT,
+            {
+                "outcome": "contract",
+                "trump": "♥",
+                "points": 90,
+                "seat": "S",
+                "coinche_level": 1,
+                "first_leader": "N",
+            },
+        ),
+        (
+            protocol.PLAY_REQUEST,
+            {
+                "legal_cards": ["7♥", "R♥"],
+                "trump": "♥",
+                "current_trick": [{"seat": "N", "card": "9♥"}],
+            },
+        ),
+        (
+            protocol.CARD_PLAYED,
+            {
+                "seat": "S",
+                "card": "7♥",
+                "current_trick": [{"seat": "N", "card": "9♥"}, {"seat": "S", "card": "7♥"}],
+                "next_to_act": "E",
+            },
+        ),
+        (
+            protocol.TRICK_RESULT,
+            {
+                "trick": [{"seat": "N", "card": "9♥"}, {"seat": "S", "card": "7♥"}],
+                "winner_seat": "N",
+                "points_won": 12,
+            },
+        ),
         (protocol.TRICK_CLEARED, {}),
-        (protocol.ROUND_SCORE, {
-            "cumulative": {"NS": 90, "EW": 0},
-            "team_NS": {"contract_result": "made"},
-            "team_EW": {"contract_result": "failed"},
-        }),
+        (
+            protocol.ROUND_SCORE,
+            {
+                "cumulative": {"NS": 90, "EW": 0},
+                "team_NS": {"contract_result": "made"},
+                "team_EW": {"contract_result": "failed"},
+            },
+        ),
     ]
     for msg_type, payload in sequence:
         apply_message(state, msg_type, payload)

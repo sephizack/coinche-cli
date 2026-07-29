@@ -127,6 +127,67 @@ Once all 4 seats are filled, by people or bots, the server deals a hand and the 
 If a client's connection drops mid-game, relaunching it with the same
 `--table` and `--name` reconnects to the same seat and resumes play.
 
+## Méta-client (multi-session web front door)
+
+For hosting several players from a **single process** — e.g. one small VM that
+serves everyone through a browser, with no terminal client to install — run the
+**méta-client**. It exposes one authenticated web page; each visitor picks a
+name and gets their own dedicated, isolated client session (its own connection
+to the game server, its own state, its own seat).
+
+```bash
+python -m coinche.meta \
+  --host 127.0.0.1 --port 8765 \        # the game server to connect sessions to
+  --listen-host 0.0.0.0 --listen-port 8080 \
+  --auth-user coinche --auth-pass 'change-me'   # HTTP basic auth (password required)
+```
+
+or, with the launcher (creates `.venv`, installs deps, then runs it):
+
+```bash
+./run_meta.sh --auth-pass 'change-me' --host 127.0.0.1 --port 8765
+```
+
+Flow for a player:
+
+1. Open `http://<meta-host>:8080/` — the browser prompts for the basic-auth
+   user/password you configured.
+2. Enter a name and submit → the méta-client spins up a fresh session and
+   redirects to `/s/<random-id>` (an unguessable per-session URL).
+3. Play from the same web UI as the overlay (lobby → join a table/team → game).
+
+Each session runs as an independent set of asyncio tasks on the one event loop
+(no per-session thread), reconnecting to the game server on its own with
+backoff if the connection drops. The terminal client (`coinche.client`) and the
+single-session overlay are unchanged and still work exactly as before.
+
+### One-command launch (server + méta-client)
+
+To bring up the whole thing on one host — the game server *and* the méta-client
+wired to it — in a single terminal:
+
+```bash
+./run_app.sh --auth-pass 'change-me'                 # server on 8765, web on 8080
+./run_app.sh --auth-pass 'change-me' --meta-port 9000 --game-port 8790 \
+             --server-log game.log                   # custom ports + server log file
+```
+
+`--auth-pass` is **required**. `run_app.sh` prepares the venv (like the other
+launchers), starts `coinche.server` then `coinche.meta` pointed at it, and
+supervises both: Ctrl+C stops them together, and if either process dies the
+other is torn down too. This is deliberately a plain shell script — for a
+single host with two Python processes and one venv, a docker-compose-style
+orchestrator would add a daemon, images, and a network to manage for no real
+gain.
+
+Caveats:
+
+- Basic auth is transmitted in cleartext over plain HTTP — put the méta-client
+  behind a TLS-terminating reverse proxy (or an SSH tunnel) if it's reachable
+  from an untrusted network.
+- Anyone with the auth credentials can create sessions and join tables; the
+  per-session URL is a capability, so don't share it.
+
 ## Running the tests
 
 ```bash

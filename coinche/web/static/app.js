@@ -438,9 +438,16 @@ const App = {
     const bidAnnouncementKey = ref(0);
     const sweepClass = ref(null); // e.g. "sweep-north" while a trick sweeps out
     const confetti = ref([]);
+    // Optional méta-client context: when this page is served by the multi-
+    // session méta-client, `window.__META__` carries the per-session WebSocket
+    // path and the name the player already chose on the landing page. In the
+    // mono-session overlay it's absent, so everything falls back to the
+    // original behaviour (root `/ws`, empty name).
+    const META = window.__META__ || {};
+
     // Lobby form (there is no table-list in the snapshot contract; U2 pushes
     // players/status only — so the lobby is a join form driven by that state).
-    const lobby = reactive({ name: "", table: "table1", team: "" });
+    const lobby = reactive({ name: META.name || "", table: "table1", team: "" });
 
     let ws = null;
     let backoff = 500;
@@ -451,7 +458,8 @@ const App = {
     // -------- WebSocket (ConnectionLayer) --------
     function wsUrl() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      return `${proto}://${location.host}/ws`;
+      const path = META.wsPath || "/ws";
+      return `${proto}://${location.host}${path}`;
     }
 
     function connect() {
@@ -876,6 +884,80 @@ const App = {
       };
     });
 
+    // --- Web lobby: every live table as a mini-table ---------------------
+    // Which side (NS / EW) a seat belongs to — mirrors game.TEAM_OF so the
+    // mini-tables place players on the same two teams as the game.
+    const SEAT_TEAM = { N: "NS", S: "NS", E: "EW", W: "EW" };
+    // Fixed seat slots per team so an empty chair still renders in place.
+    const TEAM_SEATS = { NS: ["N", "S"], EW: ["E", "W"] };
+    // Fake face-down cards shown on a table that's playing / full, purely
+    // decorative (never real cards — those only ever belong to your own seat).
+    const FAKE_HAND = [0, 1, 2];
+
+    const lobbyTables = computed(() => {
+      const s = snapshot.value;
+      const raw = (s && s.tables) || [];
+      return raw
+        .map((t) => {
+          const bySeat = {};
+          for (const p of t.players || []) bySeat[p.seat] = p;
+          const teamOf = (team) =>
+            TEAM_SEATS[team].map((seatId) => {
+              const p = bySeat[seatId];
+              return {
+                seat: seatId,
+                name: p ? p.name : "",
+                empty: !p,
+                bot: !!(p && p.is_bot),
+                offline: !!(p && p.connected === false),
+              };
+            });
+          const filled = t.seats_filled || 0;
+          const full = filled >= 4;
+          let status = "waiting";
+          if (t.in_progress) status = "playing";
+          else if (full) status = "full";
+          return {
+            key: t.table_key,
+            inProgress: !!t.in_progress,
+            filled,
+            full,
+            status,
+            // A table is joinable from the web only when it hasn't started and
+            // still has a free seat; the server remains the authority.
+            joinable: !t.in_progress && !full,
+            ns: teamOf("NS"),
+            ew: teamOf("EW"),
+          };
+        })
+        .sort((a, b) => a.key.localeCompare(b.key));
+    });
+
+    // Next free "tableN" key not already present, for the create card.
+    const nextTableKey = computed(() => {
+      const keys = new Set(lobbyTables.value.map((t) => t.key.toLowerCase()));
+      for (let n = 1; n < 1000; n++) {
+        const k = "table" + n;
+        if (!keys.has(k)) return k;
+      }
+      return "table" + (keys.size + 1);
+    });
+
+    function joinSpecificTable(tableKey, teamLabelText) {
+      const name = lobby.name.trim();
+      if (!name) {
+        showToast("Entrez votre nom d'abord", "error");
+        return;
+      }
+      const payload = { table_key: tableKey, player_name: name };
+      if (teamLabelText) payload.team_name = teamLabelText;
+      sendAction("join", payload);
+    }
+
+    function createTable() {
+      joinSpecificTable(nextTableKey.value, lobbyTeams.value.nsLabel);
+    }
+
     watch(chatOpen, (open) => {
       if (open) unread.value = 0;
     });
@@ -924,6 +1006,10 @@ const App = {
       finalEux,
       statusMessage,
       lobbyTeams,
+      lobbyTables,
+      nextTableKey,
+      joinSpecificTable,
+      createTable,
       playCard,
       submitBid,
       sendChat,
@@ -954,42 +1040,74 @@ const App = {
 
     <!-- ================= LOBBY (not joined) ================= -->
     <div v-if="!joined" class="lobby">
-      <div class="lobby__card">
-        <h1 class="lobby__title">Coinche — Casino</h1>
-        <div class="lobby__field">
-          <label for="lobby-name">Votre nom</label>
-          <input id="lobby-name" type="text" v-model="lobby.name" maxlength="24"
-                 data-testid="lobby-name" placeholder="Alice" />
-        </div>
-        <div class="lobby__field">
-          <label for="lobby-table">Table</label>
-          <input id="lobby-table" type="text" v-model="lobby.table" maxlength="24"
-                 data-testid="lobby-table" placeholder="table1" />
+      <div class="lobby__inner">
+        <header class="lobby__header">
+          <h1 class="lobby__title">Coinche — Casino</h1>
+          <div class="lobby__namefield">
+            <label for="lobby-name">Votre nom</label>
+            <input id="lobby-name" type="text" v-model="lobby.name" maxlength="24"
+                   data-testid="lobby-name" placeholder="Alice" />
+          </div>
+        </header>
+
+        <div class="lobby__grid">
+          <!-- Create-a-table card -->
+          <button class="minitable minitable--create" data-testid="lobby-create" @click="createTable()">
+            <div class="minitable--create__plus">＋</div>
+            <div class="minitable--create__label">Nouvelle table</div>
+            <div class="minitable--create__hint">{{ nextTableKey }}</div>
+          </button>
+
+          <!-- One mini-table per live table -->
+          <div v-for="t in lobbyTables" :key="t.key" class="minitable"
+               :class="{ 'minitable--playing': t.status === 'playing', 'minitable--full': t.status === 'full', 'minitable--waiting': t.status === 'waiting' }"
+               :data-testid="'minitable-' + t.key">
+            <div class="minitable__head">
+              <span class="minitable__key">{{ t.key }}</span>
+              <span class="minitable__badge" :class="'minitable__badge--' + t.status">
+                <template v-if="t.status === 'playing'">🎴 En cours</template>
+                <template v-else-if="t.status === 'full'">✔ Complète</template>
+                <template v-else>⏳ En attente ({{ t.filled }}/4)</template>
+              </span>
+            </div>
+
+            <div class="minitable__felt">
+              <!-- fake face-down cards in the middle when the game is live/full -->
+              <div v-if="t.status !== 'waiting'" class="minitable__cards" aria-hidden="true">
+                <span v-for="c in [0,1,2]" :key="c" class="fakecard"></span>
+              </div>
+              <div v-else class="minitable__await" aria-hidden="true">En attente de joueurs…</div>
+
+              <!-- North / South = Équipe 1 ; West / East = Équipe 2 -->
+              <div v-for="p in t.ns" :key="'ns'+p.seat" class="seatchip" :class="'seatchip--' + (p.seat === 'N' ? 'north' : 'south')">
+                <span v-if="p.empty" class="seatchip--empty"
+                      @click="t.joinable && joinSpecificTable(t.key, 'Equipe 1')"
+                      :class="{ 'seatchip--joinable': t.joinable }">＋ libre</span>
+                <span v-else class="seatchip__name">{{ p.name }}<span v-if="p.bot" class="seatchip__tag">bot</span><span v-if="p.offline" class="seatchip__tag seatchip__tag--off">hors-ligne</span></span>
+              </div>
+              <div v-for="p in t.ew" :key="'ew'+p.seat" class="seatchip" :class="'seatchip--' + (p.seat === 'W' ? 'west' : 'east')">
+                <span v-if="p.empty" class="seatchip--empty"
+                      @click="t.joinable && joinSpecificTable(t.key, 'Equipe 2')"
+                      :class="{ 'seatchip--joinable': t.joinable }">＋ libre</span>
+                <span v-else class="seatchip__name">{{ p.name }}<span v-if="p.bot" class="seatchip__tag">bot</span><span v-if="p.offline" class="seatchip__tag seatchip__tag--off">hors-ligne</span></span>
+              </div>
+            </div>
+
+            <div class="minitable__foot">
+              <div class="minitable__teams">
+                <span class="minitable__team minitable__team--nous">{{ lobbyTeams.nsLabel }}</span>
+                <span class="minitable__team minitable__team--eux">{{ lobbyTeams.ewLabel }}</span>
+              </div>
+              <button v-if="t.joinable" class="minitable__join" :data-testid="'join-' + t.key"
+                      @click="joinSpecificTable(t.key, '')">Rejoindre</button>
+              <span v-else class="minitable__locked">🔒</span>
+            </div>
+          </div>
         </div>
 
-        <div class="team-picker">
-          <div class="team-card team-card--nous">
-            <div class="team-card__title">{{ lobbyTeams.nsLabel }}</div>
-            <ul class="team-card__members">
-              <li v-for="(n, i) in lobbyTeams.ns" :key="'ns'+i">{{ n }}</li>
-              <li v-if="!lobbyTeams.ns.length" class="free">(libre)</li>
-            </ul>
-            <button class="team-join" data-testid="join-ns"
-                    @click="lobby.team = lobbyTeams.nsLabel; joinTable()">Rejoindre</button>
-          </div>
-          <div class="team-card team-card--eux">
-            <div class="team-card__title">{{ lobbyTeams.ewLabel }}</div>
-            <ul class="team-card__members">
-              <li v-for="(n, i) in lobbyTeams.ew" :key="'ew'+i">{{ n }}</li>
-              <li v-if="!lobbyTeams.ew.length" class="free">(libre)</li>
-            </ul>
-            <button class="team-join" data-testid="join-ew"
-                    @click="lobby.team = lobbyTeams.ewLabel; joinTable()">Rejoindre</button>
-          </div>
-        </div>
-
-        <button class="rematch-btn" style="width:100%;margin-top:0" data-testid="lobby-join"
-                @click="joinTable()">Rejoindre la table</button>
+        <p v-if="!lobbyTables.length" class="lobby__empty">
+          Aucune table pour le moment — créez-en une !
+        </p>
       </div>
     </div>
 

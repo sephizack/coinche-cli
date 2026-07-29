@@ -137,6 +137,13 @@ class ClientState:
     # if any (see `_team_names_from_wire`); shown in place of "Nous"/"Eux"
     # wherever a team is displayed.
     team_names: dict[str, str] = field(default_factory=dict)
+    # Live lobby listing (TABLE_LISTING), used by the web lobby to render every
+    # table as a mini-table with its seated players. Each entry mirrors the
+    # server's `tables_listing()` shape:
+    #   {table_key, in_progress, seats_filled, players:[{seat,name,team_name,connected,is_bot}]}
+    # The terminal client keeps its own picker state (`client._lobby_picker`)
+    # and ignores this field; it exists purely for the web projection.
+    tables: list[dict] = field(default_factory=list)
     # Chat: split-pane state.
     active_pane: str = "game"  # "game" or "chat"
     chat_messages: deque[tuple[str, str, str | None, float, bool]] = field(default_factory=lambda: deque(maxlen=20))
@@ -366,6 +373,12 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({payload['seats_filled']}/4)..."
         state.can_fill_bots = payload["seats_filled"] < 4
+
+    elif msg_type == protocol.TABLE_LISTING:
+        # Live lobby feed: store the raw listing verbatim so the web lobby can
+        # render every table. The terminal picker consumes TABLE_LISTING in its
+        # own loop and never reaches this reducer, so this only serves the web.
+        state.tables = list(payload.get("tables", []))
 
     elif msg_type == protocol.DEAL:
         state.can_fill_bots = False
@@ -644,6 +657,9 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "last_round_contract": state.last_round_contract,  # round-recap parity (FR3.2/3.3)
         "connection_status": {seat.value: status for seat, status in state.connection_status.items()},
         "status_message": state.status_message,
+        # Live lobby listing for the web lobby's mini-tables (see ClientState.tables).
+        # Copied shallowly so the browser gets the raw server shape.
+        "tables": [dict(t) for t in state.tables],
         "can_fill_bots": state.can_fill_bots,
         "last_action": state.last_action,
         "pending_bid_request": state.pending_bid_request,  # so the web can show the bid panel

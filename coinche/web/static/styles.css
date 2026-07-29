@@ -1065,10 +1065,297 @@ button {
    ========================================================================= */
 .lobby {
   flex: 1 1 auto;
-  display: grid;
-  place-items: center;
+  display: block;
   padding: var(--sp-6);
   overflow-y: auto;
+}
+.lobby__inner {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+}
+.lobby__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+}
+.lobby__namefield {
+  min-width: 220px;
+  flex: 0 1 320px;
+}
+.lobby__namefield label {
+  display: block;
+  font-family: system-ui, sans-serif;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-1);
+}
+.lobby__namefield input {
+  width: 100%;
+  padding: var(--sp-3);
+  border-radius: var(--radius-card);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-on-felt);
+  font-family: system-ui, sans-serif;
+  font-size: 1rem;
+}
+.lobby__empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-family: system-ui, sans-serif;
+  margin-top: var(--sp-6);
+}
+
+/* ---- Lobby grid of mini-tables ---- */
+.lobby__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-4);
+}
+.minitable {
+  background: var(--panel-bg);
+  border: 2px solid rgba(212, 175, 55, 0.35);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-card);
+  padding: var(--sp-3);
+  font-family: system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.minitable--playing {
+  border-color: rgba(255, 255, 255, 0.18);
+  opacity: 0.92;
+}
+.minitable--full {
+  border-color: rgba(38, 198, 218, 0.5);
+}
+.minitable--waiting {
+  border-color: var(--gold);
+}
+.minitable__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.minitable__key {
+  font-weight: 700;
+  color: var(--gold-soft);
+  letter-spacing: 0.02em;
+}
+.minitable__badge {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.minitable__badge--waiting {
+  background: rgba(212, 175, 55, 0.18);
+  color: var(--gold-soft);
+}
+.minitable__badge--full {
+  background: rgba(38, 198, 218, 0.16);
+  color: var(--team-nous);
+}
+.minitable__badge--playing {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-muted);
+}
+
+/* Oval felt with 4 seats around it (N top, S bottom, W left, E right) */
+.minitable__felt {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border-radius: 999px / 60%;
+  background: radial-gradient(
+    ellipse at center,
+    var(--felt-green-light) 0%,
+    var(--felt-green) 55%,
+    var(--felt-green-dark) 100%
+  );
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.4);
+}
+.minitable__cards {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.minitable__cards .fakecard {
+  width: 22px;
+  height: 32px;
+  margin: 0 -6px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    45deg,
+    #7b1420,
+    #7b1420 4px,
+    #9a1c2b 4px,
+    #9a1c2b 8px
+  );
+  border: 1px solid var(--gold-soft);
+  box-shadow: var(--shadow-card);
+  transform: rotate(calc((var(--i, 0) - 1) * 8deg));
+}
+.minitable__cards .fakecard:nth-child(1) {
+  --i: 0;
+}
+.minitable__cards .fakecard:nth-child(2) {
+  --i: 1;
+}
+.minitable__cards .fakecard:nth-child(3) {
+  --i: 2;
+}
+.minitable__await {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-style: italic;
+  text-align: center;
+  padding: 0 var(--sp-4);
+}
+.seatchip {
+  position: absolute;
+  max-width: 46%;
+  transform: translate(-50%, -50%);
+  font-size: 0.78rem;
+}
+.seatchip--north {
+  top: 12%;
+  left: 50%;
+}
+.seatchip--south {
+  top: 88%;
+  left: 50%;
+}
+.seatchip--west {
+  top: 50%;
+  left: 15%;
+}
+.seatchip--east {
+  top: 50%;
+  left: 85%;
+}
+.seatchip__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--text-on-felt);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.seatchip--north .seatchip__name,
+.seatchip--south .seatchip__name {
+  border-color: var(--team-nous);
+}
+.seatchip--west .seatchip__name,
+.seatchip--east .seatchip__name {
+  border-color: var(--team-eux);
+}
+.seatchip__tag {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  color: var(--gold-soft);
+  border: 1px solid var(--gold-soft);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.seatchip__tag--off {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.seatchip--empty {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text-muted);
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+}
+.seatchip--joinable {
+  cursor: pointer;
+  color: var(--gold-soft);
+  border-color: var(--gold);
+}
+.seatchip--joinable:hover {
+  background: rgba(212, 175, 55, 0.2);
+}
+.minitable__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.minitable__teams {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.7rem;
+}
+.minitable__team--nous {
+  color: var(--team-nous);
+}
+.minitable__team--eux {
+  color: var(--team-eux);
+}
+.minitable__join {
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--gold);
+  background: rgba(212, 175, 55, 0.16);
+  color: var(--gold-soft);
+  font-weight: 700;
+  cursor: pointer;
+}
+.minitable__join:hover {
+  background: var(--gold-soft);
+  color: var(--felt-green-dark);
+}
+.minitable__locked {
+  opacity: 0.6;
+}
+
+/* Create-a-table card */
+.minitable--create {
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 220px;
+  border-style: dashed;
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.08);
+  color: var(--gold-soft);
+  cursor: pointer;
+  font-family: system-ui, sans-serif;
+}
+.minitable--create:hover {
+  background: rgba(212, 175, 55, 0.16);
+}
+.minitable--create__plus {
+  font-size: 2.4rem;
+  line-height: 1;
+}
+.minitable--create__label {
+  font-weight: 700;
+}
+.minitable--create__hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 .lobby__card {
   width: min(520px, 100%);

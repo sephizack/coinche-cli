@@ -10,6 +10,7 @@ dependencies = [
 [project.scripts]
 coinche-server = "coinche.server:cli"
 coinche-client = "coinche.client:cli"
+coinche-meta = "coinche.meta.__main__:cli"
 
 [build-system]
 requires = ["setuptools>=68"]
