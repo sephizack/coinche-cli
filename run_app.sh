@@ -110,7 +110,7 @@ SERVER_PID=$!
 
 echo "Attente du serveur de jeu ..."
 SERVER_READY=0
-for _ in $(seq 1 150); do
+for _ in $(seq 1 300); do
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
         echo "Erreur : le serveur de jeu s'est arrêté avant de devenir disponible." >&2
         exit 1
@@ -132,7 +132,7 @@ PY
 done
 
 if [[ "$SERVER_READY" -ne 1 ]]; then
-    echo "Erreur : le serveur de jeu n'est pas disponible après 15 secondes." >&2
+    echo "Erreur : le serveur de jeu n'est pas disponible après 30 secondes." >&2
     exit 1
 fi
 
