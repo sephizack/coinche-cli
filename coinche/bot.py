@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
+import os
+import platform
 import random
 import time
 
@@ -650,6 +653,60 @@ def choose_card(game: Game, seat: Seat) -> Card:
 
 _CALIBRATION_SEAT = Seat.S
 
+# Where a calibration result is cached so repeat startups skip the benchmark.
+# Overridable via env var so multiple servers on one host don't clobber it.
+CALIBRATION_CACHE_PATH = os.environ.get("COINCHE_BOT_BENCH_FILE", ".bot-bench")
+
+# Bump when the calibration logic or its inputs change in a way that makes old
+# cached results untrustworthy, so stale files are ignored rather than trusted.
+_CALIBRATION_CACHE_VERSION = 1
+
+
+def _calibration_fingerprint(target_seconds: float) -> dict[str, object]:
+    """Identify the host + settings a cached result is only valid for.
+
+    A cache hit requires *all* of these to match: the target budget, the set of
+    candidates probed, and enough of the host/interpreter identity that a result
+    measured elsewhere (or under a different Python) is never reused blindly.
+    """
+    return {
+        "version": _CALIBRATION_CACHE_VERSION,
+        "target_seconds": round(target_seconds, 6),
+        "candidates": list(MONTE_CARLO_CANDIDATES),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "python": platform.python_version(),
+        "cpu_count": os.cpu_count(),
+    }
+
+
+def _read_cached_calibration(target_seconds: float) -> int | None:
+    """Return the cached sample count if it matches this host, else None."""
+    try:
+        with open(CALIBRATION_CACHE_PATH, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if data.get("fingerprint") != _calibration_fingerprint(target_seconds):
+        return None
+    chosen = data.get("samples")
+    if isinstance(chosen, int) and chosen in MONTE_CARLO_CANDIDATES:
+        return chosen
+    return None
+
+
+def _write_cached_calibration(target_seconds: float, chosen: int) -> None:
+    """Persist a calibration result; failures are logged but never fatal."""
+    payload = {
+        "fingerprint": _calibration_fingerprint(target_seconds),
+        "samples": chosen,
+    }
+    try:
+        with open(CALIBRATION_CACHE_PATH, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+    except OSError as error:
+        _LOGGER.warning("Could not write calibration cache %s: %s", CALIBRATION_CACHE_PATH, error)
+
 
 def _build_calibration_game() -> Game:
     """Build a deterministic worst-case `choose_card` situation for benchmarking.
@@ -692,7 +749,7 @@ def _build_calibration_game() -> Game:
     return game
 
 
-def calibrate_samples(target_seconds: float = 2.0) -> int:
+def calibrate_samples(target_seconds: float = 2.0, use_cache: bool = True) -> int:
     """Pick and install the largest Monte Carlo sample count fitting a time budget.
 
     Times one worst-case `choose_card` (see `_build_calibration_game`) at each
@@ -701,8 +758,23 @@ def calibrate_samples(target_seconds: float = 2.0) -> int:
     that overruns, since cost grows monotonically with the sample count. The
     chosen value is written back to the module global `MONTE_CARLO_SAMPLES` (which
     `choose_card` reads at call time) and returned.
+
+    When `use_cache` is true a result matching this host and budget is read from
+    (and freshly measured ones written to) `CALIBRATION_CACHE_PATH`, so repeat
+    startups on the same machine skip the benchmark entirely.
     """
     global MONTE_CARLO_SAMPLES
+
+    if use_cache:
+        cached = _read_cached_calibration(target_seconds)
+        if cached is not None:
+            MONTE_CARLO_SAMPLES = cached
+            _LOGGER.info(
+                "Monte Carlo calibration: reusing cached %d samples from %s",
+                cached,
+                CALIBRATION_CACHE_PATH,
+            )
+            return cached
 
     game = _build_calibration_game()
     # Warm up copy/deepcopy and import machinery so the first timed run isn't
@@ -725,6 +797,8 @@ def calibrate_samples(target_seconds: float = 2.0) -> int:
         chosen,
         target_seconds,
     )
+    if use_cache:
+        _write_cached_calibration(target_seconds, chosen)
     return chosen
 
 
