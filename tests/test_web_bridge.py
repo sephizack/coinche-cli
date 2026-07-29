@@ -101,6 +101,7 @@ def test_parse_rejects_incomplete_action_frames(frame: dict) -> None:
         {"action": "rematch"},  # no required fields
         {"action": "lobby"},  # no required fields
         {"action": "fill_bots"},  # no required fields
+        {"action": "leave"},  # no required fields
     ],
 )
 def test_parse_accepts_complete_action_frames(frame: dict) -> None:
@@ -152,6 +153,10 @@ class FakeLink:
 
     async def send_fill_bots(self) -> bool:
         self.calls.append(("fill_bots",))
+        return True
+
+    async def send_leave(self) -> bool:
+        self.calls.append(("leave",))
         return True
 
 
@@ -422,8 +427,10 @@ def test_on_browser_message_dispatch_direct() -> None:
         server = WebOverlayServer(ClientState(), link, host=HOST, port=0)
         await server.on_browser_message({"action": "play", "card": "7♦"})
         await server.on_browser_message({"action": "bid", "bid_action": "pass"})
+        await server.on_browser_message({"action": "leave"})
         assert ("play", "7♦") in link.calls
         assert ("bid", "pass", None, None) in link.calls
+        assert ("leave",) in link.calls
 
     asyncio.run(scenario())
 

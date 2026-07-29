@@ -55,6 +55,11 @@ class _SessionBridge(WebOverlayServer):
             return
         if msg["action"] == "join":
             self._session.remember_join(msg["table_key"], msg["player_name"], msg.get("team_name"))
+        elif msg["action"] == "leave":
+            # Left the table: forget the remembered JOIN so a later TCP drop
+            # reconnects into the lobby (subscribe) instead of silently
+            # re-seating us at the table we just walked away from.
+            self._session.forget_join()
         await super().on_browser_message(msg)
 
 
@@ -87,6 +92,11 @@ class MetaSession:
 
     def remember_join(self, table_key: str, player_name: str, team_name: str | None) -> None:
         self._join_args = (table_key, player_name, team_name)
+
+    def forget_join(self) -> None:
+        """Drop the remembered JOIN so a reconnect returns to the lobby, not the
+        table just left (see `_run`'s reconnect branch)."""
+        self._join_args = None
 
     def start(self) -> None:
         """Launch the background connection/receiver loop (idempotent)."""

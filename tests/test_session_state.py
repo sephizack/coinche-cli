@@ -66,6 +66,36 @@ def test_joined_populates_identity_and_players():
     assert state.server_version == "9.9.9"
 
 
+def test_left_resets_state_back_to_lobby():
+    """LEFT clears every table/game-scoped field so both UIs return to the
+    picker (seat = None, joined_once = False), keeping connection-scoped data
+    (the live `tables` listing, server_version)."""
+    state = ClientState()
+    _join(state)
+    # Muddy the state as if a round were under way.
+    state.hand = ["A♠", "K♥"]
+    state.whose_turn = Seat.S
+    state.trump = "♠"
+    state.contract_points = 90
+    state.tables = [{"table_key": "table1"}]
+
+    result = apply_message(state, protocol.LEFT, {})
+
+    assert result == ApplyResult(action_requested=False)
+    assert state.joined_once is False
+    assert state.seat is None
+    assert state.table_key is None
+    assert state.players == {}
+    assert state.hand == []
+    assert state.whose_turn is None
+    assert state.trump is None
+    assert state.contract_points is None
+    assert state.status_message == "Vous avez quitté la table."
+    # Connection-scoped data is retained across a table switch.
+    assert state.tables == [{"table_key": "table1"}]
+    assert state.server_version == "9.9.9"
+
+
 def test_lobby_update_refreshes_players_and_status():
     state = ClientState()
     _join(state)

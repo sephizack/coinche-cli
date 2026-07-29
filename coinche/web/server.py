@@ -371,6 +371,8 @@ class WebOverlayServer:
             await self.link.send_subscribe_lobby()
         elif action == "fill_bots":
             await self.link.send_fill_bots()
+        elif action == "leave":
+            await self.link.send_leave()
 
     async def broadcast_state(self, state: ClientState) -> None:
         """Push the current projected state to every connected browser (FR3.1).

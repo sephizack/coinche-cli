@@ -10,7 +10,7 @@ Frame shapes (see `domain-entities.md`):
 
 Browser -> client::
 
-    {"action": "play"|"bid"|"chat"|"join"|"continue"|"rematch"|"lobby"|"fill_bots", ...fields}
+    {"action": "play"|"bid"|"chat"|"join"|"continue"|"rematch"|"lobby"|"fill_bots"|"leave", ...fields}
 
 Client -> browser::
 
@@ -32,7 +32,7 @@ MAX_MESSAGE_BYTES = 64 * 1024
 # Anything outside this set is rejected at parse time (BR-U2-5) rather than
 # reaching `on_browser_message`.
 ALLOWED_ACTIONS: frozenset[str] = frozenset(
-    {"play", "bid", "chat", "join", "continue", "rematch", "lobby", "fill_bots"}
+    {"play", "bid", "chat", "join", "continue", "rematch", "lobby", "fill_bots", "leave"}
 )
 
 # Required fields per action (BR-U2-5): a frame missing any of these is rejected
@@ -48,6 +48,7 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "rematch": (),
     "lobby": (),
     "fill_bots": (),
+    "leave": (),
 }
 
 

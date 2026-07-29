@@ -100,6 +100,9 @@ class ClientLink:
     async def send_fill_bots(self) -> bool:
         return await self._send(protocol.FILL_BOTS, {})
 
+    async def send_leave(self) -> bool:
+        return await self._send(protocol.LEAVE, {})
+
 
 async def run_session(
     host: str,
