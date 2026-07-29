@@ -65,6 +65,15 @@ def round_to_nearest_ten(points: int) -> int:
     return (points + 5) // 10 * 10
 
 
+def round_to_nearest_five(points: int) -> int:
+    """Round card points to the nearest multiple of 5 (mathematical rounding,
+    .5 rounds up): 98 -> 100, 93 -> 95, 92 -> 90, 42 -> 40, 43 -> 45.
+
+    Used only to decide whether the announced contract is fulfilled, so that
+    a near-miss like 98 faits sur 100 annoncés valide le contrat (98 -> 100)."""
+    return (points + 2) // 5 * 5
+
+
 DEFAULT_TARGET_SCORE = 1000  # A12
 
 
@@ -272,6 +281,12 @@ def score_round(
 
     Card points are rounded to the nearest 10 for both teams (see
     `round_to_nearest_ten`); the +20 belote bonus is added after rounding.
+
+    Contrat réussi ou chuté : les points faits par les preneurs (cartes +
+    belote éventuelle) sont arrondis à 5 près (`round_to_nearest_five`) avant
+    d'être comparés au contrat annoncé. Ainsi 98 faits sur 100 annoncés valide
+    le contrat (98 -> 100). Cet arrondi à 5 ne sert qu'à décider de la réussite
+    du contrat ; le score marqué reste calculé sur l'arrondi à 10.
     """
     attacking_team = bid["team"]
     defending_team = "EW" if attacking_team == "NS" else "NS"
@@ -295,7 +310,10 @@ def score_round(
         contract_made = bool(capot_result)
     else:
         attacking_points = captured_points_by_team.get(attacking_team, 0)
-        contract_made = attacking_points + attacker_belote >= bid["points"]
+        # Les points faits (cartes + belote éventuelle des preneurs) sont
+        # arrondis à 5 près avant d'être comparés au contrat : 98 sur 100
+        # annoncés vaut donc contrat réussi (98 -> 100).
+        contract_made = round_to_nearest_five(attacking_points + attacker_belote) >= bid["points"]
 
     if contract_made:
         # Points réalisés by the attackers: a full capot is worth 252

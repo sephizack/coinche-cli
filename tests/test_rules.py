@@ -230,6 +230,24 @@ def test_score_round_made_example_from_spec():
     assert result["EW"]["total"] == 100  # 102 arrondi à 100
 
 
+def test_score_round_98_faits_sur_100_arrondi_a_5_valide_le_contrat():
+    # 100 annoncés, 98 faits : arrondi à 5 près -> 100, donc contrat réussi.
+    # Le score marqué garde l'arrondi à 10 : 98 -> 100 réalisés + 100 demandés.
+    captured = {"NS": 98, "EW": 64}
+    bid = {"team": "NS", "trump": "♠", "points": 100}
+    result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder=None)
+    assert result["NS"]["contract_result"] == "made"
+    assert result["NS"]["total"] == 200  # 100 (arrondi 10) + 100 (demandé)
+
+
+def test_score_round_93_faits_sur_100_reste_chute():
+    # 93 faits sur 100 : arrondi à 5 -> 95, toujours < 100 -> chuté.
+    captured = {"NS": 93, "EW": 69}
+    bid = {"team": "NS", "trump": "♠", "points": 100}
+    result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder=None)
+    assert result["NS"]["contract_result"] == "failed"
+
+
 def test_score_round_contract_failed_defenders_get_pool_plus_bid():
     # 100 annoncés et 90 faits : chuté -> adversaires reçoivent 162 + 100 = 262.
     captured = {"NS": 90, "EW": 72}
