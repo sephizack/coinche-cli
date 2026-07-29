@@ -14,7 +14,7 @@ import time
 import urllib.request
 
 from coinche import __version__, protocol, rules
-from coinche.bot import choose_bid, choose_card
+from coinche.bot import calibrate_samples, choose_bid, choose_card
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
@@ -330,7 +330,7 @@ async def _handle_play_result(table: Table, result: dict) -> None:
             "next_dealer_seat": _seat_to_str(next_dealer_seat) if next_dealer_seat is not None else None,
         },
     )
-    await _announce_bot_starting_hands(table, result["completed_round_hands"])
+    await _announce_bot_starting_hands(table, result["completed_round_hands"], result.get("contract_trump"))
 
     if result["game_over"]:
         logger.info(
@@ -354,12 +354,34 @@ async def _handle_play_result(table: Table, result: dict) -> None:
         await _send_bid_request(table, game.next_to_act)
 
 
-async def _announce_bot_starting_hands(table: Table, hands: dict[Seat, list[Card]]) -> None:
+def _sort_hand_for_display(hand: list[Card], trump: str | None) -> list[Card]:
+    """Sort a hand for readable chat logs: grouped by suit, strongest first.
+
+    The trump suit (when known) leads, then the other suits in their canonical
+    order; within each suit cards run strongest -> weakest so the log reads the
+    way a player would fan their hand.
+    """
+
+    def rank_strength(card: Card) -> int:
+        order = rules.TRUMP_ORDER if trump is not None and card.suit == trump else rules.NONTRUMP_ORDER
+        return order.index(card.rank)
+
+    def suit_priority(suit: str) -> int:
+        # Trump first, then the remaining suits in their canonical order.
+        return (-1, suit) if suit == trump else (rules.SUITS.index(suit), suit)
+
+    return sorted(hand, key=lambda c: (suit_priority(c.suit), -rank_strength(c)))
+
+
+async def _announce_bot_starting_hands(
+    table: Table, hands: dict[Seat, list[Card]], trump: str | None = None
+) -> None:
     """Publish each bot's completed-round hand after scoring, never during play."""
     for seat, session in table.seats.items():
         if session is None or not session.is_bot:
             continue
-        cards = " ".join(_card_to_wire(card) for card in hands[seat])
+        sorted_hand = _sort_hand_for_display(hands[seat], trump)
+        cards = " ".join(_card_to_wire(card) for card in sorted_hand)
         await table.broadcast(protocol.CHAT, {"seat": _seat_to_str(seat), "text": f"Ma main de départ était : {cards}"})
 
 
@@ -742,6 +764,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Minimum seconds each bot waits before bidding or playing; up to one random extra second (default: 1.0)",
     )
     parser.add_argument(
+        "--bot-calibrate-seconds",
+        type=float,
+        default=1.0,
+        help=(
+            "Target seconds per bot card decision. At startup the server benchmarks the bot's "
+            "Monte Carlo search and picks the largest sample count that fits this budget, so a "
+            "faster host automatically fields a stronger bot. Set to 0 to skip calibration and "
+            "keep the built-in default (default: 1.0)"
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -790,6 +823,14 @@ async def main(argv: list[str] | None = None) -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=handlers,
     )
+
+    # Benchmark the bot's Monte Carlo search on this host and pick the strongest
+    # sample count that still decides within the target budget. A faster machine
+    # thereby fields a stronger bot with no manual tuning.
+    if args.bot_calibrate_seconds > 0:
+        print("Calibrating bot strength for this host...", flush=True)
+        chosen = calibrate_samples(args.bot_calibrate_seconds)
+        print(f"  bot Monte Carlo samples: {chosen} (target {args.bot_calibrate_seconds:.2f}s/decision)", flush=True)
 
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         await handle_connection(
