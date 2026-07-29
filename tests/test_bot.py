@@ -4,11 +4,15 @@ import copy
 import random
 from collections import Counter
 
+import coinche.bot as bot
 from coinche.bot import (
+    MONTE_CARLO_CANDIDATES,
+    _build_calibration_game,
     _choose_tactical_card,
     _known_void_suits,
     _sample_hidden_hands,
     _trump_honor_bias,
+    calibrate_samples,
     choose_bid,
     choose_card,
 )
@@ -436,3 +440,35 @@ def test_monte_carlo_team_outscores_greedy_play_across_deals() -> None:
         greedy_total += _play_round(game, optimize_ew=False)
 
     assert monte_carlo_total > greedy_total
+
+
+def test_calibration_game_is_a_worst_case_lead() -> None:
+    # The benchmark scenario must be the heaviest decision: acting seat leads the
+    # opening trick (empty history) with all eight cards legal, as declarer.
+    game = _build_calibration_game()
+    assert game.round_state is not None
+    seat = game.next_to_act
+    assert game.phase == "trick_play"
+    assert game.round_state.trick_history == []
+    assert game.round_state.current_trick == []
+    options = game.play_options_for(seat)
+    assert len(options["legal_cards"]) == 8
+    contract = game.bid_state.current_highest_bid
+    assert contract is not None and contract["seat"] == seat
+
+
+def test_calibrate_samples_picks_a_candidate_within_budget() -> None:
+    original = bot.MONTE_CARLO_SAMPLES
+    try:
+        # A tiny budget must still land on the smallest candidate rather than
+        # failing -- a bot always needs *some* samples.
+        chosen = calibrate_samples(target_seconds=0.0001)
+        assert chosen == MONTE_CARLO_CANDIDATES[0]
+        assert bot.MONTE_CARLO_SAMPLES == chosen
+
+        # A generous budget must never exceed the largest offered candidate.
+        chosen_big = calibrate_samples(target_seconds=3600.0)
+        assert chosen_big == MONTE_CARLO_CANDIDATES[-1]
+        assert bot.MONTE_CARLO_SAMPLES == chosen_big
+    finally:
+        bot.MONTE_CARLO_SAMPLES = original

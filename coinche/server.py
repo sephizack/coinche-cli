@@ -14,7 +14,7 @@ import time
 import urllib.request
 
 from coinche import __version__, protocol, rules
-from coinche.bot import choose_bid, choose_card
+from coinche.bot import calibrate_samples, choose_bid, choose_card
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
@@ -764,6 +764,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Minimum seconds each bot waits before bidding or playing; up to one random extra second (default: 1.0)",
     )
     parser.add_argument(
+        "--bot-calibrate-seconds",
+        type=float,
+        default=1.0,
+        help=(
+            "Target seconds per bot card decision. At startup the server benchmarks the bot's "
+            "Monte Carlo search and picks the largest sample count that fits this budget, so a "
+            "faster host automatically fields a stronger bot. Set to 0 to skip calibration and "
+            "keep the built-in default (default: 1.0)"
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -812,6 +823,14 @@ async def main(argv: list[str] | None = None) -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=handlers,
     )
+
+    # Benchmark the bot's Monte Carlo search on this host and pick the strongest
+    # sample count that still decides within the target budget. A faster machine
+    # thereby fields a stronger bot with no manual tuning.
+    if args.bot_calibrate_seconds > 0:
+        print("Calibrating bot strength for this host...", flush=True)
+        chosen = calibrate_samples(args.bot_calibrate_seconds)
+        print(f"  bot Monte Carlo samples: {chosen} (target {args.bot_calibrate_seconds:.2f}s/decision)", flush=True)
 
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         await handle_connection(
