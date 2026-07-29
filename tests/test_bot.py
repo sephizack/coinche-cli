@@ -1,21 +1,21 @@
 """Tests for the pure server-controlled bot strategy."""
 
 import copy
-import json
 import random
 from collections import Counter
 
+import pytest
+
 import coinche.bot as bot
+from coinche import server
 from coinche.bot import (
-    MONTE_CARLO_CANDIDATES,
-    _build_calibration_game,
+    _auction_card_weights,
     _choose_tactical_card,
     _known_void_suits,
     _sample_hidden_hands,
-    _trump_honor_bias,
-    calibrate_samples,
     choose_bid,
     choose_card,
+    configure_samples,
 )
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, Game
@@ -351,6 +351,35 @@ def test_taker_stops_pulling_once_all_opponent_trumps_are_gone() -> None:
     assert _choose_tactical_card(game, Seat.S) == Card("A", "♥")
 
 
+def test_declarer_keeps_a_master_that_a_known_defender_can_ruff() -> None:
+    # W cut a heart in the previous trick, so S must not lead the otherwise
+    # master A♥ while W may still hold trump. S is the taker's partner and has
+    # no master trump with which to pull first; developing with 7♣ keeps the
+    # Ace for a safer opportunity.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.W,
+            "trick": [
+                (Seat.N, Card("7", "♥")),
+                (Seat.W, Card("7", "♠")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.E, Card("7", "♦")),
+            ],
+            "points_won": 0,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("A♥", "9♠", "7♣", "8♦")
+
+    assert _choose_tactical_card(game, Seat.S) == Card("7", "♣")
+
+
 def test_discarding_on_a_side_lead_reveals_a_trump_void() -> None:
     # ♥ is led, W neither follows ♥ nor trumps (♠) while the winner so far (N)
     # is not W's partner: the rules would have forced a cut, so W holds no trump.
@@ -379,26 +408,30 @@ def test_discard_behind_a_played_trump_does_not_imply_a_trump_void() -> None:
     assert "♠" not in voids[Seat.W]
 
 
-def test_determinization_favours_the_taker_for_trump_honours() -> None:
-    # The auction says W holds the trump suit; sampled hidden hands should place
-    # the trump Valet with W far more often than an even 1-in-3 split would.
+def test_determinization_uses_an_earlier_bid_not_just_the_final_contract() -> None:
+    # W first announced hearts, then E won the auction in spades. The V♥ still
+    # belongs more often to W in samples: every public bid remains evidence,
+    # not only the final contract's trump honours.
     game = Game()
     assert game.round_state is not None and game.bid_state is not None
     game.round_state.trump = "♠"
-    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
-    game.bid_state.history = [{"seat": Seat.W, "action": "bid", "trump": "♠", "points": 80}]
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.E, "trump": "♠", "points": 90}
+    game.bid_state.history = [
+        {"seat": Seat.W, "action": "bid", "trump": "♥", "points": 80},
+        {"seat": Seat.S, "action": "pass"},
+        {"seat": Seat.E, "action": "bid", "trump": "♠", "points": 90},
+    ]
     game.phase = "trick_play"
     game.next_to_act = Seat.N
-    # N (the sampling seat) does not hold V♠, so it is an unseen card to place.
+    # N (the sampling seat) does not hold V♥, so it is an unseen card to place.
     game.round_state.hands[Seat.N] = _cards("A♥", "10♥", "R♥", "D♥", "A♦", "10♦", "R♦", "D♦")
 
-    bias = _trump_honor_bias(game)
-    assert bias[Seat.W] > bias[Seat.S] == bias[Seat.N]
+    weights = _auction_card_weights(game)
+    assert weights[Seat.W][Card("V", "♥")] > weights[Seat.E][Card("V", "♥")]
+    assert weights[Seat.W][Card("V", "♥")] > weights[Seat.S][Card("V", "♥")]
 
-    samples = _sample_hidden_hands(game, Seat.N, 200)
-    holders = Counter(
-        other for hands in samples for other, hand in hands.items() if Card("V", "♠") in hand
-    )
+    samples = _sample_hidden_hands(game, Seat.N, 400)
+    holders = Counter(other for hands in samples for other, hand in hands.items() if Card("V", "♥") in hand)
     assert holders[Seat.W] > holders[Seat.S]
     assert holders[Seat.W] > holders[Seat.E]
 
@@ -443,89 +476,20 @@ def test_monte_carlo_team_outscores_greedy_play_across_deals() -> None:
     assert monte_carlo_total > greedy_total
 
 
-def test_calibration_game_is_a_worst_case_lead() -> None:
-    # The benchmark scenario must be the heaviest decision: acting seat leads the
-    # opening trick (empty history) with all eight cards legal, as declarer.
-    game = _build_calibration_game()
-    assert game.round_state is not None
-    seat = game.next_to_act
-    assert game.phase == "trick_play"
-    assert game.round_state.trick_history == []
-    assert game.round_state.current_trick == []
-    options = game.play_options_for(seat)
-    assert len(options["legal_cards"]) == 8
-    contract = game.bid_state.current_highest_bid
-    assert contract is not None and contract["seat"] == seat
-
-
-def test_calibrate_samples_picks_a_candidate_within_budget() -> None:
+def test_configure_samples_sets_a_positive_explicit_value() -> None:
     original = bot.MONTE_CARLO_SAMPLES
     try:
-        # A tiny budget must still land on the smallest candidate rather than
-        # failing -- a bot always needs *some* samples.
-        chosen = calibrate_samples(target_seconds=0.0001, use_cache=False)
-        assert chosen == MONTE_CARLO_CANDIDATES[0]
-        assert bot.MONTE_CARLO_SAMPLES == chosen
-
-        # A generous budget must never exceed the largest offered candidate.
-        chosen_big = calibrate_samples(target_seconds=3600.0, use_cache=False)
-        assert chosen_big == MONTE_CARLO_CANDIDATES[-1]
-        assert bot.MONTE_CARLO_SAMPLES == chosen_big
+        assert configure_samples(250) == 250
+        assert bot.MONTE_CARLO_SAMPLES == 250
+        with pytest.raises(ValueError, match="at least 1"):
+            configure_samples(0)
     finally:
         bot.MONTE_CARLO_SAMPLES = original
 
 
-def test_calibrate_samples_caches_and_reuses_result(tmp_path, monkeypatch) -> None:
-    original = bot.MONTE_CARLO_SAMPLES
-    cache_file = tmp_path / ".bot-bench"
-    monkeypatch.setattr(bot, "CALIBRATION_CACHE_PATH", str(cache_file))
-    try:
-        # First call benchmarks and writes the cache file.
-        chosen = calibrate_samples(target_seconds=3600.0)
-        assert chosen == MONTE_CARLO_CANDIDATES[-1]
-        assert cache_file.exists()
+def test_server_parser_accepts_only_positive_bot_sample_counts() -> None:
+    parser = server.build_arg_parser()
 
-        # A second call with a *tiny* budget would normally land on the smallest
-        # candidate -- but the cache is keyed on the budget, so this benchmarks
-        # afresh rather than reusing the generous-budget result.
-        chosen_tiny = calibrate_samples(target_seconds=0.0001)
-        assert chosen_tiny == MONTE_CARLO_CANDIDATES[0]
-
-        # Re-running the tiny budget now hits the cache: even a value the live
-        # benchmark could never produce is returned verbatim, proving no
-        # re-measurement happened.
-        cache_file.write_text(
-            json.dumps(
-                {
-                    "fingerprint": bot._calibration_fingerprint(0.0001),
-                    "samples": MONTE_CARLO_CANDIDATES[-1],
-                }
-            ),
-            encoding="utf-8",
-        )
-        reused = calibrate_samples(target_seconds=0.0001)
-        assert reused == MONTE_CARLO_CANDIDATES[-1]
-        assert bot.MONTE_CARLO_SAMPLES == reused
-    finally:
-        bot.MONTE_CARLO_SAMPLES = original
-
-
-def test_calibrate_samples_use_cache_false_ignores_cache(tmp_path, monkeypatch) -> None:
-    original = bot.MONTE_CARLO_SAMPLES
-    cache_file = tmp_path / ".bot-bench"
-    monkeypatch.setattr(bot, "CALIBRATION_CACHE_PATH", str(cache_file))
-    try:
-        # Seed a bogus cache that a tiny-budget benchmark could never produce.
-        cache_file.write_text(
-            json.dumps(
-                {
-                    "fingerprint": bot._calibration_fingerprint(0.0001),
-                    "samples": MONTE_CARLO_CANDIDATES[-1],
-                }
-            ),
-            encoding="utf-8",
-        )
-        chosen = calibrate_samples(target_seconds=0.0001, use_cache=False)
-        assert chosen == MONTE_CARLO_CANDIDATES[0]
-    finally:
-        bot.MONTE_CARLO_SAMPLES = original
+    assert parser.parse_args(["--bot-samples", "250"]).bot_samples == 250
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--bot-samples", "0"])

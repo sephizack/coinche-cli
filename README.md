@@ -27,6 +27,9 @@ python -m coinche.server [--host HOST] [--port PORT] [--target-score N]
 - `--port` — port to listen on (default `8765`)
 - `--target-score` — cumulative points needed to win the game (default `1000`)
 - `--bot-think` — minimum seconds each bot waits before announcing or playing,
+  - `--bot-samples` — plausible hidden-hand distributions evaluated for each bot
+    card decision (default: `100`); larger values improve consistency but make
+    each bot turn slower
   plus up to one random extra second (default: `1.0`, therefore 1–2 seconds)
 
 Example:
@@ -111,9 +114,12 @@ If fewer than 4 people are available, any seated player can press **F** in the
 terminal (or click **Remplir avec des bots** in the web interface) while the
 table is waiting. The server fills every free seat with a bot and starts the
 game. Bots evaluate their hand before bidding. For card play, they simulate
+Bots evaluate their hand before bidding. For card play, they simulate
 multiple plausible distributions of the unseen cards, play each legal choice
-to the end of the round, and select the best average result. Those simulations
-use only their own cards and public play history—not the real hidden hands.
+to the end of the round, and select the best average result. The distributions
+use their own cards plus the complete public auction and play history—not the
+real hidden hands. Hosts choose the search depth with `--bot-samples`; use a
+smaller value for quicker turns or a larger value for more stable decisions.
 Their opening bids are deliberately conservative: trump control sets the base
 contract, and only strong J-9 four-trump hands add points for side-suit aces.
 They wait a random one to two seconds before each decision by default, so

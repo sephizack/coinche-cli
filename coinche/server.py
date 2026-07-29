@@ -14,7 +14,7 @@ import time
 import urllib.request
 
 from coinche import __version__, protocol, rules
-from coinche.bot import calibrate_samples, choose_bid, choose_card
+from coinche.bot import choose_bid, choose_card, configure_samples
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
@@ -46,6 +46,17 @@ def _player_label(table: Table, seat: Seat) -> str:
     session = table.seats.get(seat)
     name = session.name if session is not None else "?"
     return f"{name} ({_seat_to_str(seat)}/{TEAM_OF[seat]})"
+
+
+def _positive_int(value: str) -> int:
+    """Parse a strictly positive command-line integer."""
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an integer") from error
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
 
 
 def _card_to_wire(card: Card) -> str:
@@ -373,9 +384,7 @@ def _sort_hand_for_display(hand: list[Card], trump: str | None) -> list[Card]:
     return sorted(hand, key=lambda c: (suit_priority(c.suit), -rank_strength(c)))
 
 
-async def _announce_bot_starting_hands(
-    table: Table, hands: dict[Seat, list[Card]], trump: str | None = None
-) -> None:
+async def _announce_bot_starting_hands(table: Table, hands: dict[Seat, list[Card]], trump: str | None = None) -> None:
     """Publish each bot's completed-round hand after scoring, never during play."""
     for seat, session in table.seats.items():
         if session is None or not session.is_bot:
@@ -667,9 +676,7 @@ async def _resolve_join_inner(
             return table, seat
 
         try:
-            seat = table.add_player(
-                player_name, writer, team_name=team_name, preferred_seat=preferred_seat
-            )
+            seat = table.add_player(player_name, writer, team_name=team_name, preferred_seat=preferred_seat)
         except NameTakenError:
             await _send_error(writer, protocol.NAME_TAKEN, f"Name already taken: {player_name}")
             return None
@@ -834,21 +841,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Minimum seconds each bot waits before bidding or playing; up to one random extra second (default: 1.0)",
     )
     parser.add_argument(
-        "--bot-calibrate-seconds",
-        type=float,
-        default=2.0,
-        help=(
-            "Target seconds per bot card decision. At startup the server benchmarks the bot's "
-            "Monte Carlo search and picks the largest sample count that fits this budget, so a "
-            "faster host automatically fields a stronger bot. The result is cached in a .bot-bench "
-            "file so later startups skip the benchmark. Set to 0 to skip calibration and "
-            "keep the built-in default (default: 1.0)"
-        ),
-    )
-    parser.add_argument(
-        "--bot-recalibrate",
-        action="store_true",
-        help="Ignore any cached .bot-bench result and force a fresh Monte Carlo benchmark",
+        "--bot-samples",
+        type=_positive_int,
+        default=100,
+        help="Monte Carlo hidden-hand samples evaluated for each bot card choice (default: 100)",
     )
     parser.add_argument(
         "--log-level",
@@ -900,15 +896,8 @@ async def main(argv: list[str] | None = None) -> None:
         handlers=handlers,
     )
 
-    # Benchmark the bot's Monte Carlo search on this host and pick the strongest
-    # sample count that still decides within the target budget. A faster machine
-    # thereby fields a stronger bot with no manual tuning.
-    if args.bot_calibrate_seconds > 0:
-        print("Calibrating bot strength for this host...", flush=True)
-        chosen = calibrate_samples(
-            args.bot_calibrate_seconds, use_cache=not args.bot_recalibrate
-        )
-        print(f"  bot Monte Carlo samples: {chosen} (target {args.bot_calibrate_seconds:.2f}s/decision)", flush=True)
+    configure_samples(args.bot_samples)
+    logger.info("Bot Monte Carlo samples: %d", args.bot_samples)
 
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         await handle_connection(

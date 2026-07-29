@@ -14,6 +14,7 @@
 #   --auth-user USER     utilisateur du basic auth (défaut: coinche)
 #   --meta-port PORT     port d'écoute web du méta-client (défaut: 8080)
 #   --game-port PORT     port TCP du serveur de jeu (défaut: 8765)
+#   --bot-samples N      distributions Monte-Carlo évaluées par coup de bot (défaut: 100)
 #   --server-log FICHIER écrit aussi les logs du serveur dans ce fichier
 #   --no-pull            ne pas faire de git pull avant de lancer
 #
@@ -33,7 +34,7 @@ AUTH_PASS=""
 AUTH_USER="coinche"
 META_PORT="8080"
 GAME_PORT="8765"
-BOT_CALIBRATE_SECONDS="2.0"
+BOT_SAMPLES="100"
 SERVER_LOG=""
 DO_PULL=1
 
@@ -43,7 +44,7 @@ while [[ $# -gt 0 ]]; do
         --auth-user) AUTH_USER="$2"; shift 2 ;;
         --meta-port) META_PORT="$2"; shift 2 ;;
         --game-port) GAME_PORT="$2"; shift 2 ;;
-        --bot-calibrate-seconds) BOT_CALIBRATE_SECONDS="$2"; shift 2 ;;
+        --bot-samples) BOT_SAMPLES="$2"; shift 2 ;;
         --server-log) SERVER_LOG="$2"; shift 2 ;;
         --no-pull) DO_PULL=0; shift ;;
         -h|--help)
@@ -99,7 +100,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-SERVER_ARGS=(--host 0.0.0.0 --port "$GAME_PORT" --bot-calibrate-seconds "$BOT_CALIBRATE_SECONDS")
+SERVER_ARGS=(--host 0.0.0.0 --port "$GAME_PORT" --bot-samples "$BOT_SAMPLES")
 if [[ -n "$SERVER_LOG" ]]; then
     SERVER_ARGS+=(--log-file "$SERVER_LOG")
 fi

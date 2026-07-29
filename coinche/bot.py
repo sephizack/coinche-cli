@@ -3,29 +3,15 @@
 from __future__ import annotations
 
 import copy
-import json
-import logging
-import os
-import platform
 import random
-import time
 
 from coinche import rules
 from coinche.cards import Card, Seat, build_deck
 from coinche.game import PARTNER_OF, TEAM_OF, Game, RoundState
 
 # Number of imperfect-information determinizations `choose_card` averages over.
-# This is a *runtime-tunable* module global: `calibrate_samples()` overwrites it
-# at server startup with the largest value the host can afford within a target
-# per-decision budget, so a beefier machine automatically fields a stronger bot.
+# The server configures this explicit runtime value through `--bot-samples`.
 MONTE_CARLO_SAMPLES = 100
-
-# Candidate sample counts probed by `calibrate_samples()`, ascending. Probing
-# stops at the first candidate that blows the time budget, and the last one that
-# fit is kept -- so a weak host lands on 20 and a fast one on 1000.
-MONTE_CARLO_CANDIDATES = (20, 50, 100, 200, 500, 1000)
-
-_LOGGER = logging.getLogger(__name__)
 
 _TRUMP_HAND_WEIGHTS = {
     "V": 30,
@@ -52,15 +38,16 @@ _NONTRUMP_HAND_WEIGHTS = {
 # honour, relative to a neutral seat. Used only to bias imperfect-information
 # determinizations from the *public* auction — never to read a real hand. The
 # Valet dominates because a trump opening is almost always built around it.
-_TRUMP_HONOR_BIAS = {
-    "V": 6.0,
-    "9": 3.0,
-    "A": 2.0,
-    "10": 1.4,
+_AUCTION_TRUMP_SIGNALS = {
+    "V": 1.60,
+    "9": 1.25,
+    "A": 0.85,
+    "10": 0.70,
+    "R": 0.45,
+    "D": 0.35,
+    "8": 0.15,
+    "7": 0.10,
 }
-# A seat that merely raised (rather than opened) the trump gets a milder share
-# of the same signal.
-_SUPPORTER_BIAS_FACTOR = 0.5
 
 
 def _side_aces(hand: list[Card], trump: str) -> int:
@@ -186,7 +173,7 @@ def _ceiling_value(ceiling: int | str | None) -> int:
     """Normalize a bid ceiling for comparing candidate trump suits."""
     if ceiling == rules.CAPOT:
         return rules.CAPOT_ANNOUNCE
-    return ceiling or 0
+    return ceiling if isinstance(ceiling, int) else 0
 
 
 def _hand_strength(hand: list[Card], trump: str) -> int:
@@ -320,8 +307,26 @@ def _opponents_may_hold_trump(game: Game, seat: Seat, trump: str) -> bool:
     return any(other != seat and TEAM_OF[other] != TEAM_OF[seat] and trump not in voids[other] for other in Seat)
 
 
+def _opponent_may_ruff_suit(game: Game, seat: Seat, suit: str, trump: str) -> bool:
+    """Whether public information says a defender could cut a lead in `suit`."""
+    assert game.round_state is not None
+    if suit == trump:
+        return False
+    voids = _known_void_suits(game.round_state)
+    return any(
+        other != seat and TEAM_OF[other] != TEAM_OF[seat] and suit in voids[other] and trump not in voids[other]
+        for other in Seat
+    )
+
+
 def _choose_tactical_card(game: Game, seat: Seat) -> Card:
-    """Fast rollout policy using only the acting player's hand and public cards."""
+    """Choose a team-oriented card for one simulated world.
+
+    The policy deliberately remains information-safe: it sees only the acting
+    hand and public cards, even though the rollout contains a full sampled
+    deal. It pulls trump for the declaring team, protects side masters a known
+    defender can ruff, and avoids wasting points when the partner is master.
+    """
     assert game.round_state is not None
     options = game.play_options_for(seat)
     legal_cards: list[Card] = options["legal_cards"]
@@ -359,6 +364,20 @@ def _choose_tactical_card(game: Game, seat: Seat) -> Card:
                     return max(trumps, key=lambda card: _card_strength(card, trump))
 
         if masters:
+            # If the declaring team cannot pull trump right now, do not cash a
+            # side master into a suit an opponent is publicly known to be void
+            # in. The defender can cut it. Prefer another safe master, then
+            # develop the hand with a cheap discard rather than donate an Ace.
+            if is_declarer and _opponents_may_hold_trump(game, seat, trump):
+                safe_masters = [card for card in masters if not _opponent_may_ruff_suit(game, seat, card.suit, trump)]
+                if safe_masters:
+                    return max(
+                        safe_masters,
+                        key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)),
+                    )
+                non_masters = [card for card in legal_cards if card not in masters]
+                if non_masters:
+                    return _best_discard(non_masters, hand, trump)
             return max(masters, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
 
         # Opponents are out of trump (or this seat can't usefully pull): the
@@ -427,34 +446,61 @@ def _known_void_suits(round_state: RoundState) -> dict[Seat, set[str]]:
     return voids
 
 
-def _trump_honor_bias(game: Game) -> dict[Seat, float]:
-    """Per-seat multiplier for holding a trump honour, read from the auction.
+def _bid_strength(points: int | str) -> float:
+    """Convert a public bid level into a bounded distribution signal."""
+    if points == rules.CAPOT:
+        return 2.0
+    assert isinstance(points, int)
+    return 0.8 + (points - rules.BID_MIN) / 100
 
-    The seat that won the contract announced the trump suit, so it is far more
-    likely to hold its top honours; any partner who *raised* the same suit gets
-    a milder share of the same signal. Everyone else stays neutral (1.0). Built
-    only from the public bid history — never from a real hand.
+
+def _auction_card_weights(game: Game) -> dict[Seat, dict[Card, float]]:
+    """Weight each possible card from the *entire* public auction history.
+
+    Every bid is evidence for the bidder's announced colour, even if a later
+    bid changes the final contract. A higher bid gives stronger evidence for
+    trumps and outside winners. Coinche/surcoinche also indicate confidence in
+    the standing trump. Passes modestly lower an opposing seat's probability of
+    holding a trump honour strong enough to outbid the standing contract.
     """
-    bias: dict[Seat, float] = {seat: 1.0 for seat in Seat}
-    contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
-    if contract is None:
-        return bias
-    trump = contract["trump"]
-    taker = contract["seat"]
-    bias[taker] = 2.0
-    if game.bid_state is not None:
-        for entry in game.bid_state.history:
-            if entry.get("action") == "bid" and entry.get("trump") == trump and entry["seat"] != taker:
-                bias[entry["seat"]] = max(bias[entry["seat"]], 1.0 + _SUPPORTER_BIAS_FACTOR)
-    return bias
+    weights = {seat: {card: 1.0 for card in build_deck()} for seat in Seat}
+    if game.bid_state is None:
+        return weights
+
+    standing: dict | None = None
+    for entry in game.bid_state.history:
+        action = entry["action"]
+        bidder = entry["seat"]
+        if action == "bid":
+            trump = entry["trump"]
+            strength = _bid_strength(entry["points"])
+            is_support = (
+                standing is not None and TEAM_OF[standing["seat"]] == TEAM_OF[bidder] and standing["trump"] == trump
+            )
+            if is_support:
+                strength *= 0.75
+            for card in build_deck():
+                if card.suit == trump:
+                    weights[bidder][card] *= 1.0 + strength * _AUCTION_TRUMP_SIGNALS[card.rank]
+                elif card.rank == "A":
+                    weights[bidder][card] *= 1.0 + strength * 0.28
+                elif card.rank == "10":
+                    weights[bidder][card] *= 1.0 + strength * 0.12
+            standing = entry
+        elif action in {"coinche", "surcoinche"} and standing is not None:
+            for card in build_deck():
+                if card.suit == standing["trump"]:
+                    weights[bidder][card] *= 1.0 + 0.25 * _AUCTION_TRUMP_SIGNALS[card.rank]
+        elif action == "pass" and standing is not None and TEAM_OF[bidder] != TEAM_OF[standing["seat"]]:
+            for card in build_deck():
+                if card.suit == standing["trump"] and card.rank in {"V", "9", "A", "10"}:
+                    weights[bidder][card] *= 0.90
+    return weights
 
 
-def _card_seat_weight(card: Card, seat: Seat, trump: str | None, bias: dict[Seat, float]) -> float:
-    """Weight for dealing `card` to `seat`: >1 only for trump honours to biased seats."""
-    if trump is None or card.suit != trump or card.rank not in _TRUMP_HONOR_BIAS:
-        return 1.0
-    honour_pull = _TRUMP_HONOR_BIAS[card.rank]
-    return 1.0 + (honour_pull - 1.0) * (bias[seat] - 1.0)
+def _card_seat_weight(card: Card, seat: Seat, auction_weights: dict[Seat, dict[Card, float]]) -> float:
+    """Return the auction-derived likelihood of dealing a public card to a seat."""
+    return auction_weights[seat][card]
 
 
 def _public_seed(game: Game, seat: Seat) -> str:
@@ -499,12 +545,11 @@ def _sample_hidden_hands(game: Game, seat: Seat, sample_count: int) -> list[dict
         return []
 
     voids = _known_void_suits(round_state)
-    trump = round_state.trump
-    bias = _trump_honor_bias(game)
+    auction_weights = _auction_card_weights(game)
     rng = random.Random(_public_seed(game, seat))
     samples: list[dict[Seat, list[Card]]] = []
     for _ in range(sample_count):
-        assignment = _weighted_deal(unseen, opponents, counts, voids, trump, bias, rng)
+        assignment = _weighted_deal(unseen, opponents, counts, voids, auction_weights, rng)
         if assignment is None:
             assignment = _fallback_deal(unseen, opponents, counts, rng)
         samples.append(assignment)
@@ -516,11 +561,10 @@ def _weighted_deal(
     opponents: list[Seat],
     counts: dict[Seat, int],
     voids: dict[Seat, set[str]],
-    trump: str | None,
-    bias: dict[Seat, float],
+    auction_weights: dict[Seat, dict[Card, float]],
     rng: random.Random,
 ) -> dict[Seat, list[Card]] | None:
-    """Deal cards one at a time, each to a random eligible seat weighted by trump-honour bias.
+    """Deal cards one at a time, weighted by the public auction and known voids.
 
     Constrained-scarce cards (a suit only a few seats can legally hold) are
     placed first so a greedy honour bias cannot paint a void seat into a corner
@@ -543,7 +587,7 @@ def _weighted_deal(
         takers = [other for other in eligible(card) if remaining[other] > 0]
         if not takers:
             return None
-        weights = [_card_seat_weight(card, other, trump, bias) for other in takers]
+        weights = [_card_seat_weight(card, other, auction_weights) for other in takers]
         chosen = _weighted_choice(takers, weights, rng)
         hands[chosen].append(card)
         remaining[chosen] -= 1
@@ -649,167 +693,10 @@ def choose_card(game: Game, seat: Seat) -> Card:
     )
 
 
-# --- Startup calibration ------------------------------------------------------
-
-_CALIBRATION_SEAT = Seat.S
-
-# Where a calibration result is cached so repeat startups skip the benchmark.
-# Overridable via env var so multiple servers on one host don't clobber it.
-CALIBRATION_CACHE_PATH = os.environ.get("COINCHE_BOT_BENCH_FILE", ".bot-bench")
-
-# Bump when the calibration logic or its inputs change in a way that makes old
-# cached results untrustworthy, so stale files are ignored rather than trusted.
-_CALIBRATION_CACHE_VERSION = 1
-
-
-def _calibration_fingerprint(target_seconds: float) -> dict[str, object]:
-    """Identify the host + settings a cached result is only valid for.
-
-    A cache hit requires *all* of these to match: the target budget, the set of
-    candidates probed, and enough of the host/interpreter identity that a result
-    measured elsewhere (or under a different Python) is never reused blindly.
-    """
-    return {
-        "version": _CALIBRATION_CACHE_VERSION,
-        "target_seconds": round(target_seconds, 6),
-        "candidates": list(MONTE_CARLO_CANDIDATES),
-        "machine": platform.machine(),
-        "processor": platform.processor(),
-        "python": platform.python_version(),
-        "cpu_count": os.cpu_count(),
-    }
-
-
-def _read_cached_calibration(target_seconds: float) -> int | None:
-    """Return the cached sample count if it matches this host, else None."""
-    try:
-        with open(CALIBRATION_CACHE_PATH, encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, ValueError):
-        return None
-    if data.get("fingerprint") != _calibration_fingerprint(target_seconds):
-        return None
-    chosen = data.get("samples")
-    if isinstance(chosen, int) and chosen in MONTE_CARLO_CANDIDATES:
-        return chosen
-    return None
-
-
-def _write_cached_calibration(target_seconds: float, chosen: int) -> None:
-    """Persist a calibration result; failures are logged but never fatal."""
-    payload = {
-        "fingerprint": _calibration_fingerprint(target_seconds),
-        "samples": chosen,
-    }
-    try:
-        with open(CALIBRATION_CACHE_PATH, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2)
-    except OSError as error:
-        _LOGGER.warning("Could not write calibration cache %s: %s", CALIBRATION_CACHE_PATH, error)
-
-
-def _build_calibration_game() -> Game:
-    """Build a deterministic worst-case `choose_card` situation for benchmarking.
-
-    The heaviest decision the bot ever faces is *leading the opening trick as
-    declarer*: every one of its eight cards is legal (maximum branching) and each
-    rollout must play out all 32 remaining cards (maximum depth). Timing this
-    upper bound means any real in-game decision is guaranteed to fit the same
-    budget. The deal is fixed (no shuffle) so the benchmark is reproducible and
-    independent of the host's RNG.
-    """
-    game = Game()
-    deck = build_deck()
-    # A fixed, plausible split: deal the 32-card deck round-robin to the four
-    # seats. The exact hands don't matter for timing -- only that the acting seat
-    # has eight cards and leads with no trick history.
-    hands: dict[Seat, list[Card]] = {seat: [] for seat in Seat}
-    order = list(Seat)
-    for index, card in enumerate(deck):
-        hands[order[index % 4]].append(card)
-
-    trump = rules.ALLOWED_TRUMPS[0]
-    round_state = RoundState(
-        dealer=Seat.N,
-        dealt_hands={seat: list(cards) for seat, cards in hands.items()},
-        hands={seat: list(cards) for seat, cards in hands.items()},
-        trump=trump,
-        leader=_CALIBRATION_SEAT,
-    )
-    game.round_state = round_state
-    game.phase = "trick_play"
-    game.next_to_act = _CALIBRATION_SEAT
-    assert game.bid_state is not None
-    game.bid_state.current_highest_bid = {
-        "team": TEAM_OF[_CALIBRATION_SEAT],
-        "seat": _CALIBRATION_SEAT,
-        "trump": trump,
-        "points": rules.BID_MIN,
-    }
-    return game
-
-
-def calibrate_samples(target_seconds: float = 2.0, use_cache: bool = True) -> int:
-    """Pick and install the largest Monte Carlo sample count fitting a time budget.
-
-    Times one worst-case `choose_card` (see `_build_calibration_game`) at each
-    candidate in `MONTE_CARLO_CANDIDATES`, ascending, and keeps the largest whose
-    decision stayed within `target_seconds`. Probing stops at the first candidate
-    that overruns, since cost grows monotonically with the sample count. The
-    chosen value is written back to the module global `MONTE_CARLO_SAMPLES` (which
-    `choose_card` reads at call time) and returned.
-
-    When `use_cache` is true a result matching this host and budget is read from
-    (and freshly measured ones written to) `CALIBRATION_CACHE_PATH`, so repeat
-    startups on the same machine skip the benchmark entirely.
-    """
+def configure_samples(samples: int) -> int:
+    """Install an explicit positive Monte-Carlo sample count for card choices."""
     global MONTE_CARLO_SAMPLES
-
-    if use_cache:
-        cached = _read_cached_calibration(target_seconds)
-        if cached is not None:
-            MONTE_CARLO_SAMPLES = cached
-            _LOGGER.info(
-                "Monte Carlo calibration: reusing cached %d samples from %s",
-                cached,
-                CALIBRATION_CACHE_PATH,
-            )
-            return cached
-
-    game = _build_calibration_game()
-    # Warm up copy/deepcopy and import machinery so the first timed run isn't
-    # penalised by one-time costs that won't recur in real play.
-    _run_choose_card_with_samples(game, 1)
-
-    chosen = MONTE_CARLO_CANDIDATES[0]
-    for candidate in MONTE_CARLO_CANDIDATES:
-        start = time.perf_counter()
-        _run_choose_card_with_samples(game, candidate)
-        elapsed = time.perf_counter() - start
-        _LOGGER.info("Monte Carlo calibration: %d samples -> %.3fs", candidate, elapsed)
-        if elapsed > target_seconds + 1:
-            break
-        chosen = candidate
-
-    MONTE_CARLO_SAMPLES = chosen
-    _LOGGER.info(
-        "Monte Carlo calibration: using %d samples (target %.2fs per decision)",
-        chosen,
-        target_seconds,
-    )
-    if use_cache:
-        _write_cached_calibration(target_seconds, chosen)
-    return chosen
-
-
-def _run_choose_card_with_samples(game: Game, sample_count: int) -> None:
-    """Run the full `choose_card` pipeline for a fixed sample count (timing helper)."""
-    seat = _CALIBRATION_SEAT
-    options = game.play_options_for(seat)
-    legal_cards: list[Card] = options["legal_cards"]
-    samples = _sample_hidden_hands(game, seat, sample_count)
-    if not samples:
-        return
-    for hidden_hands in samples:
-        for card in legal_cards:
-            _rollout_score(game, seat, card, hidden_hands)
+    if samples < 1:
+        raise ValueError("Bot sample count must be at least 1")
+    MONTE_CARLO_SAMPLES = samples
+    return MONTE_CARLO_SAMPLES
