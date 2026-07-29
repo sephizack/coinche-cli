@@ -85,11 +85,13 @@ class ClientLink:
     async def send_chat(self, text: str) -> bool:
         return await self._send(protocol.CHAT, {"text": text})
 
-    async def send_join(self, table_key: str, player_name: str, team_name: str | None) -> bool:
-        return await self._send(
-            protocol.JOIN,
-            {"table_key": table_key, "player_name": player_name, "team_name": team_name},
-        )
+    async def send_join(
+        self, table_key: str, player_name: str, team_name: str | None, seat: str | None = None
+    ) -> bool:
+        payload = {"table_key": table_key, "player_name": player_name, "team_name": team_name}
+        if seat is not None:
+            payload["seat"] = seat
+        return await self._send(protocol.JOIN, payload)
 
     async def send_rematch(self) -> bool:
         return await self._send(protocol.REMATCH, {})

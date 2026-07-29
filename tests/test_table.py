@@ -123,6 +123,30 @@ def test_add_player_with_unmatched_team_name_falls_back_to_normal_order():
     assert seat == Seat.N
 
 
+def test_add_player_honours_preferred_seat_over_normal_order():
+    table = Table("abcd")
+    # First joiner asking for W must land on W, not the default N.
+    seat = table.add_player("Alice", FakeWriter(), preferred_seat=Seat.W)
+    assert seat == Seat.W
+
+
+def test_add_player_preferred_seat_falls_back_when_taken():
+    table = Table("abcd")
+    table.add_player("Alice", FakeWriter(), preferred_seat=Seat.N)
+    # N is taken now; a request for N falls back to normal fill order (E).
+    seat = table.add_player("Bob", FakeWriter(), preferred_seat=Seat.N)
+    assert seat == Seat.E
+
+
+def test_add_player_preferred_seat_wins_over_team_matching():
+    table = Table("abcd")
+    table.add_player("Alice", FakeWriter(), team_name="A")  # seated at N
+    # Team "A" would normally seat Bob at S (opposite Alice), but an explicit
+    # free preferred seat takes priority.
+    seat = table.add_player("Bob", FakeWriter(), team_name="A", preferred_seat=Seat.E)
+    assert seat == Seat.E
+
+
 def test_add_player_with_matching_team_name_whose_seat_is_taken_falls_back_to_normal_order():
     table = Table("abcd")
     table.add_player("Alice", FakeWriter(), team_name="A")  # N
