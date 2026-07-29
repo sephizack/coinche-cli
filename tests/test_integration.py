@@ -295,28 +295,55 @@ def test_leave_table_returns_to_lobby_and_frees_seat():
     asyncio.run(scenario())
 
 
-def test_leave_rejected_mid_game():
-    """LEAVE during an in-progress game is refused (GAME_IN_PROGRESS) and the
-    player stays seated -- the reconnect path relies on the seat persisting."""
+def test_leave_mid_game_hands_seat_to_bot_and_returns_to_lobby():
+    """LEAVE during an in-progress game hands the leaver's seat to a bot (so the
+    remaining players aren't blocked) and returns the leaver to the lobby with a
+    LEFT + fresh listing. A player still at the table sees the seat flip to a bot
+    via a CONNECTION_STATUS(replaced_by_bot) broadcast."""
 
     async def scenario() -> None:
         srv, port = await _start_server(target_score=1000)
-        writer = None
+        w1 = w2 = None
         try:
-            reader, writer = await _connect(port)
-            await _send(writer, protocol.JOIN, {"table_key": "leave03", "player_name": "Alice"})
-            await _read_until(reader, protocol.JOINED)
-            # Fill with bots to start the game immediately.
-            await _send(writer, protocol.FILL_BOTS, {})
-            await _read_until(reader, protocol.DEAL)
+            # Alice (N) and Bob (E) sit down.
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "leave03", "player_name": "Alice"})
+            await _read_until(r1, protocol.JOINED)
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.JOIN, {"table_key": "leave03", "player_name": "Bob"})
+            await _read_until(r2, protocol.JOINED)
+            await _read_until(r1, protocol.LOBBY_UPDATE)  # Alice sees Bob arrive
 
-            # Now try to leave mid-game -- must be rejected.
-            await _send(writer, protocol.LEAVE, {})
-            err = await _read_any_until(reader, protocol.ERROR)
-            assert err["code"] == protocol.GAME_IN_PROGRESS
+            # Fill the remaining seats with bots to start the game immediately.
+            await _send(w1, protocol.FILL_BOTS, {})
+            await _read_until(r1, protocol.DEAL)
+            await _read_until(r2, protocol.DEAL)
+
+            # Alice leaves mid-game: she is confirmed LEFT and gets a live listing.
+            await _send(w1, protocol.LEAVE, {})
+            left = await _read_until(r1, protocol.LEFT)
+            assert left == {}
+            listing = await _read_until(r1, protocol.TABLE_LISTING)
+            leave_table = next(t for t in listing["tables"] if t["table_key"] == "leave03")
+            # The game is still going (Alice's chair is now a bot), and her seat
+            # (N) shows up as a bot in the listing.
+            assert leave_table["in_progress"] is True
+            north = next(p for p in leave_table["players"] if p["seat"] == "N")
+            assert north["is_bot"] is True
+
+            # Bob (still seated) is told Alice's seat was handed to a bot.
+            status = await _read_until(r2, protocol.CONNECTION_STATUS)
+            assert status["seat"] == "N"
+            assert status["status"] == "replaced_by_bot"
+
+            # Alice can immediately join another table on the same connection.
+            await _send(w1, protocol.JOIN, {"table_key": "leave04", "player_name": "Alice"})
+            joined = await _read_until(r1, protocol.JOINED)
+            assert joined["table_key"] == "leave04"
         finally:
-            if writer is not None:
-                writer.close()
+            for w in (w1, w2):
+                if w is not None:
+                    w.close()
             srv.close()
             await srv.wait_closed()
 

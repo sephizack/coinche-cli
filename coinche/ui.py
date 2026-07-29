@@ -520,6 +520,10 @@ def render_connection_banner(name: str, status: str) -> Text:
         text.append("En attente de ", style="italic grey70")
         text.append(name, style="bold white")
         text.append(" (reconnexion...)", style="italic grey70")
+    elif status == "replaced_by_bot":
+        text.append("👋 ", style="bold cyan")
+        text.append(name, style="bold white")
+        text.append(" a quitté — un bot prend la relève", style="italic grey70")
     else:
         text.append("✓ ", style="bold green")
         text.append(name, style="bold white")
