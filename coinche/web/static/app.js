@@ -274,7 +274,12 @@ const BidPanel = {
   },
   mounted() {
     // Focus into the dialog (a11y: BidPanel role=dialog with focus handling).
+    // Mais si le joueur est en train d'écrire (chat, saisie de nom…), on ne
+    // vole PAS le focus : sinon la touche Entrée/Espace qu'il tape activerait
+    // aussitôt « Passe »/« Annoncer » (passe ou annonce tout seul).
     nextTick(() => {
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
       const first = this.$el.querySelector("button:not(:disabled)");
       if (first) first.focus();
     });
