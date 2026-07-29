@@ -362,7 +362,9 @@ class WebOverlayServer:
         elif action == "chat":
             await self.link.send_chat(msg["text"])
         elif action == "join":
-            await self.link.send_join(msg["table_key"], msg["player_name"], msg.get("team_name"))
+            await self.link.send_join(
+                msg["table_key"], msg["player_name"], msg.get("team_name"), msg.get("seat")
+            )
         elif action == "continue" and self.on_round_continue is not None:
             await self.on_round_continue()
         elif action == "rematch":

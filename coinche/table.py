@@ -137,8 +137,19 @@ class Table:
             return 0
         return random.uniform(self.bot_think_seconds, self.bot_think_seconds + BOT_THINK_JITTER_SECONDS)
 
-    def add_player(self, name: str, writer: asyncio.StreamWriter | None, team_name: str | None = None) -> Seat:
+    def add_player(
+        self,
+        name: str,
+        writer: asyncio.StreamWriter | None,
+        team_name: str | None = None,
+        preferred_seat: Seat | None = None,
+    ) -> Seat:
         """Seat a new player (A14/A15). Raises TableError subclasses on rejection.
+
+        `preferred_seat`, if given and still free, wins outright: the player is seated
+        there directly (used by the web lobby, where clicking a specific empty chair
+        should land you in that exact seat). If it's already taken, seating falls back
+        to the `team_name` / normal ordering below.
 
         `team_name` is a free-text, optional label (e.g. "A"/"B" or any name) shared
         by teammates instead of naming each other directly. If it matches (case-
@@ -153,6 +164,14 @@ class Table:
         for session in self.seats.values():
             if session is not None and session.connected and session.name.lower() == name.lower():
                 raise NameTakenError(name)
+
+        if preferred_seat is not None and self.seats[preferred_seat] is None:
+            self.seats[preferred_seat] = ClientSession(
+                seat=preferred_seat, name=name, writer=writer, connected=True, team_name=team_name
+            )
+            if all(s is not None for s in self.seats.values()):
+                self.game = Game(target_score=self.target_score)
+            return preferred_seat
 
         normalized_team = team_name.strip().lower() if team_name else None
         if normalized_team:

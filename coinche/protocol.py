@@ -92,7 +92,8 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
 }
 # JOIN also accepts an optional "team_name" field (a free-text label, e.g. "A"/"B",
 # shared with a teammate to try to be seated on the same team, best-effort; see
-# Table.add_player).
+# Table.add_player) and an optional "seat" field (one of N/E/S/W) requesting a
+# specific chair, honoured when still free (see Table.add_player.preferred_seat).
 
 _VALID_BID_ACTIONS = {"pass", "bid", "coinche", "surcoinche"}
 

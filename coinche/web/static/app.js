@@ -964,7 +964,7 @@ const App = {
       return "table" + (keys.size + 1);
     });
 
-    function joinSpecificTable(tableKey, teamLabelText) {
+    function joinSpecificTable(tableKey, teamLabelText, seat) {
       const name = lobby.name.trim();
       if (!name) {
         showToast("Entrez votre nom d'abord", "error");
@@ -972,6 +972,9 @@ const App = {
       }
       const payload = { table_key: tableKey, player_name: name };
       if (teamLabelText) payload.team_name = teamLabelText;
+      // When a specific empty chair is clicked, ask the server for that exact
+      // seat (the server stays authoritative and falls back if it's taken).
+      if (seat) payload.seat = seat;
       sendAction("join", payload);
     }
 
@@ -1103,13 +1106,13 @@ const App = {
               <!-- North / South = Équipe 1 ; West / East = Équipe 2 -->
               <div v-for="p in t.ns" :key="'ns'+p.seat" class="seatchip" :class="'seatchip--' + (p.seat === 'N' ? 'north' : 'south')">
                 <span v-if="p.empty" class="seatchip--empty"
-                      @click="t.joinable && joinSpecificTable(t.key, 'Equipe 1')"
+                      @click="t.joinable && joinSpecificTable(t.key, lobbyTeams.nsLabel, p.seat)"
                       :class="{ 'seatchip--joinable': t.joinable }">＋ libre</span>
                 <span v-else class="seatchip__name">{{ p.name }}<span v-if="p.bot" class="seatchip__tag">bot</span><span v-if="p.offline" class="seatchip__tag seatchip__tag--off">hors-ligne</span></span>
               </div>
               <div v-for="p in t.ew" :key="'ew'+p.seat" class="seatchip" :class="'seatchip--' + (p.seat === 'W' ? 'west' : 'east')">
                 <span v-if="p.empty" class="seatchip--empty"
-                      @click="t.joinable && joinSpecificTable(t.key, 'Equipe 2')"
+                      @click="t.joinable && joinSpecificTable(t.key, lobbyTeams.ewLabel, p.seat)"
                       :class="{ 'seatchip--joinable': t.joinable }">＋ libre</span>
                 <span v-else class="seatchip__name">{{ p.name }}<span v-if="p.bot" class="seatchip__tag">bot</span><span v-if="p.offline" class="seatchip__tag seatchip__tag--off">hors-ligne</span></span>
               </div>

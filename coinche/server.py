@@ -619,6 +619,14 @@ async def _resolve_join_inner(
     player_name = str(payload["player_name"]).strip()
     team_name = str(payload["team_name"]).strip() if payload.get("team_name") else None
 
+    preferred_seat: Seat | None = None
+    if payload.get("seat"):
+        try:
+            preferred_seat = Seat(str(payload["seat"]).strip().upper())
+        except ValueError:
+            await _send_error(writer, protocol.MALFORMED_MESSAGE, "seat must be one of N/E/S/W")
+            return None
+
     if not TABLE_KEY_PATTERN.match(table_key):
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "table_key must be 4-12 alphanumeric characters")
         return None
@@ -659,7 +667,9 @@ async def _resolve_join_inner(
             return table, seat
 
         try:
-            seat = table.add_player(player_name, writer, team_name=team_name)
+            seat = table.add_player(
+                player_name, writer, team_name=team_name, preferred_seat=preferred_seat
+            )
         except NameTakenError:
             await _send_error(writer, protocol.NAME_TAKEN, f"Name already taken: {player_name}")
             return None
