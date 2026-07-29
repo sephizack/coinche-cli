@@ -766,7 +766,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--bot-calibrate-seconds",
         type=float,
-        default=1.0,
+        default=2.0,
         help=(
             "Target seconds per bot card decision. At startup the server benchmarks the bot's "
             "Monte Carlo search and picks the largest sample count that fits this budget, so a "

@@ -692,7 +692,7 @@ def _build_calibration_game() -> Game:
     return game
 
 
-def calibrate_samples(target_seconds: float = 1.0) -> int:
+def calibrate_samples(target_seconds: float = 2.0) -> int:
     """Pick and install the largest Monte Carlo sample count fitting a time budget.
 
     Times one worst-case `choose_card` (see `_build_calibration_game`) at each
