@@ -33,6 +33,7 @@ AUTH_PASS=""
 AUTH_USER="coinche"
 META_PORT="8080"
 GAME_PORT="8765"
+BOT_CALIBRATE_SECONDS="2.0"
 SERVER_LOG=""
 DO_PULL=1
 
@@ -42,6 +43,7 @@ while [[ $# -gt 0 ]]; do
         --auth-user) AUTH_USER="$2"; shift 2 ;;
         --meta-port) META_PORT="$2"; shift 2 ;;
         --game-port) GAME_PORT="$2"; shift 2 ;;
+        --bot-calibrate-seconds) BOT_CALIBRATE_SECONDS="$2"; shift 2 ;;
         --server-log) SERVER_LOG="$2"; shift 2 ;;
         --no-pull) DO_PULL=0; shift ;;
         -h|--help)
@@ -97,7 +99,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-SERVER_ARGS=(--host 0.0.0.0 --port "$GAME_PORT")
+SERVER_ARGS=(--host 0.0.0.0 --port "$GAME_PORT" --bot-calibrate-seconds "$BOT_CALIBRATE_SECONDS")
 if [[ -n "$SERVER_LOG" ]]; then
     SERVER_ARGS+=(--log-file "$SERVER_LOG")
 fi
@@ -106,8 +108,33 @@ echo "Démarrage du serveur de jeu sur le port $GAME_PORT ..."
 python -m coinche.server "${SERVER_ARGS[@]}" &
 SERVER_PID=$!
 
-# Laisse le serveur binder son port avant de brancher le méta-client dessus.
-sleep 1
+echo "Attente du serveur de jeu ..."
+SERVER_READY=0
+for _ in $(seq 1 150); do
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo "Erreur : le serveur de jeu s'est arrêté avant de devenir disponible." >&2
+        exit 1
+    fi
+
+    if python - "$GAME_PORT" <<'PY'
+import socket
+import sys
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+    connection.settimeout(0.1)
+    sys.exit(0 if connection.connect_ex(("127.0.0.1", int(sys.argv[1]))) == 0 else 1)
+PY
+    then
+        SERVER_READY=1
+        break
+    fi
+    sleep 0.1
+done
+
+if [[ "$SERVER_READY" -ne 1 ]]; then
+    echo "Erreur : le serveur de jeu n'est pas disponible après 15 secondes." >&2
+    exit 1
+fi
 
 echo "Démarrage du méta-client (web) sur le port $META_PORT ..."
 python -m coinche.meta \

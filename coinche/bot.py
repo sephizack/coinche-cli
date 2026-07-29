@@ -715,7 +715,7 @@ def calibrate_samples(target_seconds: float = 2.0) -> int:
         _run_choose_card_with_samples(game, candidate)
         elapsed = time.perf_counter() - start
         _LOGGER.info("Monte Carlo calibration: %d samples -> %.3fs", candidate, elapsed)
-        if elapsed > target_seconds:
+        if elapsed > target_seconds + 1:
             break
         chosen = candidate
 

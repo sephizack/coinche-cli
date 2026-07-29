@@ -1069,6 +1069,11 @@ button {
   padding: var(--sp-6);
   overflow-y: auto;
 }
+body > .lobby {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .lobby__inner {
   width: min(1100px, 100%);
   margin: 0 auto;
