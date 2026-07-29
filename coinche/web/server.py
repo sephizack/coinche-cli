@@ -362,7 +362,9 @@ class WebOverlayServer:
         elif action == "chat":
             await self.link.send_chat(msg["text"])
         elif action == "join":
-            await self.link.send_join(msg["table_key"], msg["player_name"], msg.get("team_name"))
+            await self.link.send_join(
+                msg["table_key"], msg["player_name"], msg.get("team_name"), msg.get("seat")
+            )
         elif action == "continue" and self.on_round_continue is not None:
             await self.on_round_continue()
         elif action == "rematch":
@@ -371,6 +373,8 @@ class WebOverlayServer:
             await self.link.send_subscribe_lobby()
         elif action == "fill_bots":
             await self.link.send_fill_bots()
+        elif action == "leave":
+            await self.link.send_leave()
 
     async def broadcast_state(self, state: ClientState) -> None:
         """Push the current projected state to every connected browser (FR3.1).

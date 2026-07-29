@@ -101,6 +101,7 @@ def test_parse_rejects_incomplete_action_frames(frame: dict) -> None:
         {"action": "rematch"},  # no required fields
         {"action": "lobby"},  # no required fields
         {"action": "fill_bots"},  # no required fields
+        {"action": "leave"},  # no required fields
     ],
 )
 def test_parse_accepts_complete_action_frames(frame: dict) -> None:
@@ -138,8 +139,8 @@ class FakeLink:
         self.calls.append(("chat", text))
         return True
 
-    async def send_join(self, table_key, player_name, team_name) -> bool:
-        self.calls.append(("join", table_key, player_name, team_name))
+    async def send_join(self, table_key, player_name, team_name, seat=None) -> bool:
+        self.calls.append(("join", table_key, player_name, team_name, seat))
         return True
 
     async def send_rematch(self) -> bool:
@@ -152,6 +153,10 @@ class FakeLink:
 
     async def send_fill_bots(self) -> bool:
         self.calls.append(("fill_bots",))
+        return True
+
+    async def send_leave(self) -> bool:
+        self.calls.append(("leave",))
         return True
 
 
@@ -284,7 +289,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
                 await asyncio.sleep(0.01)
             assert ("bid", "bid", "♠", 90) in link.calls
             assert ("chat", "salut") in link.calls
-            assert ("join", "t1", "Zoe", None) in link.calls
+            assert ("join", "t1", "Zoe", None, None) in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
             assert ("fill_bots",) in link.calls
@@ -422,8 +427,10 @@ def test_on_browser_message_dispatch_direct() -> None:
         server = WebOverlayServer(ClientState(), link, host=HOST, port=0)
         await server.on_browser_message({"action": "play", "card": "7♦"})
         await server.on_browser_message({"action": "bid", "bid_action": "pass"})
+        await server.on_browser_message({"action": "leave"})
         assert ("play", "7♦") in link.calls
         assert ("bid", "pass", None, None) in link.calls
+        assert ("leave",) in link.calls
 
     asyncio.run(scenario())
 

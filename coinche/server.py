@@ -510,6 +510,43 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         await _run_bot_turns(table)
 
 
+async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) -> bool:
+    """Vacate a seat and return the connection to the lobby (pre-game only).
+
+    Returns True if the player left (seat freed, LEFT confirmed, connection
+    re-subscribed to the live lobby listing so it can pick another table).
+    Returns False -- with a GAME_IN_PROGRESS error already sent -- when a game
+    is under way: leaving mid-game isn't supported (the seat stays bound so the
+    reconnect path keeps working), so the caller keeps the session as-is.
+    """
+    if table.game is not None:
+        await _send_error(writer, protocol.GAME_IN_PROGRESS, "Impossible de quitter une partie en cours")
+        return False
+
+    session = table.seats.get(seat)
+    name = session.name if session is not None else "?"
+    table.remove_player(seat)
+    logger.info("[%s] DEPART %s (%s)", table.table_key, name, _seat_to_str(seat))
+
+    players = _players_summary(table)
+    await table.broadcast(
+        protocol.LOBBY_UPDATE,
+        {"players": players, "seats_filled": len(players), "waiting_for": 4 - len(players)},
+    )
+    # Confirm the departure to the leaver and immediately start streaming lobby
+    # updates so its table picker is live again without an extra round trip.
+    # (The next JOIN's `_resolve_join` will discard this writer from the set.)
+    LOBBY_SUBSCRIBERS.add(writer)
+    try:
+        writer.write(protocol.encode(protocol.LEFT, {}))
+        writer.write(protocol.encode(protocol.TABLE_LISTING, {"tables": tables_listing()}))
+        await writer.drain()
+    except (ConnectionError, OSError):
+        pass
+    await notify_lobby_subscribers()
+    return True
+
+
 async def _resolve_join(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -582,6 +619,14 @@ async def _resolve_join_inner(
     player_name = str(payload["player_name"]).strip()
     team_name = str(payload["team_name"]).strip() if payload.get("team_name") else None
 
+    preferred_seat: Seat | None = None
+    if payload.get("seat"):
+        try:
+            preferred_seat = Seat(str(payload["seat"]).strip().upper())
+        except ValueError:
+            await _send_error(writer, protocol.MALFORMED_MESSAGE, "seat must be one of N/E/S/W")
+            return None
+
     if not TABLE_KEY_PATTERN.match(table_key):
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "table_key must be 4-12 alphanumeric characters")
         return None
@@ -622,7 +667,9 @@ async def _resolve_join_inner(
             return table, seat
 
         try:
-            seat = table.add_player(player_name, writer, team_name=team_name)
+            seat = table.add_player(
+                player_name, writer, team_name=team_name, preferred_seat=preferred_seat
+            )
         except NameTakenError:
             await _send_error(writer, protocol.NAME_TAKEN, f"Name already taken: {player_name}")
             return None
@@ -676,31 +723,54 @@ async def handle_connection(
     table: Table | None = None
     seat: Seat | None = None
     try:
-        joined = await _resolve_join(
-            reader, writer, target_score, trick_pause_seconds, round_pause_seconds, bot_think_seconds
-        )
-        if joined is None:
-            return
-        table, seat = joined
-
+        # Outer loop: a connection can join a table, LEAVE it (pre-game) to
+        # return to the lobby, and then join another -- all on the same socket,
+        # so the browser/terminal session and its web overlay survive a table
+        # switch. Each pass re-runs the join handshake (which serves the lobby
+        # picker) and then pumps that table's messages until leave/drop.
         while True:
-            try:
-                line = await reader.readline()
-            except ValueError:
-                # Line exceeded the StreamReader's length limit (oversized/malformed
-                # input) -- reject and drop the connection rather than crash the task.
-                await _send_error(writer, protocol.MALFORMED_MESSAGE, "Message too large")
-                break
-            if not line:
-                break
-            try:
-                msg_type, payload = protocol.decode(line)
-            except protocol.ProtocolError as exc:
-                await _send_error(writer, protocol.MALFORMED_MESSAGE, str(exc))
-                continue
+            joined = await _resolve_join(
+                reader, writer, target_score, trick_pause_seconds, round_pause_seconds, bot_think_seconds
+            )
+            if joined is None:
+                return
+            table, seat = joined
 
-            async with table.lock:
-                await _dispatch(table, seat, msg_type, payload)
+            left = False
+            while True:
+                try:
+                    line = await reader.readline()
+                except ValueError:
+                    # Line exceeded the StreamReader's length limit (oversized/malformed
+                    # input) -- reject and drop the connection rather than crash the task.
+                    await _send_error(writer, protocol.MALFORMED_MESSAGE, "Message too large")
+                    break
+                if not line:
+                    break
+                try:
+                    msg_type, payload = protocol.decode(line)
+                except protocol.ProtocolError as exc:
+                    await _send_error(writer, protocol.MALFORMED_MESSAGE, str(exc))
+                    continue
+
+                if msg_type == protocol.LEAVE:
+                    async with table.lock:
+                        left = await _handle_leave(table, seat, writer)
+                    if left:
+                        # Seat already vacated by _handle_leave; forget it so the
+                        # drop-cleanup below doesn't touch a now-empty seat, then
+                        # loop back to the lobby/join handshake.
+                        table = None
+                        seat = None
+                        break
+                    continue
+
+                async with table.lock:
+                    await _dispatch(table, seat, msg_type, payload)
+
+            if left:
+                continue  # returned to lobby; re-resolve join on the same socket
+            break  # connection dropped -- fall through to cleanup
 
     except (ConnectionError, asyncio.IncompleteReadError):
         pass

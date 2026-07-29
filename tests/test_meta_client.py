@@ -319,6 +319,40 @@ def test_ws_routes_to_session_and_relays_actions() -> None:
     asyncio.run(scenario())
 
 
+def test_leave_forgets_remembered_join() -> None:
+    """A browser 'leave' clears the session's remembered JOIN so a later TCP
+    reconnect returns to the lobby instead of re-seating at the abandoned
+    table; a 'join' re-arms it."""
+
+    async def scenario() -> None:
+        from coinche.meta.session import MetaSession
+
+        session = MetaSession("sid", host="127.0.0.1", port=1, player_name="Bob")
+
+        # The bridge drops browser actions until a game-server link exists; a
+        # tiny stub with the two seams these actions relay is enough here.
+        class _StubLink:
+            async def send_join(self, *a, **k) -> bool:
+                return True
+
+            async def send_leave(self) -> bool:
+                return True
+
+        session.bridge.link = _StubLink()  # type: ignore[assignment]
+
+        # A browser join is remembered (drives auto-rejoin after a drop).
+        await session.bridge.on_browser_message(
+            {"action": "join", "table_key": "table1", "player_name": "Bob"}
+        )
+        assert session._join_args == ("table1", "Bob", None)
+
+        # Leaving forgets it.
+        await session.bridge.on_browser_message({"action": "leave"})
+        assert session._join_args is None
+
+    asyncio.run(scenario())
+
+
 def test_ws_unknown_session_is_404() -> None:
     async def scenario() -> None:
         game = FakeGameServer()
