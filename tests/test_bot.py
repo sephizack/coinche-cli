@@ -21,7 +21,7 @@ from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, Game
 
 
-def _cards(*values: str) -> list[Card]:
+def _cards(*values: str):
     return [Card(value[:-1], value[-1]) for value in values]
 
 
