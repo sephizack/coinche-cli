@@ -287,6 +287,42 @@ class Table:
         session.is_bot = True
         return name
 
+    def bot_seats(self) -> list[Seat]:
+        """Seats currently held by a server-controlled bot, in table order.
+
+        These are exactly the chairs a human can sit down in mid-game (a table
+        with bots is one someone can join by replacing a bot), the inverse of
+        `replace_with_bot`. Empty and human-held seats are excluded.
+        """
+        return [seat for seat in SEAT_ORDER if (s := self.seats[seat]) is not None and s.is_bot]
+
+    def replace_bot(
+        self,
+        seat: Seat,
+        name: str,
+        writer: asyncio.StreamWriter | None,
+        team_name: str | None = None,
+    ) -> dict:
+        """Sit a human down in a bot's chair mid-game and return a resync snapshot.
+
+        The exact inverse of `replace_with_bot`: the seat keeps its hand and
+        turn position (the Game is keyed by seat, not by session), but the
+        session stops being bot-driven -- `is_bot` flips off, the human's
+        `writer`/`name`/`team_name` take over, and `connected` is set. The
+        returned `Game.snapshot_for(seat)` lets the caller send a RESYNC so the
+        newcomer immediately sees the seat's hand and board, mirroring the
+        reconnect path.
+        """
+        session = self.seats[seat]
+        assert session is not None and session.is_bot
+        assert self.game is not None
+        session.name = name
+        session.writer = writer
+        session.connected = True
+        session.is_bot = False
+        session.team_name = team_name
+        return self.game.snapshot_for(seat)
+
     def add_spectator(self, name: str, writer: asyncio.StreamWriter | None) -> str:
         """Register a seatless watcher and return the (possibly disambiguated) name.
 

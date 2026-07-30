@@ -535,6 +535,10 @@ def render_connection_banner(name: str, status: str) -> Text:
         text.append("👋 ", style="bold cyan")
         text.append(name, style="bold white")
         text.append(" a quitté — un bot prend la relève", style="italic grey70")
+    elif status == "bot_replaced":
+        text.append("🙋 ", style="bold green")
+        text.append(name, style="bold white")
+        text.append(" a rejoint la table à la place d'un bot", style="italic grey70")
     else:
         text.append("✓ ", style="bold green")
         text.append(name, style="bold white")
@@ -856,7 +860,10 @@ def render_lobby(
     for i, t in enumerate(tables, start=1):
         is_cursor = cursor_index == i
         reconnectable = _reconnectable_in_lobby(t, player_name)
-        locked = (t["in_progress"] or t["seats_filled"] >= 4) and not reconnectable
+        bot_count = sum(1 for p in t["players"] if p.get("is_bot")) if t["in_progress"] else 0
+        # A table with bots is joinable mid-game (take a bot's chair), so it's
+        # not locked even though it's "en cours" and full.
+        locked = (t["in_progress"] or t["seats_filled"] >= 4) and not reconnectable and bot_count == 0
         names = ", ".join(p["name"] for p in t["players"]) if t["players"] else "(vide)"
         status_tag = ""
         if t["in_progress"]:
@@ -874,6 +881,8 @@ def render_lobby(
         line.append(names, style=style)
         if reconnectable:
             line.append(" ↻ reconnexion", style="bold green")
+        elif bot_count:
+            line.append(f" 🤖 {bot_count} bot(s) — remplaçable", style="bold green")
         elif locked:
             line.append(" 🔒", style="dim")
         rows.append(line)
@@ -959,6 +968,62 @@ def render_team_picker(
     rows.append(
         Text(
             "↑↓ ou 1/2 choisir l'équipe · Entrée rejoindre · Échap retour",
+            style="dim grey50",
+        )
+    )
+
+    return Panel(
+        Group(*rows),
+        title=f"Lobby — {table_entry['table_key']}",
+        title_align="left",
+        border_style="bold cyan",
+        expand=True,
+    )
+
+
+def render_bot_picker(
+    table_entry: dict,
+    bot_seats: list[dict],
+    cursor_index: int,
+    error: str = "",
+) -> RenderableType:
+    """Bot-seat selection panel: pick which bot to replace on an in-progress table.
+
+    Shown when the player selects a table that has bots. Each row is a bot's
+    seat with the seat letter, its team (Equipe 1/2 via `team_name`), and the
+    bot's current name; the row at *cursor_index* is highlighted. Selecting one
+    joins the table taking over that seat (server replace-a-bot path).
+
+    All player/bot-supplied strings are wrapped via ``Text()`` — never
+    interpolated into markup."""
+    rows: list[RenderableType] = []
+
+    header = Text()
+    header.append(table_entry["table_key"], style="bold white")
+    header.append("  (partie en cours)", style="cyan")
+    rows.append(header)
+    rows.append(Text("Choisissez le bot à remplacer :", style="grey50"))
+    rows.append(Text(""))
+
+    for idx, p in enumerate(bot_seats):
+        is_cursor = cursor_index == idx
+        style = " bold" if is_cursor else ""
+        line = Text()
+        line.append(" >> " if is_cursor else "    ", style="bold green" if is_cursor else "")
+        line.append(f"{p['seat']} ", style="yellow" + style)
+        team_name = p.get("team_name")
+        if team_name:
+            line.append(f"({team_name}) ", style="cyan" + style)
+        line.append("🤖 ", style="grey50")
+        line.append(p.get("name", "?"), style="white" + style)
+        rows.append(line)
+
+    if error:
+        rows.append(Text(f"⚠ {error}", style="bold red"))
+    rows.append(Text(""))
+    rows.append(
+        Text(
+            "↑↓ sélectionner · Entrée remplacer · Échap retour",
             style="dim grey50",
         )
     )
