@@ -1148,6 +1148,35 @@ body > .lobby {
   margin-top: var(--sp-6);
 }
 
+/* ---- Lobby loading (before the first snapshot arrives) ---- */
+.lobby__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--text-muted);
+  font-family: system-ui, sans-serif;
+  margin-top: var(--sp-6);
+}
+.lobby__spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid rgba(212, 175, 55, 0.25);
+  border-top-color: var(--gold);
+  animation: lobby-spin 0.8s linear infinite;
+}
+@keyframes lobby-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lobby__spinner {
+    animation-duration: 2s;
+  }
+}
+
 /* ---- Lobby grid of mini-tables ---- */
 .lobby__grid {
   display: grid;
