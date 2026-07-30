@@ -208,6 +208,16 @@ class Table:
 
         raise TableFullError(self.table_key)
 
+    def has_humans(self) -> bool:
+        """True if any seat is still held by a human (bot/empty seats don't count).
+
+        Disconnected humans still count: their seat holds real game state and
+        they may reconnect. A table is only "abandoned" once every occupied
+        seat is a bot (or the table is empty). Used to garbage-collect tables
+        nobody is playing at anymore instead of leaving bot-only games running.
+        """
+        return any(s is not None and not s.is_bot for s in self.seats.values())
+
     def find_disconnected_seat(self, name: str) -> Seat | None:
         """Case-insensitive lookup among disconnected seats, only when a game is live (A16)."""
         if self.game is None:
@@ -335,6 +345,11 @@ def get_or_create_table(
             bot_think_seconds=bot_think_seconds,
         )
     return TABLES[table_key]
+
+
+def remove_table(table_key: str) -> None:
+    """Drop a table from the registry (abandoned: no humans left)."""
+    TABLES.pop(table_key, None)
 
 
 LOBBY_SUBSCRIBERS: set[asyncio.StreamWriter] = set()

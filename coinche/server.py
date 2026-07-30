@@ -25,6 +25,7 @@ from coinche.table import (
     TableFullError,
     get_or_create_table,
     notify_lobby_subscribers,
+    remove_table,
     tables_listing,
 )
 
@@ -554,6 +555,15 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
             {"players": players, "seats_filled": len(players), "waiting_for": 4 - len(players)},
         )
 
+    # If nobody human is left at the table, it's abandoned: tear it down instead
+    # of leaving a bot-only game (or an empty table) lingering in the registry
+    # and the lobby listing forever, burning CPU driving bot turns for an
+    # audience of nobody.
+    removed = not table.has_humans()
+    if removed:
+        remove_table(table.table_key)
+        logger.info("[%s] table abandonnee (plus aucun joueur humain) -> supprimee", table.table_key)
+
     # Confirm the departure to the leaver and immediately start streaming lobby
     # updates so its table picker is live again without an extra round trip.
     # (The next JOIN's `_resolve_join` will discard this writer from the set.)
@@ -568,7 +578,8 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
 
     # If we just handed the seat to a bot and it's that bot's turn, drive it
     # (and any following bot turns) so play resumes without waiting for a human.
-    if table.game is not None:
+    # A removed (abandoned) table has no one left to play for, so leave it idle.
+    if not removed and table.game is not None:
         await _run_bot_turns(table)
     return True
 

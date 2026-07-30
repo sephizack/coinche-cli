@@ -24,6 +24,7 @@ import asyncio
 import pytest
 
 from coinche import protocol, server
+from coinche import table as table_module
 from coinche.table import BOT_NAMES
 
 HOST = "127.0.0.1"
@@ -340,6 +341,52 @@ def test_leave_mid_game_hands_seat_to_bot_and_returns_to_lobby():
             await _send(w1, protocol.JOIN, {"table_key": "leave04", "player_name": "Alice"})
             joined = await _read_until(r1, protocol.JOINED)
             assert joined["table_key"] == "leave04"
+        finally:
+            for w in (w1, w2):
+                if w is not None:
+                    w.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_last_human_leaving_mid_game_removes_abandoned_table():
+    """When the *last* human leaves an in-progress game, the table has nothing
+    but bots left -- it's abandoned. Rather than leave a bot-only game lingering
+    in the registry (and the lobby listing) forever, the table is torn down: it
+    no longer appears in the lobby, and its key is free to be created afresh."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server(target_score=1000)
+        w1 = w2 = None
+        try:
+            # Alice (N) and Bob (E) sit down, then fill with bots to start.
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "leave05", "player_name": "Alice"})
+            await _read_until(r1, protocol.JOINED)
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.JOIN, {"table_key": "leave05", "player_name": "Bob"})
+            await _read_until(r2, protocol.JOINED)
+            await _read_until(r1, protocol.LOBBY_UPDATE)
+            await _send(w1, protocol.FILL_BOTS, {})
+            await _read_until(r1, protocol.DEAL)
+            await _read_until(r2, protocol.DEAL)
+
+            # Alice leaves: Bob is still human, so the table survives (2 bots +
+            # 1 disconnected-as-bot seat + Bob).
+            await _send(w1, protocol.LEAVE, {})
+            await _read_until(r1, protocol.LEFT)
+            listing = await _read_until(r1, protocol.TABLE_LISTING)
+            assert any(t["table_key"] == "leave05" for t in listing["tables"])
+
+            # Bob leaves too: now every seat is a bot -> the table is abandoned
+            # and must be removed from the lobby entirely.
+            await _send(w2, protocol.LEAVE, {})
+            await _read_until(r2, protocol.LEFT)
+            listing = await _read_until(r2, protocol.TABLE_LISTING)
+            assert all(t["table_key"] != "leave05" for t in listing["tables"])
+            assert "leave05" not in table_module.TABLES
         finally:
             for w in (w1, w2):
                 if w is not None:
