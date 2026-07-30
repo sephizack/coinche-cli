@@ -937,3 +937,110 @@ def test_mirror_parity_scripted_sequence():
     # pending_last_trick was promoted into last_trick by TRICK_CLEARED.
     assert state.pending_last_trick is None
     assert snap["last_trick"] == {"N": "9♥", "S": "7♥"}
+
+
+# --------------------------------------------------------------------------- #
+# Spectator (SPECTATING) reducer + chat                                       #
+# --------------------------------------------------------------------------- #
+
+
+def _spectating(state: ClientState, phase: str = "trick_play") -> ApplyResult:
+    return apply_message(
+        state,
+        protocol.SPECTATING,
+        {
+            "table_key": "table1",
+            "spectator_name": "Eve",
+            "players": [
+                {"seat": "N", "name": "Nord", "team_name": "Nous"},
+                {"seat": "E", "name": "Est"},
+                {"seat": "S", "name": "Sud"},
+                {"seat": "W", "name": "Ouest"},
+            ],
+            "phase": phase,
+            "current_highest_bid": None,
+            "bid_history": [],
+            "current_trick": [{"seat": "W", "card": "A♥"}],
+            "trump": "♥",
+            "whose_turn": "N",
+            "cumulative_scores": {"NS": 10, "EW": 20},
+            "round_number": 3,
+            "dealer_seat": "N",
+            "contract": {"seat": "W", "trump": "♥", "points": 90, "coinche_level": 1},
+            "target_score": 1000,
+            "server_version": "9.9.9",
+        },
+    )
+
+
+def test_spectating_marks_state_seatless_and_hand_free():
+    state = ClientState()
+    result = _spectating(state)
+    assert result == ApplyResult(action_requested=False)
+    assert state.is_spectator is True
+    assert state.spectator_name == "Eve"
+    assert state.joined_once is True
+    assert state.seat is None
+    assert state.hand == []
+    assert state.can_fill_bots is False
+    assert state.pending_bid_request is None
+    assert state.trump == "♥"
+    assert state.contract_points == 90
+    assert state.contract_bidder == Seat.W
+    assert state.cumulative_scores == {"NS": 10, "EW": 20}
+    assert state.whose_turn == Seat.N
+
+    snap = snapshot_to_dict(state)
+    assert snap["is_spectator"] is True
+    assert snap["spectator_name"] == "Eve"
+    assert snap["seat"] is None
+    assert snap["hand"] == []
+
+
+def test_spectating_waiting_phase_shows_waiting_message():
+    state = ClientState()
+    apply_message(
+        state,
+        protocol.SPECTATING,
+        {
+            "table_key": "table1",
+            "spectator_name": "Eve",
+            "players": [{"seat": "N", "name": "Nord"}],
+            "phase": "waiting",
+            "current_highest_bid": None,
+            "bid_history": [],
+            "current_trick": [],
+            "trump": None,
+            "whose_turn": None,
+            "cumulative_scores": {"NS": 0, "EW": 0},
+            "round_number": 0,
+            "dealer_seat": None,
+            "contract": None,
+            "target_score": 1000,
+            "server_version": "9.9.9",
+        },
+    )
+    assert state.is_spectator is True
+    assert state.contract_points is None
+    assert "observez" in state.status_message
+
+
+def test_spectator_chat_uses_name_and_no_team():
+    state = ClientState()
+    _spectating(state)
+    apply_message(state, protocol.CHAT, {"seat": None, "name": "Eve", "text": "Allez !"})
+    who, text, team, _ts, system = state.chat_messages[-1]
+    assert who == "Eve"
+    assert text == "Allez !"
+    assert team is None
+    assert system is False
+
+
+def test_left_clears_spectator_flags():
+    state = ClientState()
+    _spectating(state)
+    apply_message(state, protocol.LEFT, {})
+    assert state.is_spectator is False
+    assert state.spectator_name is None
+    assert state.seat is None
+    assert state.joined_once is False

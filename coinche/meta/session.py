@@ -54,7 +54,9 @@ class _SessionBridge(WebOverlayServer):
             # browser retries actions itself (it resends "lobby" on reconnect).
             return
         if msg["action"] == "join":
-            self._session.remember_join(msg["table_key"], msg["player_name"], msg.get("team_name"))
+            self._session.remember_join(
+                msg["table_key"], msg["player_name"], msg.get("team_name"), bool(msg.get("spectate"))
+            )
         elif msg["action"] == "leave":
             # Left the table: forget the remembered JOIN so a later TCP drop
             # reconnects into the lobby (subscribe) instead of silently
@@ -83,15 +85,19 @@ class MetaSession:
         self.bridge = _SessionBridge(self, self.state)
 
         # Remembered JOIN args, so a reconnect after a drop re-joins the same
-        # table/seat (the server's RESYNC path restores the seat).
-        self._join_args: tuple[str, str, str | None] | None = None
+        # table/seat (the server's RESYNC path restores the seat). The 4th element
+        # is the spectate flag, so a dropped spectator reconnects as a spectator
+        # rather than trying to take a seat.
+        self._join_args: tuple[str, str, str | None, bool] | None = None
 
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._reconnect_index = 0
 
-    def remember_join(self, table_key: str, player_name: str, team_name: str | None) -> None:
-        self._join_args = (table_key, player_name, team_name)
+    def remember_join(
+        self, table_key: str, player_name: str, team_name: str | None, spectate: bool = False
+    ) -> None:
+        self._join_args = (table_key, player_name, team_name, spectate)
 
     def forget_join(self) -> None:
         """Drop the remembered JOIN so a reconnect returns to the lobby, not the
@@ -157,7 +163,8 @@ class MetaSession:
             # Re-join automatically after a reconnect; otherwise start streaming
             # lobby updates so the browser's join screen is live immediately.
             if self._join_args is not None:
-                await self.link.send_join(*self._join_args)
+                table_key, player_name, team_name, spectate = self._join_args
+                await self.link.send_join(table_key, player_name, team_name, spectate=spectate)
             else:
                 await self.link.send_subscribe_lobby()
 

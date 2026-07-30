@@ -578,7 +578,7 @@ const App = {
         const prevTrick = Object.keys(prev.current_trick || {}).length;
         const nowTrick = Object.keys(snap.current_trick || {}).length;
         if (prevTrick === 4 && nowTrick === 0 && prev.whose_turn) {
-          const dir = visualPosition(prev.whose_turn, snap.seat || prev.seat);
+          const dir = visualPosition(prev.whose_turn, snap.seat || prev.seat || "S");
           sweepClass.value = "sweep-" + dir;
           setTimeout(() => (sweepClass.value = null), 450);
         }
@@ -636,10 +636,24 @@ const App = {
     }
 
     // -------- derived view state --------
-    const joined = computed(() => snapshot.value && snapshot.value.seat);
+    // "In a table view" is keyed off joined_once (a spectator holds no seat but
+    // is very much on the table), not off holding a seat.
+    const joined = computed(
+      () => snapshot.value && snapshot.value.flags && snapshot.value.flags.joined_once,
+    );
+    const isSpectator = computed(
+      () => !!(snapshot.value && snapshot.value.is_spectator),
+    );
     const flags = computed(
       () => (snapshot.value && snapshot.value.flags) || {},
     );
+    // The seat the board is oriented around. A seated player sits at the
+    // bottom (south); a spectator has no seat, so the board is shown from a
+    // fixed "South = N/S team" viewpoint so N/E/S/W still render in place.
+    const viewSeat = computed(() => {
+      const s = snapshot.value;
+      return (s && s.seat) || "S";
+    });
     const localTeam = computed(() => {
       const s = snapshot.value;
       return s && s.seat && s.team_of ? s.team_of[s.seat] : "NS";
@@ -678,7 +692,7 @@ const App = {
     // Seats arranged into visual slots (local = south), with all per-seat data.
     const seats = computed(() => {
       const s = snapshot.value;
-      if (!s || !s.seat) return [];
+      if (!s || !s.players) return [];
       const players = s.players || {};
       const teamOf = s.team_of || {};
       const trick = s.current_trick || {};
@@ -687,7 +701,7 @@ const App = {
       return Object.keys(players).map((seatId) => {
         return {
           seatId,
-          slot: visualPosition(seatId, s.seat),
+          slot: visualPosition(seatId, viewSeat.value),
           name: players[seatId],
           teamClass: teamOf[seatId] === localTeam.value ? "nous" : "eux",
           playedCard: trick[seatId] || null,
@@ -706,7 +720,7 @@ const App = {
       const trick = s.current_trick || {};
       return Object.keys(trick).map((seatId) => ({
         card: trick[seatId],
-        slot: visualPosition(seatId, s.seat),
+        slot: visualPosition(seatId, viewSeat.value),
       }));
     });
 
@@ -717,7 +731,7 @@ const App = {
       const grid = Array(9).fill(null); // slots: 1=N,3=W,5=E,7=S in a 3x3
       const slotIndex = { north: 1, west: 3, east: 5, south: 7 };
       for (const seatId of Object.keys(s.last_trick)) {
-        const slot = visualPosition(seatId, s.seat);
+        const slot = visualPosition(seatId, viewSeat.value);
         grid[slotIndex[slot]] = s.last_trick[seatId];
       }
       return grid;
@@ -954,9 +968,13 @@ const App = {
             filled,
             full,
             status,
+            spectators: t.spectators || 0,
             // A table is joinable from the web only when it hasn't started and
             // still has a free seat; the server remains the authority.
             joinable: !t.in_progress && !full,
+            // Any table can be watched; the "Regarder" affordance is offered
+            // wherever sitting down isn't possible (full or already playing).
+            spectatable: t.in_progress || full,
             ns: teamOf("NS"),
             ew: teamOf("EW"),
           };
@@ -988,6 +1006,18 @@ const App = {
       sendAction("join", payload);
     }
 
+    // Watch a table as a seatless spectator — allowed even when it's full or a
+    // game is already under way (that's exactly what you can't sit at). The
+    // server assigns a display name and streams the public board + chat.
+    function spectateTable(tableKey) {
+      const name = lobby.name.trim();
+      if (!name) {
+        showToast("Entrez votre nom d'abord", "error");
+        return;
+      }
+      sendAction("join", { table_key: tableKey, player_name: name, spectate: true });
+    }
+
     function createTable() {
       joinSpecificTable(nextTableKey.value, lobbyTeams.value.nsLabel);
     }
@@ -1017,6 +1047,7 @@ const App = {
       lobby,
       REDUCED_MOTION,
       joined,
+      isSpectator,
       flags,
       localTeam,
       nousLabel,
@@ -1043,6 +1074,7 @@ const App = {
       lobbyTables,
       nextTableKey,
       joinSpecificTable,
+      spectateTable,
       createTable,
       playCard,
       submitBid,
@@ -1135,7 +1167,11 @@ const App = {
               </div>
               <button v-if="t.joinable" class="minitable__join" :data-testid="'join-' + t.key"
                       @click="joinSpecificTable(t.key, '')">Rejoindre</button>
-              <span v-else class="minitable__locked">🔒</span>
+              <button v-else class="minitable__spectate" :data-testid="'spectate-' + t.key"
+                      @click="spectateTable(t.key)">👁 Regarder</button>
+            </div>
+            <div v-if="t.spectators" class="minitable__spectators" :data-testid="'spectators-' + t.key">
+              👁 {{ t.spectators }} spectateur{{ t.spectators > 1 ? 's' : '' }}
             </div>
           </div>
         </div>
@@ -1199,7 +1235,8 @@ const App = {
           <div><div class="recap__score-team recap__team--nous">{{ nousLabel }}</div><div class="recap__score-players">{{ teamPlayers.nous }}</div><div class="recap__score-value">{{ finalNous }}</div></div>
           <div><div class="recap__score-team recap__team--eux">{{ euxLabel }}</div><div class="recap__score-players">{{ teamPlayers.eux }}</div><div class="recap__score-value">{{ finalEux }}</div></div>
         </div>
-        <button class="rematch-btn" data-testid="rematch" @click="doRematch">Revanche</button>
+        <button v-if="!isSpectator" class="rematch-btn" data-testid="rematch" @click="doRematch">Revanche</button>
+        <button v-else class="rematch-btn" data-testid="spectator-leave-over" @click="leaveTable">Quitter</button>
       </div>
     </div>
 
@@ -1272,8 +1309,8 @@ const App = {
             </div>
           </div>
 
-          <!-- Hand fan -->
-          <div class="hand-fan">
+          <!-- Hand fan (seated players only — a spectator holds no cards) -->
+          <div v-if="!isSpectator" class="hand-fan">
             <div class="hand-fan__inner">
               <card
                 v-for="(h, i) in handCards"
@@ -1290,14 +1327,23 @@ const App = {
             </div>
           </div>
 
+          <!-- Spectator banner in place of the hand -->
+          <div v-else class="spectator-bar" data-testid="spectator-bar">
+            <span class="spectator-bar__eye" aria-hidden="true">👁</span>
+            <span class="spectator-bar__label">Mode spectateur — vous observez cette partie</span>
+            <button class="leave-btn" data-testid="spectator-leave" @click="leaveTable">
+              Quitter
+            </button>
+          </div>
+
           <footer class="status-footer" aria-live="polite">
             <span v-if="statusMessage" class="status-footer__last">{{ statusMessage }}</span>
-            <span v-if="turnText" class="status-footer__turn">{{ turnText }}</span>
-            <button v-if="canFillBots" class="fill-bots-btn" data-testid="fill-bots"
+            <span v-if="turnText && !isSpectator" class="status-footer__turn">{{ turnText }}</span>
+            <button v-if="canFillBots && !isSpectator" class="fill-bots-btn" data-testid="fill-bots"
                     :disabled="fillingBots" @click="fillBots">
               {{ fillingBots ? 'Ajout des bots…' : 'Remplir avec des bots' }}
             </button>
-            <button class="leave-btn" data-testid="leave-table"
+            <button v-if="canFillBots && !isSpectator" class="leave-btn" data-testid="leave-table"
                     @click="leaveTable">
               Quitter la table
             </button>

@@ -275,3 +275,65 @@ def test_broadcast_write_failure_marks_disconnected():
         assert table.seats[Seat.N].connected is False
 
     asyncio.run(run())
+
+
+def test_add_spectator_allowed_on_full_table_and_gets_unique_name():
+    table = Table("abcd")
+    for name in ("Alice", "Bob", "Carol", "Dave"):
+        table.add_player(name, FakeWriter())
+    assert table.game is not None  # table is full / game started
+
+    # Spectating a full table is always allowed (no TableFullError).
+    n1 = table.add_spectator("Eve", FakeWriter())
+    assert n1 == "Eve"
+    assert len(table.spectators) == 1
+
+    # A colliding spectator name (vs a seated player) is disambiguated.
+    n2 = table.add_spectator("Alice", FakeWriter())
+    assert n2 == "Alice 2"
+    # And a colliding spectator name (vs another spectator) too.
+    n3 = table.add_spectator("Eve", FakeWriter())
+    assert n3 == "Eve 2"
+
+
+def test_broadcast_reaches_spectators():
+    async def run() -> None:
+        table = Table("abcd")
+        for name in ("Alice", "Bob", "Carol", "Dave"):
+            table.add_player(name, FakeWriter())
+        spec_writer = FakeWriter()
+        table.add_spectator("Eve", spec_writer)
+
+        await table.broadcast("chat", {"seat": "N", "name": "Alice", "text": "hi"})
+        assert spec_writer.written, "spectator should receive broadcasts"
+
+    asyncio.run(run())
+
+
+def test_remove_spectator_is_idempotent():
+    table = Table("abcd")
+    table.add_spectator("Eve", FakeWriter())
+    assert len(table.spectators) == 1
+    table.remove_spectator("Eve")
+    assert len(table.spectators) == 0
+    table.remove_spectator("Eve")  # no error the second time
+    assert len(table.spectators) == 0
+
+
+def test_broadcast_drops_a_broken_spectator_without_touching_seats():
+    async def run() -> None:
+        table = Table("abcd")
+        for name in ("Alice", "Bob", "Carol", "Dave"):
+            table.add_player(name, FakeWriter())
+
+        class BrokenWriter(FakeWriter):
+            def write(self, data: bytes) -> None:
+                raise ConnectionResetError("peer gone")
+
+        table.add_spectator("Eve", BrokenWriter())
+        await table.broadcast("chat", {"seat": "N", "name": "Alice", "text": "hi"})
+        # The broken spectator is dropped; seated players are unaffected.
+        assert len(table.spectators) == 0
+        assert all(s is not None and s.connected for s in table.seats.values())
+
+    asyncio.run(run())

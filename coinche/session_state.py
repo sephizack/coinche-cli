@@ -34,6 +34,13 @@ SYSTEM_CHAT_NAME = "Système"
 @dataclass
 class ClientState:
     seat: Seat | None = None
+    # True when this session is watching a table as a seatless spectator (joined
+    # with spectate=True). A spectator has no `seat`, is never dealt a `hand`,
+    # and never receives a bid/play request; it renders the public board from
+    # broadcasts and can still chat. Its own display name (server-assigned,
+    # possibly disambiguated) is kept in `spectator_name`.
+    is_spectator: bool = False
+    spectator_name: str | None = None
     table_key: str | None = None
     players: dict[Seat, str] = field(default_factory=dict)
     team_of: dict[Seat, str] = field(default_factory=dict)
@@ -357,6 +364,8 @@ def _reset_to_lobby(state: ClientState) -> None:
     fresh = ClientState()
     state.joined_once = False
     state.seat = fresh.seat
+    state.is_spectator = fresh.is_spectator
+    state.spectator_name = fresh.spectator_name
     state.table_key = fresh.table_key
     state.players = fresh.players
     state.team_of = fresh.team_of
@@ -419,12 +428,62 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.can_fill_bots = len(state.players) < 4
         state.server_version = payload.get("server_version")
 
+    elif msg_type == protocol.SPECTATING:
+        # We joined as a seatless spectator. `seat` stays None (both UIs key
+        # "joined the table" off `joined_once`, not off holding a seat) and
+        # `can_fill_bots` stays False -- a spectator never seats bots. Populate
+        # the public board from the snapshot so the view is immediately in sync
+        # whether the table is waiting, mid-bid, or mid-play.
+        state.is_spectator = True
+        state.spectator_name = payload.get("spectator_name")
+        state.joined_once = True
+        state.seat = None
+        state.table_key = payload["table_key"]
+        state.players = _players_from_wire(payload["players"])
+        state.team_of = {s: TEAM_OF[s] for s in state.players}
+        state.team_names = _team_names_from_wire(payload["players"])
+        state.can_fill_bots = False
+        state.hand = []
+        state.legal_cards = []
+        state.pending_bid_request = None
+        state.pending_play_request = None
+        state.server_version = payload.get("server_version")
+        state.cumulative_scores = payload.get("cumulative_scores", {"NS": 0, "EW": 0})
+        phase = payload.get("phase")
+        state.current_trick = _trick_from_wire(payload.get("current_trick", []))
+        state.trump = payload.get("trump")
+        state.whose_turn = Seat(payload["whose_turn"]) if payload.get("whose_turn") else None
+        state.dealer_seat = Seat(payload["dealer_seat"]) if payload.get("dealer_seat") else None
+        state.bid_marks = {}
+        contract = payload.get("contract")
+        if contract is not None:
+            state.trump = contract["trump"]
+            state.contract_points = contract["points"]
+            state.contract_bidder = Seat(contract["seat"])
+            state.coinche_level = contract.get("coinche_level", 1)
+        else:
+            state.contract_points = None
+            state.contract_bidder = None
+            state.coinche_level = 1
+        if phase == "bidding":
+            _apply_current_highest_bid(state, payload.get("current_highest_bid"))
+            for entry in payload.get("bid_history", []):
+                state.bid_marks[Seat(entry["seat"])] = _bid_mark_label(entry)
+        else:
+            _apply_current_highest_bid(state, None)
+        if phase == "waiting":
+            state.status_message = f"Vous observez la table ({len(state.players)}/4)."
+        else:
+            state.status_message = "Vous observez cette partie."
+
     elif msg_type == protocol.LOBBY_UPDATE:
         state.players = _players_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({payload['seats_filled']}/4)..."
-        state.can_fill_bots = payload["seats_filled"] < 4
+        # A spectator watching a still-forming table sees seats fill via
+        # LOBBY_UPDATE but must never be offered the "fill with bots" affordance.
+        state.can_fill_bots = payload["seats_filled"] < 4 and not state.is_spectator
 
     elif msg_type == protocol.TABLE_LISTING:
         # Live lobby feed: store the raw listing verbatim so the web lobby can
@@ -664,9 +723,18 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.last_action = _connection_banner_text(payload["name"], payload["status"])
 
     elif msg_type == protocol.CHAT:
-        seat = Seat(payload["seat"])
-        who = state.players.get(seat, seat.value)
-        team = state.team_of.get(seat)
+        # A spectator's chat carries `seat: None` and its own `name` (spectators
+        # aren't in the `players` map and belong to no team). A seated player's
+        # chat still resolves through `players`/`team_of` from its seat, with the
+        # server-sent `name` as a fallback.
+        seat_str = payload.get("seat")
+        if seat_str is None:
+            who = payload.get("name") or "?"
+            team = None
+        else:
+            seat = Seat(seat_str)
+            who = state.players.get(seat, payload.get("name") or seat.value)
+            team = state.team_of.get(seat)
         state.chat_messages.append((who, payload["text"], team, time.time(), False))
 
     elif msg_type == protocol.ERROR:
@@ -688,6 +756,8 @@ def snapshot_to_dict(state: ClientState) -> dict:
     (BR-U1-6 / NFR4)."""
     return {
         "seat": state.seat.value if state.seat is not None else None,
+        "is_spectator": state.is_spectator,
+        "spectator_name": state.spectator_name,
         "table_key": state.table_key,
         "players": {seat.value: name for seat, name in state.players.items()},
         "team_of": {seat.value: team for seat, team in state.team_of.items()},
