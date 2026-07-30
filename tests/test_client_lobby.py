@@ -8,7 +8,7 @@ the pure predicate behind that behaviour.
 
 from __future__ import annotations
 
-from coinche.client import _reconnectable_seat
+from coinche.client import _reconnectable_seat, _replaceable_bot_seats
 
 
 def _table(players):
@@ -54,3 +54,33 @@ def test_missing_connected_defaults_to_connected():
         {"seat": "N", "name": "Alice", "team_name": None},
     ])
     assert _reconnectable_seat(entry, "Alice") is None
+
+
+def test_replaceable_bot_seats_lists_bots_on_running_table():
+    entry = _table([
+        {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "is_bot": False},
+        {"seat": "E", "name": "Sephiroth", "team_name": "Equipe 2", "is_bot": True},
+        {"seat": "S", "name": "Cloud", "team_name": "Equipe 1", "is_bot": True},
+        {"seat": "W", "name": "Tifa", "team_name": "Equipe 2", "is_bot": True},
+    ])
+    bots = _replaceable_bot_seats(entry)
+    assert [p["seat"] for p in bots] == ["E", "S", "W"]
+
+
+def test_replaceable_bot_seats_empty_when_not_in_progress():
+    # A table that hasn't started has no bots to replace even if seats are filled.
+    entry = {
+        "table_key": "wait1",
+        "in_progress": False,
+        "seats_filled": 1,
+        "players": [{"seat": "N", "name": "Alice", "team_name": None, "is_bot": False}],
+    }
+    assert _replaceable_bot_seats(entry) == []
+
+
+def test_replaceable_bot_seats_empty_for_all_human_running_table():
+    entry = _table([
+        {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "is_bot": False},
+        {"seat": "E", "name": "Bob", "team_name": "Equipe 2", "is_bot": False},
+    ])
+    assert _replaceable_bot_seats(entry) == []

@@ -246,6 +246,83 @@ def test_one_player_can_fill_the_table_with_bots():
     asyncio.run(scenario())
 
 
+def test_human_can_join_a_running_table_by_replacing_a_bot():
+    """A table with bots is one a human can sit down at mid-game: joining it
+    takes over a bot's seat, the newcomer gets a RESYNC with that seat's hand,
+    and the other players are told a human replaced the bot."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server(target_score=1000)
+        w1 = w2 = None
+        try:
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "swap01", "player_name": "Alice"})
+            joined = await _read_until(r1, protocol.JOINED)
+            assert joined["seat"] == "N"
+
+            await _send(w1, protocol.FILL_BOTS, {})
+            lobby = await _read_until(r1, protocol.LOBBY_UPDATE)
+            bots = [p for p in lobby["players"] if p["is_bot"]]
+            assert len(bots) == 3
+            target = bots[0]["seat"]  # the bot seat Bob will take over
+
+            # A second human joins the already-running table, requesting that
+            # exact bot seat. The server's replace-a-bot path swaps him in.
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.JOIN, {"table_key": "swap01", "player_name": "Bob", "seat": target})
+
+            resync = await _read_until(r2, protocol.RESYNC)
+            assert resync["seat"] == target
+            assert len(resync["hand"]) >= 1  # inherited the bot's remaining hand
+            bob_entry = next(p for p in resync["players"] if p["seat"] == target)
+            assert bob_entry["name"] == "Bob"
+            assert bob_entry["is_bot"] is False
+
+            # Alice is told a human replaced the bot at that seat.
+            status = await _read_until(r1, protocol.CONNECTION_STATUS)
+            assert status["seat"] == target
+            assert status["name"] == "Bob"
+            assert status["status"] == "bot_replaced"
+        finally:
+            for w in (w1, w2):
+                if w is not None:
+                    w.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_joining_a_running_bot_table_without_a_seat_takes_the_first_bot():
+    """Joining a running bot table with no specific seat requested still works:
+    the server picks the first bot seat in table order."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server(target_score=1000)
+        w1 = w2 = None
+        try:
+            r1, w1 = await _connect(port)
+            await _send(w1, protocol.JOIN, {"table_key": "swap02", "player_name": "Alice"})
+            await _read_until(r1, protocol.JOINED)
+            await _send(w1, protocol.FILL_BOTS, {})
+            lobby = await _read_until(r1, protocol.LOBBY_UPDATE)
+            bot_seats = [p["seat"] for p in lobby["players"] if p["is_bot"]]
+            first_bot_seat = next(s for s in ("N", "E", "S", "W") if s in bot_seats)
+
+            r2, w2 = await _connect(port)
+            await _send(w2, protocol.JOIN, {"table_key": "swap02", "player_name": "Bob"})
+            resync = await _read_until(r2, protocol.RESYNC)
+            assert resync["seat"] == first_bot_seat
+        finally:
+            for w in (w1, w2):
+                if w is not None:
+                    w.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
 def test_leave_table_returns_to_lobby_and_frees_seat():
     """A player who LEAVEs a pre-game table frees their seat, gets a LEFT + a
     fresh lobby listing, and can then JOIN a different table on the same socket.

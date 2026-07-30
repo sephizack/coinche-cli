@@ -1372,6 +1372,16 @@ body > .lobby {
 .seatchip--joinable:hover {
   background: rgba(212, 175, 55, 0.2);
 }
+/* A bot chair on a running table: clickable to sit down in its place. */
+.seatchip__name--replaceable {
+  cursor: pointer;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.seatchip__name--replaceable:hover {
+  background: rgba(212, 175, 55, 0.2);
+}
 .minitable__foot {
   display: flex;
   align-items: center;
@@ -1611,6 +1621,12 @@ body > .lobby {
 }
 .recap__score-total {
   margin-top: var(--sp-2);
+}
+.recap__score-belote {
+  color: #7bd88f;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-top: var(--sp-1);
 }
 .recap__team--nous {
   color: var(--team-nous);

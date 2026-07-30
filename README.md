@@ -133,6 +133,13 @@ Once all 4 seats are filled, by people or bots, the server deals a hand and the 
 If a client's connection drops mid-game, relaunching it with the same
 `--table` and `--name` reconnects to the same seat and resumes play.
 
+A table that has bots can be joined mid-game: in the lobby it shows up as
+"🤖 N bot(s) — remplaçable" (rather than locked), and selecting it lets you
+pick which bot to replace. You take over that seat exactly as it stands — its
+hand, its turn — and the bot steps aside. In the web interface, click a bot's
+chip on a running table (or its "🤖 Remplacer un bot" button); from the command
+line, `--table KEY --seat N|E|S|W` joins straight into a bot's chair.
+
 ## Méta-client (multi-session web front door)
 
 For hosting several players from a **single process** — e.g. one small VM that

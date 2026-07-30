@@ -86,6 +86,21 @@ CI (`.github/workflows/ci.yml`) runs the same three checks on push/PR for Python
   and `Game.submit_card`; bots never bypass authoritative validation. The
   terminal exposes **F** and the web overlay exposes a matching button only
   while `ClientState.can_fill_bots` is true.
+- **Replace-a-bot join** (no new message type — a plain `JOIN` on an in-progress
+  table that has bots). The exact inverse of `Table.replace_with_bot`: when a
+  `JOIN` arrives for a running table and no disconnected seat matches for
+  reconnect, `_resolve_join_inner` takes over a bot's chair instead of rejecting
+  with `GAME_IN_PROGRESS`. `Table.replace_bot(seat, name, writer, team_name)`
+  flips the session's `is_bot` off, attaches the human, and returns
+  `Game.snapshot_for(seat)` for a `RESYNC` (the bot's hand/turn are inherited —
+  the Game is keyed by seat, not session). Seat choice: the optional `seat`
+  field wins if it names a bot chair (`_resolve_bot_seat`), else a `team_name`
+  match seats you opposite your teammate when that's a bot, else the first bot
+  seat in `SEAT_ORDER`. The other players get a `CONNECTION_STATUS` with
+  `status="bot_replaced"`; the client reducer swaps the seat's displayed name to
+  the newcomer's. The lobby picker offers such tables (client
+  `_replaceable_bot_seats`, `ui.render_bot_picker`) instead of locking them, the
+  way `_reconnectable_seat` already carves out the reconnect exception.
 
 ## Web overlay (`coinche/web/`)
 
