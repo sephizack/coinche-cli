@@ -1382,7 +1382,7 @@ const App = {
                     :disabled="fillingBots" @click="fillBots">
               {{ fillingBots ? 'Ajout des bots…' : 'Remplir avec des bots' }}
             </button>
-            <button v-if="canFillBots && !isSpectator" class="leave-btn" data-testid="leave-table"
+            <button v-if="!isSpectator" class="leave-btn" data-testid="leave-table"
                     @click="leaveTable">
               Quitter la table
             </button>
