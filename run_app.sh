@@ -108,6 +108,27 @@ free_port() {
     # shellcheck disable=SC2086
     kill -9 $pids 2>/dev/null || true
 }
+
+# Tue tous les process coinche restants d'un lancement précédent (serveur `python
+# -m coinche.server` et méta `python -m coinche.meta`). Ils n'occupent pas
+# forcément les ports libérés par free_port mais continuent de tourner ; on les
+# nettoie ici. Le pattern ne matche que les process python `-m coinche`, donc
+# jamais ce script bash lui-même.
+kill_coinche_processes() {
+    command -v pgrep >/dev/null 2>&1 || return 0
+    local pids
+    pids="$(pgrep -f 'python.* -m coinche' 2>/dev/null || true)"
+    [[ -z "$pids" ]] && return 0
+    # shellcheck disable=SC2086
+    echo "Process coinche encore actifs ($(echo $pids | tr '\n' ' ')) — arrêt avant de démarrer."
+    # shellcheck disable=SC2086
+    kill $pids 2>/dev/null || true
+    sleep 1
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+}
+
+kill_coinche_processes
 free_port "$GAME_PORT"
 free_port "$META_PORT"
 
