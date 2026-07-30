@@ -489,9 +489,31 @@ const App = {
       }
     }
 
+    // Last name the player used, persisted separately from the session id so it
+    // survives a dead/expired session. On the méta-client the landing page
+    // already carries the name over via META.name; this is the fallback for the
+    // mono-session overlay (no landing page — the lobby below IS the home page).
+    const LAST_NAME_KEY = "coinche.lastName";
+    function readLastName() {
+      try {
+        return window.localStorage.getItem(LAST_NAME_KEY) || "";
+      } catch (e) {
+        return ""; // localStorage unavailable (private mode)
+      }
+    }
+    function rememberName(name) {
+      const value = (name || "").trim();
+      if (!value) return;
+      try {
+        window.localStorage.setItem(LAST_NAME_KEY, value);
+      } catch (e) {
+        /* localStorage unavailable (private mode) — just don't persist */
+      }
+    }
+
     // Lobby form (there is no table-list in the snapshot contract; U2 pushes
     // players/status only — so the lobby is a join form driven by that state).
-    const lobby = reactive({ name: META.name || "", table: "table1", team: "" });
+    const lobby = reactive({ name: META.name || readLastName(), table: "table1", team: "" });
 
     let ws = null;
     let backoff = 500;
@@ -1001,6 +1023,7 @@ const App = {
     }
     function joinTable() {
       if (!lobby.name.trim() || !lobby.table.trim()) return;
+      rememberName(lobby.name);
       const payload = {
         table_key: lobby.table.trim(),
         player_name: lobby.name.trim(),
@@ -1114,6 +1137,7 @@ const App = {
         showToast("Entrez votre nom d'abord", "error");
         return;
       }
+      rememberName(name);
       const payload = { table_key: tableKey, player_name: name };
       if (teamLabelText) payload.team_name = teamLabelText;
       // When a specific empty chair is clicked, ask the server for that exact
@@ -1131,6 +1155,7 @@ const App = {
         showToast("Entrez votre nom d'abord", "error");
         return;
       }
+      rememberName(name);
       sendAction("join", { table_key: tableKey, player_name: name, spectate: true });
     }
 
