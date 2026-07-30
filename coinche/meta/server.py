@@ -68,7 +68,7 @@ _LANDING_PAGE = """<!doctype html>
     <div class="lobby">
       <div class="lobby__card" id="landing-card" hidden>
         <h1 class="lobby__title">Coinche — Casino</h1>
-        <form class="lobby__field" action="/new" method="get" autocomplete="off">
+        <form id="landing-form" class="lobby__field" action="/new" method="get" autocomplete="off">
           <label for="name">Votre nom</label>
           <input id="name" name="name" type="text" maxlength="24" required placeholder="Alice" />
           <button class="rematch-btn" style="width:100%;margin-top:1rem" type="submit">Jouer</button>
@@ -87,13 +87,40 @@ _LANDING_PAGE = """<!doctype html>
       // orphaned session. A stale/expired id falls back to the name form.
       (function () {
         var KEY = "coinche.metaSessionId";
+        // Last name typed here, so a fresh landing (dead/expired session, or a
+        // player who explicitly went back home) pre-fills instead of showing an
+        // empty field. Kept separate from the session id: it survives even when
+        // the session doesn't.
+        var NAME_KEY = "coinche.lastName";
         var landing = document.getElementById("landing-card");
         var resume = document.getElementById("resume-card");
+        // Persist the chosen name on submit so the next landing pre-fills it.
+        var form = document.getElementById("landing-form");
+        if (form) {
+          form.addEventListener("submit", function () {
+            try {
+              var input = document.getElementById("name");
+              var value = input && input.value.trim();
+              if (value) window.localStorage.setItem(NAME_KEY, value);
+            } catch (e) {
+              /* localStorage unavailable (private mode) — just don't persist */
+            }
+          });
+        }
         function showForm() {
           resume.hidden = true;
           landing.hidden = false;
           var input = document.getElementById("name");
-          if (input) input.focus();
+          if (input) {
+            try {
+              var last = window.localStorage.getItem(NAME_KEY);
+              if (last && !input.value) input.value = last;
+            } catch (e) {
+              /* localStorage unavailable (private mode) — start empty */
+            }
+            input.focus();
+            input.select();
+          }
         }
         var id = null;
         try {
