@@ -936,9 +936,6 @@ button {
   font-weight: 700;
   color: var(--gold-soft);
 }
-.points-value--capot {
-  font-size: 1.25rem;
-}
 .bid-panel__actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -970,6 +967,14 @@ button {
 .action-btn--announce {
   background: linear-gradient(180deg, var(--gold-soft), var(--gold));
   color: var(--felt-green-dark);
+}
+.action-btn--capot {
+  grid-column: 1 / -1;
+  background: linear-gradient(180deg, rgba(212, 175, 55, 0.28), rgba(212, 175, 55, 0.14));
+  border-color: var(--gold);
+  color: var(--gold-soft);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .action-btn--coinche {
   grid-column: 1 / -1;
@@ -1748,6 +1753,13 @@ body > .lobby {
   color: #fff9df;
   letter-spacing: 0.04em;
   animation: bid-announcement-pop 2.2s var(--ease-standard) both;
+}
+.bid-effect--belote {
+  border-color: #a8d8ff;
+  background: linear-gradient(135deg, #1c4a7a, #2f7bc4 52%, #1c4a7a);
+  box-shadow:
+    0 0 0 5px rgba(168, 216, 255, 0.25),
+    0 0 48px rgba(47, 123, 196, 0.85);
 }
 .bid-effect__actor {
   font-size: 0.62em;

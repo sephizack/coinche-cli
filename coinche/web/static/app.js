@@ -211,20 +211,34 @@ const BidPanel = {
       return seen;
     },
     pointsForTrump() {
+      // Numeric levels only. Capot is announced via its own dedicated button
+      // (see capotAvailable / announceCapot), not by stepping past 180 — it's a
+      // distinct, higher-value contract, not just the next number up.
       if (!this.selectedTrump) return [];
-      const pts = this.legalActions
-        .filter((a) => a.trump === this.selectedTrump)
-        .map((a) => a.points);
-      const numeric = pts.filter((p) => p !== "capot").sort((a, b) => a - b);
-      const list = numeric.slice();
-      if (pts.includes("capot")) list.push("capot");
-      return list;
+      return this.legalActions
+        .filter((a) => a.trump === this.selectedTrump && a.points !== "capot")
+        .map((a) => a.points)
+        .sort((a, b) => a - b);
     },
     currentPoints() {
       return this.pointsForTrump[this.pointsIndex];
     },
     currentPointsLabel() {
-      return this.currentPoints === "capot" ? "Capot" : this.currentPoints;
+      return this.currentPoints;
+    },
+    capotOffered() {
+      // Whether capot is still on the table at all this auction (it's gone once
+      // someone has already announced it). Drives whether we show the button.
+      return this.legalActions.some((a) => a.points === "capot");
+    },
+    canAnnounceCapot() {
+      // Capot is bound to a trump suit, so a suit must be chosen first — same
+      // as a numeric announce. The button stays visible (for discoverability)
+      // but is disabled until then.
+      return (
+        this.selectedTrump != null &&
+        this.legalActions.some((a) => a.points === "capot" && a.trump === this.selectedTrump)
+      );
     },
     canAnnounce() {
       return this.selectedTrump != null && this.currentPoints != null;
@@ -255,6 +269,14 @@ const BidPanel = {
         bid_action: "bid",
         trump: this.selectedTrump,
         points: this.currentPoints,
+      });
+    },
+    announceCapot() {
+      if (!this.canAnnounceCapot) return;
+      this.$emit("bid", {
+        bid_action: "bid",
+        trump: this.selectedTrump,
+        points: "capot",
       });
     },
     pass() {
@@ -329,8 +351,7 @@ const BidPanel = {
             <button class="stepper-btn" data-testid="bid-points-down"
                     :disabled="pointsIndex <= 0 || sending" @click="step(-1)"
                     aria-label="Diminuer les points">−</button>
-            <span class="points-value" :class="{ 'points-value--capot': currentPoints === 'capot' }"
-                  data-testid="bid-points">{{ currentPointsLabel }}</span>
+            <span class="points-value" data-testid="bid-points">{{ currentPointsLabel }}</span>
             <button class="stepper-btn" data-testid="bid-points-up"
                     :disabled="pointsIndex >= pointsForTrump.length - 1 || sending" @click="step(1)"
                     aria-label="Augmenter les points">+</button>
@@ -342,6 +363,8 @@ const BidPanel = {
                   :disabled="sending" @click="pass">Passe</button>
           <button class="action-btn action-btn--announce" data-testid="bid-announce"
                   :disabled="!canAnnounce || sending" @click="announce">Annoncer</button>
+          <button v-if="capotOffered" class="action-btn action-btn--capot" data-testid="bid-capot"
+                  :disabled="!canAnnounceCapot || sending" @click="announceCapot">Annoncer Capot</button>
           <button v-if="request && request.can_coinche" class="action-btn action-btn--coinche"
                   data-testid="bid-coinche" :disabled="sending" @click="coinche">Coincher</button>
           <button v-if="request && request.can_surcoinche" class="action-btn action-btn--surcoinche"
@@ -439,6 +462,8 @@ const App = {
     const badgeFlash = ref(false);
     const bidEffect = ref(null);
     const bidEffectKey = ref(0);
+    const beloteEffect = ref(null);
+    const beloteEffectKey = ref(0);
     const bidAnnouncement = ref(null);
     const bidAnnouncementKey = ref(0);
     const sweepClass = ref(null); // e.g. "sweep-north" while a trick sweeps out
@@ -450,6 +475,18 @@ const App = {
     // original behaviour (root `/ws`, empty name).
     const META = window.__META__ || {};
 
+    // Session recovery (méta-client only): persist this session's id so the
+    // landing page can bring the player straight back here after a refresh or
+    // an accidental tab close (see the landing-page script in meta/server.py).
+    // Absent in the mono-session overlay (no sessionId), where it's a no-op.
+    if (META.sessionId) {
+      try {
+        window.localStorage.setItem("coinche.metaSessionId", META.sessionId);
+      } catch (e) {
+        /* localStorage unavailable (private mode) — recovery just won't persist */
+      }
+    }
+
     // Lobby form (there is no table-list in the snapshot contract; U2 pushes
     // players/status only — so the lobby is a join form driven by that state).
     const lobby = reactive({ name: META.name || "", table: "table1", team: "" });
@@ -458,7 +495,27 @@ const App = {
     let backoff = 500;
     let toastId = 0;
     let bidEffectTimer = null;
+    let beloteEffectTimer = null;
     let bidAnnouncementTimer = null;
+    // Consecutive reconnect attempts that never managed to open. On the
+    // méta-client this is how we detect that our session no longer exists
+    // server-side (e.g. the server rebooted, or the session was reaped): the WS
+    // keeps closing without ever opening. After a few tries we give up, drop
+    // the stale localStorage id, and bounce to the landing page — which
+    // re-probes and shows the name form for a fresh session.
+    let failedOpens = 0;
+    const MAX_FAILED_OPENS = 5;
+
+    function abandonDeadSession() {
+      try {
+        window.localStorage.removeItem("coinche.metaSessionId");
+      } catch (e) {
+        /* ignore */
+      }
+      // Only the méta-client can recover via the landing page; the mono-session
+      // overlay has nowhere to bounce to, so it just keeps retrying.
+      if (META.sessionId) window.location.replace("/");
+    }
 
     // -------- WebSocket (ConnectionLayer) --------
     function wsUrl() {
@@ -468,9 +525,12 @@ const App = {
     }
 
     function connect() {
+      let opened = false;
       ws = new WebSocket(wsUrl());
       ws.addEventListener("open", () => {
+        opened = true;
         backoff = 500;
+        failedOpens = 0; // a successful open means the session is alive
         // Ask U2 to start streaming lobby updates so the join screen is live.
         sendAction("lobby", {});
       });
@@ -490,6 +550,17 @@ const App = {
         }
       });
       ws.addEventListener("close", () => {
+        // Closed without ever opening this attempt: count it. A dead session
+        // (server reboot / reaped) rejects the /s/<id>/ws upgrade, so the WS
+        // closes without opening every time — after a few tries we give up and
+        // recover to the landing page instead of reconnecting forever.
+        if (!opened) {
+          failedOpens += 1;
+          if (failedOpens >= MAX_FAILED_OPENS) {
+            abandonDeadSession();
+            return;
+          }
+        }
         showToast("reconnexion…", "info", 4000);
         setTimeout(connect, backoff);
         backoff = Math.min(backoff * 2, 4000);
@@ -542,6 +613,19 @@ const App = {
         bidEffectTimer = setTimeout(() => {
           bidEffect.value = null;
           bidEffectTimer = null;
+        }, 2400);
+      }
+
+      // Mirror the Coinche effect for a Belote/Rebelote declaration: the seq
+      // counter bumps once per declaration, re-triggering the pop each time
+      // (Belote first, Rebelote later in the same round).
+      if (prev && snap.belote_effect_seq > (prev.belote_effect_seq || 0)) {
+        beloteEffect.value = snap.belote_effect;
+        beloteEffectKey.value += 1;
+        if (beloteEffectTimer) clearTimeout(beloteEffectTimer);
+        beloteEffectTimer = setTimeout(() => {
+          beloteEffect.value = null;
+          beloteEffectTimer = null;
         }, 2400);
       }
 
@@ -1046,6 +1130,8 @@ const App = {
       badgeFlash,
       bidEffect,
       bidEffectKey,
+      beloteEffect,
+      beloteEffectKey,
       bidAnnouncement,
       bidAnnouncementKey,
       sweepClass,
@@ -1105,6 +1191,12 @@ const App = {
          role="status" aria-live="assertive">
       <span v-if="bidEffect >= 4">🔥 SURCOINCHE ! ×4 🔥</span>
       <span v-else>⚡ COINCHE ! ×2 ⚡</span>
+    </div>
+    <!-- Belote / Rebelote declaration, mirroring the Coinche effect. -->
+    <div v-if="beloteEffect" :key="'belote-' + beloteEffectKey" class="bid-effect bid-effect--belote"
+         role="status" aria-live="assertive">
+      <span v-if="beloteEffect === 'rebelote'">👑 REBELOTE ! 👑</span>
+      <span v-else>💑 BELOTE ! 💑</span>
     </div>
     <div v-if="bidAnnouncement" :key="bidAnnouncementKey" class="bid-effect bid-effect--announcement"
          role="status" aria-live="polite">
@@ -1358,7 +1450,7 @@ const App = {
                     :disabled="fillingBots" @click="fillBots">
               {{ fillingBots ? 'Ajout des bots…' : 'Remplir avec des bots' }}
             </button>
-            <button v-if="canFillBots && !isSpectator" class="leave-btn" data-testid="leave-table"
+            <button v-if="!isSpectator" class="leave-btn" data-testid="leave-table"
                     @click="leaveTable">
               Quitter la table
             </button>

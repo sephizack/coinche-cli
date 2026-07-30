@@ -221,6 +221,35 @@ def test_render_bid_menu_suit_tokens_are_stable_regardless_of_coinche_surcoinche
     assert tokens_with_extras["7"] == {"action": "surcoinche"}
 
 
+def test_render_bid_menu_offers_direct_capot_entry_per_trump():
+    # Capot is announceable in one key from stage 1 -- a dedicated "Capot <suit>"
+    # entry that sends the bid directly, not a "select_trump" that forces the
+    # player to then type "capot" at stage 2.
+    legal_actions = [
+        {"trump": "♠", "points": 80},
+        {"trump": "♥", "points": 80},
+        {"trump": "♠", "points": "capot"},
+        {"trump": "♥", "points": "capot"},
+    ]
+    menu, tokens = render_bid_menu(legal_actions, current_highest_bid=None)
+    capot_tokens = [c for c in tokens.values() if c.get("points") == "capot"]
+    assert capot_tokens == [
+        {"action": "bid", "trump": "♠", "points": "capot"},
+        {"action": "bid", "trump": "♥", "points": "capot"},
+    ]
+    assert "Capot ♠" in _plain(menu)
+
+
+def test_render_bid_menu_omits_capot_entry_once_capot_no_longer_offered():
+    # After capot has been announced, legal_actions carries no capot options, so
+    # the menu offers none either -- only pass (and coinche/surcoinche if any).
+    legal_actions = []
+    _, tokens = render_bid_menu(
+        legal_actions, current_highest_bid={"trump": "♠", "points": "capot"}, can_coinche=True
+    )
+    assert not any(c.get("points") == "capot" for c in tokens.values())
+
+
 def test_render_bid_value_prompt_lists_range_and_capot_for_chosen_trump():
     legal_actions = [
         {"trump": "♠", "points": 80},

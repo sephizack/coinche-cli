@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from coinche import protocol
 from coinche.client import BACKOFF_DELAYS, ClientLink
@@ -49,6 +50,10 @@ class _SessionBridge(WebOverlayServer):
         self._session = session
 
     async def on_browser_message(self, msg: dict) -> None:
+        # Any browser action counts as activity, keeping the idle reaper away
+        # even before a game-server link exists (a browser can connect and act
+        # while the TCP connection is still coming up).
+        self._session.touch()
         if self.link is None:
             # Not connected to the game server yet — silently ignore; the
             # browser retries actions itself (it resends "lobby" on reconnect).
@@ -94,9 +99,32 @@ class MetaSession:
         self._stop = asyncio.Event()
         self._reconnect_index = 0
 
-    def remember_join(
-        self, table_key: str, player_name: str, team_name: str | None, spectate: bool = False
-    ) -> None:
+        # Idle bookkeeping (for the méta-client's reaper). `last_active` is the
+        # monotonic time of the last sign of life (browser attach/detach or any
+        # browser action); a session is a reap candidate only once no browser is
+        # attached AND it has been quiet for longer than the reaper's timeout.
+        self._last_active = time.monotonic()
+
+    # ----------------------------------------------------------- idle tracking
+    def touch(self) -> None:
+        """Mark the session as active right now (resets the idle timer)."""
+        self._last_active = time.monotonic()
+
+    @property
+    def browser_count(self) -> int:
+        """How many browsers are currently attached to this session's bridge."""
+        return len(self.bridge.clients)
+
+    def idle_seconds(self, now: float | None = None) -> float:
+        """Seconds since the last sign of life on this session."""
+        return (now if now is not None else time.monotonic()) - self._last_active
+
+    def is_idle(self, timeout: float, now: float | None = None) -> bool:
+        """True when no browser is attached and the session has been quiet for
+        at least `timeout` seconds — i.e. safe for the reaper to kick."""
+        return self.browser_count == 0 and self.idle_seconds(now) >= timeout
+
+    def remember_join(self, table_key: str, player_name: str, team_name: str | None, spectate: bool = False) -> None:
         self._join_args = (table_key, player_name, team_name, spectate)
 
     def forget_join(self) -> None:
@@ -108,6 +136,23 @@ class MetaSession:
         """Launch the background connection/receiver loop (idempotent)."""
         if self._task is None:
             self._task = asyncio.ensure_future(self._run())
+
+    async def leave_and_stop(self) -> None:
+        """Kick an idle session: leave its table (freeing the seat), then stop.
+
+        Sending LEAVE while a link is up lets the game server vacate the seat
+        pre-game (or hand it to a bot mid-game) and tear down an abandoned
+        table, so an idle méta-client session doesn't pin a seat forever. The
+        `forget_join` keeps `stop()`'s reconnect logic from re-seating us if the
+        LEAVE races a drop. Best-effort: any failure still proceeds to stop()."""
+        self.forget_join()
+        link = self.link
+        if link is not None:
+            try:
+                await link.send_leave()
+            except (ConnectionError, OSError):
+                pass
+        await self.stop()
 
     async def stop(self) -> None:
         """Tear the session down: stop retrying, close browsers and the socket."""
@@ -129,8 +174,15 @@ class MetaSession:
         """Route one upgraded browser WebSocket to this session's bridge.
 
         Delegates to the reused `WebOverlayServer._handle_ws`, which sends the
-        current snapshot, then loops relaying validated actions."""
-        await self.bridge._handle_ws(ws)  # type: ignore[arg-type]
+        current snapshot, then loops relaying validated actions. Bracketed with
+        `touch()` so both the arrival and the departure of a browser reset the
+        idle timer — a session a player just closed the tab on stays alive for
+        the full grace period (long enough to survive a refresh/reconnect)."""
+        self.touch()
+        try:
+            await self.bridge._handle_ws(ws)  # type: ignore[arg-type]
+        finally:
+            self.touch()
 
     async def _dismiss_round_recap(self) -> None:
         """Mirror the CLI keypress that dismisses the end-of-round recap, then

@@ -91,17 +91,50 @@ if [[ ! -f "$STAMP_FILE" || "$REQUIREMENTS_FILE" -nt "$STAMP_FILE" ]]; then
     touch "$STAMP_FILE"
 fi
 
+# --- libère les ports d'éventuels process fantômes ---------------------------
+# Restes d'un lancement précédent tué brutalement (kill -9, crash, terminal
+# fermé) : des process Python orphelins peuvent garder les ports occupés. On les
+# arrête avant de démarrer pour ne pas rester bloqué au bind.
+free_port() {
+    local port="$1"
+    command -v lsof >/dev/null 2>&1 || return 0
+    local pids
+    pids="$(lsof -ti "tcp:$port" 2>/dev/null || true)"
+    [[ -z "$pids" ]] && return 0
+    echo "Port $port déjà occupé (process $pids) — arrêt de ces process fantômes."
+    # shellcheck disable=SC2086
+    kill $pids 2>/dev/null || true
+    sleep 1
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+}
+free_port "$GAME_PORT"
+free_port "$META_PORT"
+
 # --- lancement supervisé -----------------------------------------------------
 SERVER_PID=""
 META_PID=""
 
+# Tue un process proprement (TERM) puis, s'il résiste, brutalement (KILL).
+kill_hard() {
+    local pid="$1"
+    [[ -z "$pid" ]] && return 0
+    kill "$pid" 2>/dev/null || return 0
+    for _ in $(seq 1 20); do
+        kill -0 "$pid" 2>/dev/null || return 0
+        sleep 0.1
+    done
+    kill -9 "$pid" 2>/dev/null || true
+}
+
 cleanup() {
-    # Arrêt propre des deux enfants ; ignore les erreurs si déjà morts.
-    [[ -n "$META_PID" ]] && kill "$META_PID" 2>/dev/null || true
-    [[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null || true
+    # Arrêt des deux enfants avec escalade TERM -> KILL ; idempotent.
+    kill_hard "$META_PID"
+    kill_hard "$SERVER_PID"
     wait 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+# HUP couvre la fermeture brutale du terminal, absente du trap précédent.
+trap cleanup EXIT INT TERM HUP
 
 SERVER_ARGS=(--host 0.0.0.0 --port "$GAME_PORT" --bot-samples "$BOT_SAMPLES")
 if [[ -n "$SERVER_LOG" ]]; then
