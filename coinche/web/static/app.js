@@ -459,6 +459,8 @@ const App = {
     const fillingBots = ref(false);
     const leaveArmed = ref(false); // mid-game leave needs a 2nd click to confirm
     let leaveDisarmTimer = null;
+    const leaving = ref(false); // "leave" sent, waiting for the server to return us to the lobby
+    let leavingTimer = null;
     const shakeCard = ref(null);
     const dealing = ref(false);
     const badgeFlash = ref(false);
@@ -714,6 +716,16 @@ const App = {
       // A new snapshot confirms any in-flight bid.
       bidSending.value = false;
       fillingBots.value = false;
+
+      // Back in the lobby (the server sent LEFT and cleared joined_once): a
+      // pending leave has completed, so drop the "Départ en cours…" state.
+      if (leaving.value && !(snap.flags && snap.flags.joined_once)) {
+        leaving.value = false;
+        if (leavingTimer) {
+          clearTimeout(leavingTimer);
+          leavingTimer = null;
+        }
+      }
 
       snapshot.value = snap; // full replace
     }
@@ -1000,6 +1012,12 @@ const App = {
       // ask for confirmation first. Either way the snapshot flips back to the
       // lobby on the LEFT the server sends.
       //
+      // Already leaving: the server got our "leave" and just hasn't flipped us
+      // back to the lobby yet (mid-game it finishes the in-flight trick/bot
+      // turns first, which can take a few seconds). Swallow extra clicks so
+      // they don't read as "nothing happened" and pile up.
+      if (leaving.value) return;
+
       // Mid-game confirmation is inline (not window.confirm): the first click
       // arms the button (it turns red and reads "Confirmer"), the second click
       // within a few seconds actually leaves. The armed state auto-resets so a
@@ -1019,6 +1037,18 @@ const App = {
         leaveDisarmTimer = null;
       }
       leaveArmed.value = false;
+      // Show a pending state until the server returns us to the lobby. Mid-game
+      // the seat is handed to a bot only once the current trick/bot turns
+      // finish, so the switch isn't instant — without this the button looks
+      // dead and the player keeps clicking. A safety timeout clears it in case
+      // the LEFT snapshot never arrives (e.g. a dropped socket), so the button
+      // can never get stuck disabled.
+      leaving.value = true;
+      if (leavingTimer) clearTimeout(leavingTimer);
+      leavingTimer = setTimeout(() => {
+        leaving.value = false;
+        leavingTimer = null;
+      }, 15000);
       sendAction("leave", {});
     }
     function joinTable() {
@@ -1177,6 +1207,7 @@ const App = {
       bidSending,
       fillingBots,
       leaveArmed,
+      leaving,
       shakeCard,
       dealing,
       badgeFlash,
@@ -1509,8 +1540,9 @@ const App = {
               {{ fillingBots ? 'Ajout des bots…' : 'Remplir avec des bots' }}
             </button>
             <button v-if="!isSpectator" class="leave-btn" data-testid="leave-table"
-                    :class="{ 'leave-btn--armed': leaveArmed }" @click="leaveTable">
-              {{ leaveArmed ? 'Confirmer' : 'Quitter la table' }}
+                    :class="{ 'leave-btn--armed': leaveArmed }" :disabled="leaving"
+                    @click="leaveTable">
+              {{ leaving ? 'Départ en cours…' : leaveArmed ? 'Confirmer' : 'Quitter la table' }}
             </button>
           </footer>
         </main>
