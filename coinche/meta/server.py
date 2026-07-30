@@ -52,7 +52,7 @@ _REALM = "Coinche"
 # the seat / tearing down an abandoned table) and is torn down. The grace
 # window is comfortably longer than a page refresh or a brief network blip, so
 # a returning player resumes their session instead of being reaped.
-IDLE_TIMEOUT_SECONDS = 120.0
+IDLE_TIMEOUT_SECONDS = 15*60.0
 REAP_INTERVAL_SECONDS = 15.0
 
 _LANDING_PAGE = """<!doctype html>
