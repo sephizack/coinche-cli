@@ -887,7 +887,7 @@ const App = {
       // the server hands the seat to a bot so the other players can finish, so
       // ask for confirmation first. Either way the snapshot flips back to the
       // lobby on the LEFT the server sends.
-      const midGame = !canFillBots.value;
+      const midGame = !isSpectator.value && !canFillBots.value;
       if (
         midGame &&
         !window.confirm(

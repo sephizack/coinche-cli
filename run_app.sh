@@ -37,7 +37,9 @@ GAME_PORT="8765"
 BOT_SAMPLES="100"
 SERVER_LOG=""
 DO_PULL=1
-source .env
+if [[ -f .env ]]; then
+    source .env
+fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

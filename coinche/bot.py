@@ -723,6 +723,15 @@ def choose_card(game: Game, seat: Seat) -> Card:
             if owned_non_trump_aces:
                 return random.choice(owned_non_trump_aces)
 
+    if game.round_state.current_trick:
+        # If the partner is winning the trick, discard a low card to develop the hand.
+        trick = game.round_state.current_trick
+        led_suit = trick[0][1].suit
+        if led_suit != trump:
+            requested_trick_ace = [card for card in legal_cards if card.rank == "A" and card.suit == led_suit]
+            if any(requested_trick_ace) and not any(card.suit == trump for _, card in trick):
+                return requested_trick_ace[0]
+        
     # Default to Monte-Carlo simulation
     samples = _sample_hidden_hands(game, seat, MONTE_CARLO_SAMPLES)
     if not samples:
