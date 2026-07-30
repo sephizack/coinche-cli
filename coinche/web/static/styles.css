@@ -1619,6 +1619,12 @@ body > .lobby {
 .recap__score-total {
   margin-top: var(--sp-2);
 }
+.recap__score-belote {
+  color: #7bd88f;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-top: var(--sp-1);
+}
 .recap__team--nous {
   color: var(--team-nous);
 }
