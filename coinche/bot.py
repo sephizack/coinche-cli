@@ -714,7 +714,7 @@ def choose_card(game: Game, seat: Seat) -> Card:
             best_trump = max(trumps, key=lambda card: _card_strength(card, trump), default=None)
             worst_trump = min(trumps, key=lambda card: _card_strength(card, trump), default=None)
             jack_has_not_fallen = not _has_been_played(Card("V", trump), game.round_state)
-            if best_trump is not None and _is_master(best_trump, game.get_hand(seat), game, trump)):
+            if best_trump is not None and _is_master(best_trump, game.get_hand(seat), game, trump):
                 return best_trump
             if worst_trump is not None and jack_has_not_fallen:
                 return worst_trump
