@@ -740,17 +740,28 @@ def choose_card(game: Game, seat: Seat) -> Card:
                 return best_trump
             if worst_trump is not None and jack_has_not_fallen:
                 return worst_trump
-        else:
-            owned_non_trump_aces = [card for card in legal_cards if card.rank == "A" and card.suit != trump]
-            if owned_non_trump_aces:
-                return random.choice(owned_non_trump_aces)
-            # Defending team on lead: drop trump from the candidates (unless the
-            # master lead is worth it) so neither Monte-Carlo nor the tactical
-            # fallback can gift the takers a trump lead.
-            elif _defender_trump_lead_is_wasteful(game, seat, trump):
-                non_trumps = [card for card in legal_cards if card.suit != trump]
-                if non_trumps:
-                    legal_cards = non_trumps
+        if not _opponents_may_hold_trump(game, seat, trump):
+            # If taker is master of a non trump suit, lead it to cash the side master.
+            non_trump_masters = [
+                card
+                for card in legal_cards
+                if card.suit != trump and _is_master(card, game.get_hand(seat), game, trump)
+            ]
+            if non_trump_masters:
+                return max(
+                    non_trump_masters, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump))
+                )
+        
+        owned_non_trump_aces = [card for card in legal_cards if card.rank == "A" and card.suit != trump]
+        if owned_non_trump_aces:
+            return random.choice(owned_non_trump_aces)
+        # Defending team on lead: drop trump from the candidates (unless the
+        # master lead is worth it) so neither Monte-Carlo nor the tactical
+        # fallback can gift the takers a trump lead.
+        elif _defender_trump_lead_is_wasteful(game, seat, trump):
+            non_trumps = [card for card in legal_cards if card.suit != trump]
+            if non_trumps:
+                legal_cards = non_trumps
 
     if game.round_state.current_trick:
         # If the partner is winning the trick, discard a low card to develop the hand.
