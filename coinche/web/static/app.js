@@ -457,6 +457,8 @@ const App = {
     const unread = ref(0);
     const bidSending = ref(false);
     const fillingBots = ref(false);
+    const leaveArmed = ref(false); // mid-game leave needs a 2nd click to confirm
+    let leaveDisarmTimer = null;
     const shakeCard = ref(null);
     const dealing = ref(false);
     const badgeFlash = ref(false);
@@ -971,15 +973,26 @@ const App = {
       // the server hands the seat to a bot so the other players can finish, so
       // ask for confirmation first. Either way the snapshot flips back to the
       // lobby on the LEFT the server sends.
+      //
+      // Mid-game confirmation is inline (not window.confirm): the first click
+      // arms the button (it turns red and reads "Confirmer"), the second click
+      // within a few seconds actually leaves. The armed state auto-resets so a
+      // stray first click doesn't leave the button stuck.
       const midGame = !isSpectator.value && !canFillBots.value;
-      if (
-        midGame &&
-        !window.confirm(
-          "Quitter la partie en cours ? Un bot prendra votre place jusqu'à la fin de la partie.",
-        )
-      ) {
+      if (midGame && !leaveArmed.value) {
+        leaveArmed.value = true;
+        if (leaveDisarmTimer) clearTimeout(leaveDisarmTimer);
+        leaveDisarmTimer = setTimeout(() => {
+          leaveArmed.value = false;
+          leaveDisarmTimer = null;
+        }, 4000);
         return;
       }
+      if (leaveDisarmTimer) {
+        clearTimeout(leaveDisarmTimer);
+        leaveDisarmTimer = null;
+      }
+      leaveArmed.value = false;
       sendAction("leave", {});
     }
     function joinTable() {
@@ -1125,6 +1138,7 @@ const App = {
       unread,
       bidSending,
       fillingBots,
+      leaveArmed,
       shakeCard,
       dealing,
       badgeFlash,
@@ -1451,8 +1465,8 @@ const App = {
               {{ fillingBots ? 'Ajout des bots…' : 'Remplir avec des bots' }}
             </button>
             <button v-if="!isSpectator" class="leave-btn" data-testid="leave-table"
-                    @click="leaveTable">
-              Quitter la table
+                    :class="{ 'leave-btn--armed': leaveArmed }" @click="leaveTable">
+              {{ leaveArmed ? 'Confirmer' : 'Quitter la table' }}
             </button>
           </footer>
         </main>

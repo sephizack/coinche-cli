@@ -740,6 +740,12 @@ button {
 .leave-btn:hover {
   background: rgba(255, 255, 255, 0.14);
 }
+.leave-btn--armed,
+.leave-btn--armed:hover {
+  border-color: rgba(239, 68, 68, 0.9);
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
 
 /* Spectator banner shown in place of the hand fan when watching a table. */
 .spectator-bar {
