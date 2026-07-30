@@ -156,7 +156,11 @@ class WSClient:
             pass
 
 
-async def _start_meta(game_port: int) -> tuple[MetaClientServer, asyncio.Task, int]:
+async def _start_meta(
+    game_port: int,
+    idle_timeout: float = 120.0,
+    reap_interval: float = 15.0,
+) -> tuple[MetaClientServer, asyncio.Task, int]:
     server = MetaClientServer(
         game_host=HOST,
         game_port=game_port,
@@ -164,6 +168,8 @@ async def _start_meta(game_port: int) -> tuple[MetaClientServer, asyncio.Task, i
         auth_pass="secret",
         host=HOST,
         port=0,
+        idle_timeout=idle_timeout,
+        reap_interval=reap_interval,
     )
     task = asyncio.ensure_future(server.serve())
     for _ in range(200):
@@ -418,6 +424,155 @@ def test_static_assets_served_with_auth() -> None:
             # Path traversal is refused.
             status, _, _ = await http_get(port, "/../pyproject.toml")
             assert status in (403, 404)
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
+# --------------------------------------------------------------------------- #
+# Session recovery: liveness probe + session id in the game page
+# --------------------------------------------------------------------------- #
+
+
+def test_session_status_probe() -> None:
+    """`/api/session?id=…` reports liveness so the landing page can auto-resume
+    a stored session (localStorage) and clean it up when it's gone."""
+
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            _, headers, _ = await http_get(port, "/new?name=Alice")
+            session_id = headers["location"][len("/s/") :]
+
+            status, hdrs, body = await http_get(port, f"/api/session?id={session_id}")
+            assert status == 200
+            assert "application/json" in hdrs.get("content-type", "")
+            data = json.loads(body)
+            assert data == {"alive": True, "name": "Alice"}
+
+            # An unknown/expired id (e.g. after a server reboot) reports dead so
+            # the browser drops its stale stored id and shows the name form.
+            status, _, body = await http_get(port, "/api/session?id=nope")
+            assert status == 200
+            assert json.loads(body) == {"alive": False}
+
+            status, _, body = await http_get(port, "/api/session")
+            assert json.loads(body) == {"alive": False}
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
+def test_game_page_carries_session_id() -> None:
+    """The SPA shell exposes the session id so app.js can persist it to
+    localStorage for recovery."""
+
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            _, headers, _ = await http_get(port, "/new?name=Bob")
+            location = headers["location"]
+            session_id = location[len("/s/") :]
+
+            _, _, body = await http_get(port, location)
+            text = body.decode("utf-8")
+            assert f'"sessionId": "{session_id}"' in text or f'"sessionId":"{session_id}"' in text
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
+def test_landing_page_probes_stored_session() -> None:
+    """The landing page ships the recovery script that reads localStorage and
+    probes `/api/session` before falling back to the name form."""
+
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            _, _, body = await http_get(port, "/")
+            text = body.decode("utf-8")
+            assert "coinche.metaSessionId" in text
+            assert "/api/session?id=" in text
+            assert "localStorage.removeItem" in text  # cleans a dead id
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
+# --------------------------------------------------------------------------- #
+# Idle reaper: kicks a browser-less, quiet session and frees its table seat
+# --------------------------------------------------------------------------- #
+
+
+def test_idle_session_is_reaped_and_leaves_table() -> None:
+    """A session with no browser attached and no activity past the idle timeout
+    is kicked: it sends LEAVE (freeing its seat) and is removed from the
+    registry — table housekeeping falls out of the same reaper."""
+
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        # Tiny timeout + fast interval so the reaper fires within the test.
+        server, task, port = await _start_meta(game.port, idle_timeout=0.05, reap_interval=0.05)
+        try:
+            _, headers, _ = await http_get(port, "/new?name=Alice")
+            session_id = headers["location"][len("/s/") :]
+
+            # Wait until the reaper kicks the (browser-less) session.
+            for _ in range(200):
+                if session_id not in server.sessions:
+                    break
+                await asyncio.sleep(0.02)
+            assert session_id not in server.sessions, "idle session was not reaped"
+
+            # The reaped session left its table before stopping.
+            for _ in range(200):
+                if any(m[0] == protocol.LEAVE for m in game.received):
+                    break
+                await asyncio.sleep(0.02)
+            assert any(m[0] == protocol.LEAVE for m in game.received), "reaped session never sent LEAVE"
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
+def test_attached_browser_is_not_reaped() -> None:
+    """A session with a live browser attached is never reaped, even past the
+    idle timeout — `browser_count > 0` protects it."""
+
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port, idle_timeout=0.05, reap_interval=0.05)
+        try:
+            _, headers, _ = await http_get(port, "/new?name=Bob")
+            session_id = headers["location"][len("/s/") :]
+
+            ws = await WSClient.connect(port, f"/s/{session_id}/ws")
+            await asyncio.wait_for(ws.recv(), timeout=5)  # initial state frame
+
+            # Give the reaper several intervals; the attached browser keeps the
+            # session alive.
+            await asyncio.sleep(0.3)
+            assert session_id in server.sessions, "session with an attached browser was wrongly reaped"
+
+            await ws.close()
         finally:
             await _stop(server, task)
             await game.stop()

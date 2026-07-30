@@ -167,6 +167,22 @@ Each session runs as an independent set of asyncio tasks on the one event loop
 backoff if the connection drops. The terminal client (`coinche.client`) and the
 single-session overlay are unchanged and still work exactly as before.
 
+**Session recovery (browser).** The SPA stores its per-session id in
+`localStorage`. On the landing page it probes `GET /api/session?id=<id>`; if
+that session is still live it jumps straight back into it, so a page refresh or
+an accidentally-closed tab returns the player to their seat instead of spawning
+a new, orphaned session. A stale id — the session was reaped, or the server
+restarted — reports `{"alive": false}`, the browser drops it, and the name form
+is shown for a fresh start.
+
+**Idle timeout / reaping.** A background reaper on the méta-client kicks any
+session that has had **no browser attached and no activity** for longer than
+the idle timeout (default 120s). A kicked session first sends `LEAVE` — so the
+game server frees its seat pre-game, or hands it to a bot mid-game, and tears
+down a now-empty table — then it is removed. This keeps abandoned sessions from
+pinning seats forever and doubles as table housekeeping. A session with a live
+browser attached is never reaped.
+
 ### One-command launch (server + méta-client)
 
 To bring up the whole thing on one host — the game server *and* the méta-client
