@@ -731,10 +731,7 @@ def choose_card(game: Game, seat: Seat) -> Card:
         # before exposing an outside Ace or Ten. Monte-Carlo scores cannot override
         # a master trump lead, or a lead while the trump Valet can still be with the
         # partner. Once the Valet has fallen, a non-master trump is not forced.
-        if (
-            contract["team"] == TEAM_OF[seat]
-            and _opponents_may_hold_trump(game, seat, trump)
-        ):
+        if contract["team"] == TEAM_OF[seat] and _opponents_may_hold_trump(game, seat, trump):
             trumps = [card for card in legal_cards if card.suit == trump]
             best_trump = max(trumps, key=lambda card: _card_strength(card, trump), default=None)
             worst_trump = min(trumps, key=lambda card: _card_strength(card, trump), default=None)
@@ -763,7 +760,7 @@ def choose_card(game: Game, seat: Seat) -> Card:
             requested_trick_ace = [card for card in legal_cards if card.rank == "A" and card.suit == led_suit]
             if any(requested_trick_ace) and not any(card.suit == trump for _, card in trick):
                 return requested_trick_ace[0]
-        
+
     # Default to Monte-Carlo simulation
     samples = _sample_hidden_hands(game, seat, MONTE_CARLO_SAMPLES)
     if not samples:
