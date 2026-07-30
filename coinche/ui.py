@@ -455,6 +455,17 @@ def render_bid_menu(
         tokens[str(token)] = {"action": "select_trump", "trump": trump}
         token += 1
 
+    # Capot is a distinct contract, not "just a higher number": announcing it is
+    # worth more than sweeping every trick on a numeric bid (252 + 250 vs the
+    # numeric points + 252). It used to be reachable only by picking a trump and
+    # then typing the word "capot" at stage 2 -- easy to miss. Offer it as its
+    # own one-key entry per trump so it's directly announceable.
+    capot_trumps = [bid["trump"] for bid in legal_actions if bid["points"] == "capot"]
+    for trump in capot_trumps:
+        entries.append((str(token), f"Capot {trump}"))
+        tokens[str(token)] = {"action": "bid", "trump": trump, "points": "capot"}
+        token += 1
+
     if can_coinche:
         entries.append((str(token), "Coinche"))
         tokens[str(token)] = {"action": "coinche"}

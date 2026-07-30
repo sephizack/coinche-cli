@@ -211,20 +211,34 @@ const BidPanel = {
       return seen;
     },
     pointsForTrump() {
+      // Numeric levels only. Capot is announced via its own dedicated button
+      // (see capotAvailable / announceCapot), not by stepping past 180 — it's a
+      // distinct, higher-value contract, not just the next number up.
       if (!this.selectedTrump) return [];
-      const pts = this.legalActions
-        .filter((a) => a.trump === this.selectedTrump)
-        .map((a) => a.points);
-      const numeric = pts.filter((p) => p !== "capot").sort((a, b) => a - b);
-      const list = numeric.slice();
-      if (pts.includes("capot")) list.push("capot");
-      return list;
+      return this.legalActions
+        .filter((a) => a.trump === this.selectedTrump && a.points !== "capot")
+        .map((a) => a.points)
+        .sort((a, b) => a - b);
     },
     currentPoints() {
       return this.pointsForTrump[this.pointsIndex];
     },
     currentPointsLabel() {
-      return this.currentPoints === "capot" ? "Capot" : this.currentPoints;
+      return this.currentPoints;
+    },
+    capotOffered() {
+      // Whether capot is still on the table at all this auction (it's gone once
+      // someone has already announced it). Drives whether we show the button.
+      return this.legalActions.some((a) => a.points === "capot");
+    },
+    canAnnounceCapot() {
+      // Capot is bound to a trump suit, so a suit must be chosen first — same
+      // as a numeric announce. The button stays visible (for discoverability)
+      // but is disabled until then.
+      return (
+        this.selectedTrump != null &&
+        this.legalActions.some((a) => a.points === "capot" && a.trump === this.selectedTrump)
+      );
     },
     canAnnounce() {
       return this.selectedTrump != null && this.currentPoints != null;
@@ -255,6 +269,14 @@ const BidPanel = {
         bid_action: "bid",
         trump: this.selectedTrump,
         points: this.currentPoints,
+      });
+    },
+    announceCapot() {
+      if (!this.canAnnounceCapot) return;
+      this.$emit("bid", {
+        bid_action: "bid",
+        trump: this.selectedTrump,
+        points: "capot",
       });
     },
     pass() {
@@ -329,8 +351,7 @@ const BidPanel = {
             <button class="stepper-btn" data-testid="bid-points-down"
                     :disabled="pointsIndex <= 0 || sending" @click="step(-1)"
                     aria-label="Diminuer les points">−</button>
-            <span class="points-value" :class="{ 'points-value--capot': currentPoints === 'capot' }"
-                  data-testid="bid-points">{{ currentPointsLabel }}</span>
+            <span class="points-value" data-testid="bid-points">{{ currentPointsLabel }}</span>
             <button class="stepper-btn" data-testid="bid-points-up"
                     :disabled="pointsIndex >= pointsForTrump.length - 1 || sending" @click="step(1)"
                     aria-label="Augmenter les points">+</button>
@@ -342,6 +363,8 @@ const BidPanel = {
                   :disabled="sending" @click="pass">Passe</button>
           <button class="action-btn action-btn--announce" data-testid="bid-announce"
                   :disabled="!canAnnounce || sending" @click="announce">Annoncer</button>
+          <button v-if="capotOffered" class="action-btn action-btn--capot" data-testid="bid-capot"
+                  :disabled="!canAnnounceCapot || sending" @click="announceCapot">Annoncer Capot</button>
           <button v-if="request && request.can_coinche" class="action-btn action-btn--coinche"
                   data-testid="bid-coinche" :disabled="sending" @click="coinche">Coincher</button>
           <button v-if="request && request.can_surcoinche" class="action-btn action-btn--surcoinche"
