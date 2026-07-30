@@ -697,26 +697,33 @@ def choose_card(game: Game, seat: Seat) -> Card:
     if len(legal_cards) == 1:
         return legal_cards[0]
 
-    # Hard safety rule for the actual choice, not only the rollout policy: a
-    # declaring-team player who leads may remove possible defensive ruffers
-    # before exposing an outside Ace or Ten. Monte-Carlo scores cannot override
-    # a master trump lead, or a lead while the trump Valet can still be with the
-    # partner. Once the Valet has fallen, a non-master trump is not forced.
+    # Algo ouverture by bot
     contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
     trump = options["trump"]
-    if (
-        not game.round_state.current_trick
-        and contract is not None
-        and contract["team"] == TEAM_OF[seat]
-        and trump is not None
-        and _opponents_may_hold_trump(game, seat, trump)
-    ):
-        trumps = [card for card in legal_cards if card.suit == trump]
-        best_trump = max(trumps, key=lambda card: _card_strength(card, trump), default=None)
-        jack_has_not_fallen = not _has_been_played(Card("V", trump), game.round_state)
-        if best_trump is not None and (jack_has_not_fallen or _is_master(best_trump, game.get_hand(seat), game, trump)):
-            return best_trump
+    if not game.round_state.current_trick and contract is not None and trump is not None:
+        # Hard safety rule for the actual choice, not only the rollout policy: a
+        # declaring-team player who leads may remove possible defensive ruffers
+        # before exposing an outside Ace or Ten. Monte-Carlo scores cannot override
+        # a master trump lead, or a lead while the trump Valet can still be with the
+        # partner. Once the Valet has fallen, a non-master trump is not forced.
+        if (
+            contract["team"] == TEAM_OF[seat]
+            and _opponents_may_hold_trump(game, seat, trump)
+        ):
+            trumps = [card for card in legal_cards if card.suit == trump]
+            best_trump = max(trumps, key=lambda card: _card_strength(card, trump), default=None)
+            worst_trump = min(trumps, key=lambda card: _card_strength(card, trump), default=None)
+            jack_has_not_fallen = not _has_been_played(Card("V", trump), game.round_state)
+            if best_trump is not None and _is_master(best_trump, game.get_hand(seat), game, trump)):
+                return best_trump
+            if worst_trump is not None and jack_has_not_fallen:
+                return worst_trump
+        else:
+            owned_non_trump_aces = [card for card in legal_cards if card.rank == "A" and card.suit != trump]
+            if owned_non_trump_aces:
+                return random.choice(owned_non_trump_aces)
 
+    # Default to Monte-Carlo simulation
     samples = _sample_hidden_hands(game, seat, MONTE_CARLO_SAMPLES)
     if not samples:
         return _select_tactical_card_for_simulation(game, seat)
