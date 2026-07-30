@@ -596,16 +596,22 @@ def render_round_score(
     round_grid = Table.grid(expand=True, padding=(0, 2))
     round_grid.add_column(justify="center")
     round_grid.add_column(justify="center")
+    def _cards_text(team: str) -> str:
+        cards = f"cartes : {round_score[team]['card_points']}"
+        if round_score[team].get("belote_bonus"):
+            cards += f" +{round_score[team]['belote_bonus']} (belote)"
+        return cards
+
     round_grid.add_row(
         _team_label(
             f"{local_label} : {round_score[local_team]['total']} pts "
-            f"(cartes : {round_score[local_team]['card_points']})",
+            f"({_cards_text(local_team)})",
             local_players,
             TEAM_COLORS["nous"],
         ),
         _team_label(
             f"{other_label} : {round_score[other_team]['total']} pts "
-            f"(cartes : {round_score[other_team]['card_points']})",
+            f"({_cards_text(other_team)})",
             other_players,
             TEAM_COLORS["eux"],
         ),
