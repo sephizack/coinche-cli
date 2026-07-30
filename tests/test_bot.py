@@ -10,9 +10,9 @@ import coinche.bot as bot
 from coinche import server
 from coinche.bot import (
     _auction_card_weights,
-    _select_tactical_card_for_simulation,
     _known_void_suits,
     _sample_hidden_hands,
+    _select_tactical_card_for_simulation,
     choose_bid,
     choose_card,
     configure_samples,
@@ -171,7 +171,10 @@ def test_discard_shortens_the_shortest_side_suit() -> None:
     assert _select_tactical_card_for_simulation(game, Seat.S) == Card("7", "♦")
 
 
-def test_bot_uses_the_cheapest_card_that_wins() -> None:
+def test_bot_cashes_the_requested_suit_ace_when_no_trump_is_in_the_trick() -> None:
+    # N leads a side suit (♥) while trumps are ♠. W holds the Ace and King of
+    # the led suit and nobody has ruffed yet, so the bot cashes the master Ace
+    # to bank the trick outright instead of exposing it to a later ruff.
     game = Game()
     assert game.round_state is not None
     game.phase = "trick_play"
@@ -180,7 +183,7 @@ def test_bot_uses_the_cheapest_card_that_wins() -> None:
     game.round_state.current_trick = [(Seat.N, Card("D", "♥"))]
     game.round_state.hands[Seat.W] = _cards("A♥", "R♥")
 
-    assert choose_card(game, Seat.W) == Card("R", "♥")
+    assert choose_card(game, Seat.W) == Card("A", "♥")
 
 
 def test_card_choice_does_not_depend_on_real_hidden_hands() -> None:
@@ -201,10 +204,11 @@ def test_card_choice_does_not_depend_on_real_hidden_hands() -> None:
     assert choose_card(game, Seat.W) == choose_card(altered, Seat.W)
 
 
-def test_partner_of_taker_does_not_lead_trump_under_the_taker() -> None:
+def test_partner_of_taker_leads_a_non_master_trump_to_help_pull() -> None:
     # N took the contract; S (the partner) is on lead holding the 9 of trump.
-    # Leading it would force N's Valet to overtrump its own partner, burning
-    # two masters in one trick. S must discard low instead and let N pull.
+    # While opponents may still hold trumps and the Valet has not fallen, the
+    # declaring side leads trump to strip the opponents' ruffers, so S opens
+    # with its lone 9 of trump rather than idly discarding a side card.
     game = Game()
     assert game.round_state is not None and game.bid_state is not None
     game.round_state.trump = "♠"
@@ -214,7 +218,7 @@ def test_partner_of_taker_does_not_lead_trump_under_the_taker() -> None:
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("9♠", "7♣", "8♦")
 
-    assert choose_card(game, Seat.S) == Card("7", "♣")
+    assert choose_card(game, Seat.S) == Card("9", "♠")
 
 
 def test_partner_pulls_with_a_non_master_trump_when_taker_is_known_void(monkeypatch) -> None:

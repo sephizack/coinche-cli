@@ -170,9 +170,7 @@ def _public_snapshot_to_wire(snapshot: dict, table_key: str, table: Table, spect
         "cumulative_scores": snapshot["cumulative_scores"],
         "round_number": snapshot["round_number"],
         "dealer_seat": _seat_to_str(snapshot["dealer_seat"]),
-        "contract": (
-            {**contract, "seat": _seat_to_str(contract["seat"])} if contract is not None else None
-        ),
+        "contract": ({**contract, "seat": _seat_to_str(contract["seat"])} if contract is not None else None),
         "target_score": table.target_score,
         "server_version": __version__,
     }
