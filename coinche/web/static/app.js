@@ -439,6 +439,8 @@ const App = {
     const badgeFlash = ref(false);
     const bidEffect = ref(null);
     const bidEffectKey = ref(0);
+    const beloteEffect = ref(null);
+    const beloteEffectKey = ref(0);
     const bidAnnouncement = ref(null);
     const bidAnnouncementKey = ref(0);
     const sweepClass = ref(null); // e.g. "sweep-north" while a trick sweeps out
@@ -458,6 +460,7 @@ const App = {
     let backoff = 500;
     let toastId = 0;
     let bidEffectTimer = null;
+    let beloteEffectTimer = null;
     let bidAnnouncementTimer = null;
 
     // -------- WebSocket (ConnectionLayer) --------
@@ -542,6 +545,19 @@ const App = {
         bidEffectTimer = setTimeout(() => {
           bidEffect.value = null;
           bidEffectTimer = null;
+        }, 2400);
+      }
+
+      // Mirror the Coinche effect for a Belote/Rebelote declaration: the seq
+      // counter bumps once per declaration, re-triggering the pop each time
+      // (Belote first, Rebelote later in the same round).
+      if (prev && snap.belote_effect_seq > (prev.belote_effect_seq || 0)) {
+        beloteEffect.value = snap.belote_effect;
+        beloteEffectKey.value += 1;
+        if (beloteEffectTimer) clearTimeout(beloteEffectTimer);
+        beloteEffectTimer = setTimeout(() => {
+          beloteEffect.value = null;
+          beloteEffectTimer = null;
         }, 2400);
       }
 
@@ -1046,6 +1062,8 @@ const App = {
       badgeFlash,
       bidEffect,
       bidEffectKey,
+      beloteEffect,
+      beloteEffectKey,
       bidAnnouncement,
       bidAnnouncementKey,
       sweepClass,
@@ -1105,6 +1123,12 @@ const App = {
          role="status" aria-live="assertive">
       <span v-if="bidEffect >= 4">🔥 SURCOINCHE ! ×4 🔥</span>
       <span v-else>⚡ COINCHE ! ×2 ⚡</span>
+    </div>
+    <!-- Belote / Rebelote declaration, mirroring the Coinche effect. -->
+    <div v-if="beloteEffect" :key="'belote-' + beloteEffectKey" class="bid-effect bid-effect--belote"
+         role="status" aria-live="assertive">
+      <span v-if="beloteEffect === 'rebelote'">👑 REBELOTE ! 👑</span>
+      <span v-else>💑 BELOTE ! 💑</span>
     </div>
     <div v-if="bidAnnouncement" :key="bidAnnouncementKey" class="bid-effect bid-effect--announcement"
          role="status" aria-live="polite">

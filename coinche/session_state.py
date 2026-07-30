@@ -73,6 +73,12 @@ class ClientState:
     # It stays visible through the first play, while `coinche_level` remains as
     # the compact contract badge for the rest of the round.
     bid_effect_level: int = 1
+    # A short-lived, high-visibility alert for a Belote/Rebelote declaration,
+    # mirroring the Coinche effect. `belote_effect` holds the last announced
+    # word ("belote"/"rebelote"); `belote_effect_seq` is a monotonic counter the
+    # web client diffs to re-trigger the pop animation on each declaration.
+    belote_effect: str | None = None
+    belote_effect_seq: int = 0
     # Highest bid still standing *while bidding is ongoing* (distinct from
     # `trump`/`contract_points`/`contract_bidder` above, which only get set
     # once bidding has settled into a final contract at BIDDING_RESULT).
@@ -382,6 +388,8 @@ def _reset_to_lobby(state: ClientState) -> None:
     state.contract_bidder = fresh.contract_bidder
     state.coinche_level = fresh.coinche_level
     state.bid_effect_level = fresh.bid_effect_level
+    state.belote_effect = fresh.belote_effect
+    state.belote_effect_seq = fresh.belote_effect_seq
     state.current_bid_trump = fresh.current_bid_trump
     state.current_bid_points = fresh.current_bid_points
     state.current_bid_seat = fresh.current_bid_seat
@@ -602,6 +610,8 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             state.last_action += " — Rebelote !"
         if announcement in ("belote", "rebelote"):
             _append_belote_announcement(state, played_seat, announcement)
+            state.belote_effect = announcement
+            state.belote_effect_seq += 1
         next_to_act = payload.get("next_to_act")
         state.whose_turn = Seat(next_to_act) if next_to_act is not None else None
         if played_seat == state.seat and payload["card"] in state.hand:
@@ -773,6 +783,8 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "contract_bidder": state.contract_bidder.value if state.contract_bidder is not None else None,
         "coinche_level": state.coinche_level,
         "bid_effect_level": state.bid_effect_level,
+        "belote_effect": state.belote_effect,
+        "belote_effect_seq": state.belote_effect_seq,
         "current_bid": {
             "trump": state.current_bid_trump,
             "points": state.current_bid_points,
