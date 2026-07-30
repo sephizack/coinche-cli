@@ -112,12 +112,19 @@ free_port() {
 # Tue tous les process coinche restants d'un lancement précédent (serveur `python
 # -m coinche.server` et méta `python -m coinche.meta`). Ils n'occupent pas
 # forcément les ports libérés par free_port mais continuent de tourner ; on les
-# nettoie ici. Le pattern ne matche que les process python `-m coinche`, donc
-# jamais ce script bash lui-même.
+# nettoie ici.
+#
+# On n'utilise pas `pgrep` : absent de busybox (NAS). On liste via `ps` et on
+# filtre avec awk. `ps -o pid= -o args=` marche sur GNU/BSD/macOS ; si ça ne
+# donne rien (busybox), on retombe sur `ps w` puis `ps` nu. Le PID est le 1er
+# champ dans ces trois formats. Le pattern ne matche que les process python
+# `-m coinche`, donc jamais ce script bash lui-même ; `!/awk/` exclut awk.
 kill_coinche_processes() {
-    command -v pgrep >/dev/null 2>&1 || return 0
-    local pids
-    pids="$(pgrep -f 'python.* -m coinche' 2>/dev/null || true)"
+    local ps_out pids
+    ps_out="$(ps -o pid= -o args= 2>/dev/null || true)"
+    [[ -z "$ps_out" ]] && ps_out="$(ps w 2>/dev/null || true)"
+    [[ -z "$ps_out" ]] && ps_out="$(ps 2>/dev/null || true)"
+    pids="$(printf '%s\n' "$ps_out" | awk '/python.* -m coinche/ && !/awk/ {print $1}' || true)"
     [[ -z "$pids" ]] && return 0
     # shellcheck disable=SC2086
     echo "Process coinche encore actifs ($(echo $pids | tr '\n' ' ')) — arrêt avant de démarrer."
