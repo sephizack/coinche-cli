@@ -898,9 +898,13 @@ const App = {
       // awarded for the round (which can include a contract or belote bonus).
       const scoreFor = (team) => {
         const t = rs[team];
-        if (t == null) return { cardPoints: 0, total: 0 };
-        if (typeof t !== "object") return { cardPoints: 0, total: t };
-        return { cardPoints: t.card_points ?? 0, total: t.total ?? 0 };
+        if (t == null) return { cardPoints: 0, beloteBonus: 0, total: 0 };
+        if (typeof t !== "object") return { cardPoints: 0, beloteBonus: 0, total: t };
+        return {
+          cardPoints: t.card_points ?? 0,
+          beloteBonus: t.belote_bonus ?? 0,
+          total: t.total ?? 0,
+        };
       };
       return {
         nous: scoreFor(localTeam.value),
@@ -1300,6 +1304,7 @@ const App = {
             <div class="recap__score-players">{{ teamPlayers.nous }}</div>
             <div class="recap__score-value">{{ roundScores.nous.cardPoints }}</div>
             <div class="recap__score-caption">points aux cartes</div>
+            <div v-if="roundScores.nous.beloteBonus" class="recap__score-belote">+{{ roundScores.nous.beloteBonus }} Belote/Rebelote</div>
             <div class="recap__score-total">Score de la manche : {{ roundScores.nous.total }} pts</div>
           </div>
           <div>
@@ -1307,6 +1312,7 @@ const App = {
             <div class="recap__score-players">{{ teamPlayers.eux }}</div>
             <div class="recap__score-value">{{ roundScores.eux.cardPoints }}</div>
             <div class="recap__score-caption">points aux cartes</div>
+            <div v-if="roundScores.eux.beloteBonus" class="recap__score-belote">+{{ roundScores.eux.beloteBonus }} Belote/Rebelote</div>
             <div class="recap__score-total">Score de la manche : {{ roundScores.eux.total }} pts</div>
           </div>
         </div>
