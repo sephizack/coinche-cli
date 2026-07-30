@@ -274,18 +274,25 @@ class Table:
 
         Used when a player leaves mid-game: the seat can't simply be vacated
         (the Game holds four hands and expects four actors), so instead the
-        session keeps its seat/name but becomes bot-driven -- `writer` is
-        dropped (nothing more is pushed to the departed client) and `is_bot`
-        flips on so `_run_bot_turns` will act for it. The remaining players are
-        never left blocked waiting on an empty seat. Returns the departing name.
+        session keeps its seat but becomes bot-driven -- `writer` is dropped
+        (nothing more is pushed to the departed client) and `is_bot` flips on so
+        `_run_bot_turns` will act for it. The seat is also given a fresh random
+        bot name (drawn from `BOT_NAMES`, avoiding names already in use at the
+        table), so the chair reads as a bot rather than keeping the departed
+        human's name -- mirroring `fill_with_bots`. The remaining players are
+        never left blocked waiting on an empty seat. Returns the new bot name.
         """
         session = self.seats[seat]
         assert session is not None
-        name = session.name
+        used_names = {
+            s.name.lower() for other, s in self.seats.items() if s is not None and other != seat
+        }
+        session.name = _pick_bot_name(used_names)
         session.writer = None
         session.connected = True
         session.is_bot = True
-        return name
+        session.team_name = None
+        return session.name
 
     def bot_seats(self) -> list[Seat]:
         """Seats currently held by a server-controlled bot, in table order.

@@ -625,8 +625,28 @@ def test_bot_replaced_status_swaps_seat_name_and_shows_banner():
     )
     assert result.action_requested is False
     assert state.players[Seat.E] == "Bob"
+    assert state.bots[Seat.E] is False  # the seat is no longer a bot
     assert state.connection_status[Seat.E] is True
     assert state.last_action == "🙋 Bob a rejoint la table à la place d'un bot"
+
+
+def test_replaced_by_bot_status_renames_seat_and_flags_bot():
+    """A human leaving mid-game: the seat is relabeled to the bot's fresh name
+    (`bot_name`) and flagged as a bot, while the banner still names the departed
+    human. The bot flag also surfaces in the snapshot for the felt badge."""
+    state = ClientState()
+    _join(state)
+    assert state.bots.get(Seat.N) in (False, None)
+    result = apply_message(
+        state,
+        protocol.CONNECTION_STATUS,
+        {"seat": "N", "name": "Nord", "bot_name": "Sephiroth", "status": "replaced_by_bot"},
+    )
+    assert result.action_requested is False
+    assert state.players[Seat.N] == "Sephiroth"  # seat relabeled to the bot
+    assert state.bots[Seat.N] is True
+    assert state.last_action == "👋 Nord a quitté — un bot prend la relève"
+    assert snapshot_to_dict(state)["bots"]["N"] is True
 
 
 def test_chat_appends_message_with_team():

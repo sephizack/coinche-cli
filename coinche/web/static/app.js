@@ -155,6 +155,7 @@ const SeatPanel = {
     bidMark: { type: String, default: null },
     isTurn: Boolean,
     isDealer: Boolean,
+    isBot: Boolean,
     connected: { type: Boolean, default: true },
   },
   computed: {
@@ -174,6 +175,7 @@ const SeatPanel = {
     <div :class="seatClasses">
       <div class="seat__nameplate">
         <span class="seat__name">{{ name }}</span>
+        <span v-if="isBot" class="seat__tag">bot</span>
         <span v-if="isDealer" class="seat__badge">(D)</span>
       </div>
       <span v-if="!connected" class="seat__offline-note">déconnecté</span>
@@ -784,6 +786,7 @@ const App = {
       const trick = s.current_trick || {};
       const marks = s.bid_marks || {};
       const conn = s.connection_status || {};
+      const bots = s.bots || {};
       return Object.keys(players).map((seatId) => {
         return {
           seatId,
@@ -794,6 +797,7 @@ const App = {
           bidMark: marks[seatId] || null,
           isTurn: s.whose_turn === seatId,
           isDealer: s.dealer_seat === seatId,
+          isBot: bots[seatId] === true,
           connected: conn[seatId] !== false,
         };
       });
@@ -1417,6 +1421,7 @@ const App = {
                   :bid-mark="s.bidMark"
                   :is-turn="s.isTurn"
                   :is-dealer="s.isDealer"
+                  :is-bot="s.isBot"
                   :connected="s.connected"
                 ></seat-panel>
 

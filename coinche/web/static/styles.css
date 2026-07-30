@@ -351,6 +351,15 @@ button {
   color: var(--gold);
   font-weight: 700;
 }
+/* "bot" pill on a seat driven by a bot, mirroring the lobby's .seatchip__tag. */
+.seat__tag {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  color: var(--gold-soft);
+  border: 1px solid var(--gold-soft);
+  border-radius: 4px;
+  padding: 0 3px;
+}
 .seat--turn .seat__nameplate {
   box-shadow: var(--glow-gold);
   border-color: var(--gold);
