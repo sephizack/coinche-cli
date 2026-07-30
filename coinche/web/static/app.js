@@ -364,7 +364,7 @@ const BidPanel = {
           <button class="action-btn action-btn--announce" data-testid="bid-announce"
                   :disabled="!canAnnounce || sending" @click="announce">Annoncer</button>
           <button v-if="capotOffered" class="action-btn action-btn--capot" data-testid="bid-capot"
-                  :disabled="!canAnnounceCapot || sending" @click="announceCapot">Annoncer Capot</button>
+                  :disabled="!canAnnounceCapot || sending" @click="announceCapot">Capot</button>
           <button v-if="request && request.can_coinche" class="action-btn action-btn--coinche"
                   data-testid="bid-coinche" :disabled="sending" @click="coinche">Coincher</button>
           <button v-if="request && request.can_surcoinche" class="action-btn action-btn--surcoinche"

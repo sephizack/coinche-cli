@@ -619,7 +619,7 @@ def test_web_bid_panel_has_a_dedicated_capot_button() -> None:
 
     # A dedicated, labelled Capot action bound to its own handler.
     assert 'data-testid="bid-capot"' in app
-    assert "Annoncer Capot" in app
+    assert "Capot" in app
     assert "announceCapot()" in app
     assert ".action-btn--capot" in styles
     # The numeric stepper no longer carries a "capot" rung.
