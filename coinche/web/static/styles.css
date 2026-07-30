@@ -1749,6 +1749,13 @@ body > .lobby {
   letter-spacing: 0.04em;
   animation: bid-announcement-pop 2.2s var(--ease-standard) both;
 }
+.bid-effect--belote {
+  border-color: #a8d8ff;
+  background: linear-gradient(135deg, #1c4a7a, #2f7bc4 52%, #1c4a7a);
+  box-shadow:
+    0 0 0 5px rgba(168, 216, 255, 0.25),
+    0 0 48px rgba(47, 123, 196, 0.85);
+}
 .bid-effect__actor {
   font-size: 0.62em;
   font-weight: 700;
