@@ -377,10 +377,9 @@ def test_hard_trump_hook_pulls_a_master_after_jack_has_fallen(monkeypatch) -> No
     assert choose_card(game, Seat.S) == Card("10", "♠")
 
 
-def test_hard_trump_hook_defers_when_jack_has_fallen_and_trump_is_not_master(monkeypatch) -> None:
-    # Once V♠ has been played, a 10♠ with higher trumps still outstanding is not
-    # guaranteed to win. The hard rule must let Monte-Carlo choose instead of
-    # forcing that losing trump lead.
+def test_opening_cashes_a_side_ace_after_the_jack_has_fallen(monkeypatch) -> None:
+    # Once V♠ has been played, 10♠ is not a guaranteed winner. The opening
+    # policy instead cashes the available side Ace before Monte-Carlo runs.
     game = Game()
     assert game.round_state is not None and game.bid_state is not None
     game.round_state.trump = "♠"
@@ -410,10 +409,8 @@ def test_hard_trump_hook_defers_when_jack_has_fallen_and_trump_is_not_master(mon
         return []
 
     monkeypatch.setattr(bot, "_sample_hidden_hands", no_samples)
-    monkeypatch.setattr(bot, "_select_tactical_card_for_simulation", lambda *args: Card("7", "♣"))
-
-    assert choose_card(game, Seat.S) == Card("7", "♣")
-    assert samples_called
+    assert choose_card(game, Seat.S) == Card("A", "♥")
+    assert not samples_called
 
 
 def test_taker_stops_pulling_once_all_opponent_trumps_are_gone() -> None:
@@ -512,12 +509,10 @@ def test_defender_on_lead_does_not_open_a_trump_without_the_master() -> None:
     assert choose_card(game, Seat.S).suit != "♠"
 
 
-def test_defender_on_lead_opens_the_master_trump() -> None:
-    # EW took the contract; S is defending and on lead holding the ♠ Valet, the
-    # outright master of the trump suit. Unlike a low trump, leading the master
-    # wins the trick outright and strips the takers of a ruffer, so S opens it --
-    # the trump exception to the no-trump-lead rule. The two side cards are
-    # worthless, so leading the 20-point master is unambiguously best.
+def test_defender_on_lead_tries_an_unplayed_side_suit_before_master_trump() -> None:
+    # EW took the contract; S holds the master ♠ Valet, but both side suits are
+    # still unplayed. The opening policy explores a new side suit first, using
+    # the lowest card among those candidates.
     game = Game()
     assert game.round_state is not None and game.bid_state is not None
     game.round_state.trump = "♠"
@@ -527,7 +522,7 @@ def test_defender_on_lead_opens_the_master_trump() -> None:
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("V♠", "7♣", "8♦")
 
-    assert choose_card(game, Seat.S) == Card("V", "♠")
+    assert choose_card(game, Seat.S) == Card("7", "♣")
 
 
 def test_defender_holding_the_master_does_not_lead_trump_when_opponents_are_void() -> None:
