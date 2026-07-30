@@ -492,6 +492,70 @@ def test_declarer_keeps_a_master_that_a_known_defender_can_ruff() -> None:
     assert _select_tactical_card_for_simulation(game, Seat.S) == Card("7", "♣")
 
 
+def test_defender_on_lead_does_not_open_a_trump_without_the_master() -> None:
+    # EW took the contract; S is defending and on lead holding a lone 9♠ trump
+    # (not the master, since the ♠ Valet is unseen). Opening trump only helps the
+    # takers draw a round, so S must lead a side card instead of the trump.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("9♠", "7♣", "8♦")
+
+    assert choose_card(game, Seat.S).suit != "♠"
+
+
+def test_defender_on_lead_opens_the_master_trump() -> None:
+    # EW took the contract; S is defending and on lead holding the ♠ Valet, the
+    # outright master of the trump suit. Unlike a low trump, leading the master
+    # wins the trick outright and strips the takers of a ruffer, so S opens it --
+    # the trump exception to the no-trump-lead rule. The two side cards are
+    # worthless, so leading the 20-point master is unambiguously best.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("V♠", "7♣", "8♦")
+
+    assert choose_card(game, Seat.S) == Card("V", "♠")
+
+
+def test_defender_holding_the_master_does_not_lead_trump_when_opponents_are_void() -> None:
+    # EW took the contract; S is defending and on lead holding the ♠ Valet, the
+    # outright master. But both opponents (E and W) discarded a side card when
+    # partner N led trump, proving each is void: the only outstanding trumps sit
+    # with the partner. Leading the master now strips no ruffer and just wastes
+    # the lead, so S must open a side suit instead.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("A", "♠")),
+                (Seat.E, Card("7", "♥")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.W, Card("7", "♦")),
+            ],
+            "points_won": 11,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("V♠", "7♣", "8♦")
+
+    assert choose_card(game, Seat.S).suit != "♠"
+
+
 def test_discarding_on_a_side_lead_reveals_a_trump_void() -> None:
     # ♥ is led, W neither follows ♥ nor trumps (♠) while the winner so far (N)
     # is not W's partner: the rules would have forced a cut, so W holds no trump.

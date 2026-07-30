@@ -334,6 +334,25 @@ def _partner_is_known_void_of_trump(game: Game, seat: Seat, trump: str) -> bool:
     return trump in _known_void_suits(game.round_state)[PARTNER_OF[seat]]
 
 
+def _defender_trump_lead_is_wasteful(game: Game, seat: Seat, trump: str) -> bool:
+    """Whether a defender on lead should keep trump out of its opening options.
+
+    Leading a trump when the opponents took the contract usually just helps them
+    draw a round and burns one of our own guards. The one time it pays is holding
+    the master of the outstanding trumps *while the takers may still hold trump*:
+    then the master wins outright and strips a ruffer. Once the opponents are out
+    of trump even the master lead is pointless, so trump is dropped in that case
+    too.
+    """
+    assert game.round_state is not None
+    contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
+    if contract is None or contract["team"] == TEAM_OF[seat]:
+        return False
+    hand = game.get_hand(seat)
+    holds_master = any(card.suit == trump and _is_master(card, hand, game, trump) for card in hand)
+    return not (holds_master and _opponents_may_hold_trump(game, seat, trump))
+
+
 def _select_tactical_card_for_simulation(game: Game, seat: Seat) -> Card:
     """Choose a team-oriented card for one simulated world.
 
@@ -351,6 +370,12 @@ def _select_tactical_card_for_simulation(game: Game, seat: Seat) -> Card:
 
     if not trick:
         hand = game.get_hand(seat)
+        # A defender on lead should not gift the takers a trump lead; keep trump
+        # out of the options unless the master lead is worth it.
+        if _defender_trump_lead_is_wasteful(game, seat, trump):
+            non_trumps = [card for card in legal_cards if card.suit != trump]
+            if non_trumps:
+                legal_cards = non_trumps
         masters = [card for card in legal_cards if _is_master(card, hand, game, trump)]
         contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
         is_taker = contract is not None and contract["seat"] == seat
@@ -722,6 +747,13 @@ def choose_card(game: Game, seat: Seat) -> Card:
             owned_non_trump_aces = [card for card in legal_cards if card.rank == "A" and card.suit != trump]
             if owned_non_trump_aces:
                 return random.choice(owned_non_trump_aces)
+            # Defending team on lead: drop trump from the candidates (unless the
+            # master lead is worth it) so neither Monte-Carlo nor the tactical
+            # fallback can gift the takers a trump lead.
+            elif _defender_trump_lead_is_wasteful(game, seat, trump):
+                non_trumps = [card for card in legal_cards if card.suit != trump]
+                if non_trumps:
+                    legal_cards = non_trumps
 
     if game.round_state.current_trick:
         # If the partner is winning the trick, discard a low card to develop the hand.
