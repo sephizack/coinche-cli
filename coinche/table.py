@@ -97,6 +97,20 @@ class ClientSession:
     is_bot: bool = False
 
 
+@dataclass
+class SpectatorSession:
+    """A seatless, read-only watcher of a table (A-spectate).
+
+    A spectator receives every public game broadcast (bidding, plays, tricks,
+    scores) via `Table.broadcast` and can participate in chat, but holds no
+    seat, is never dealt a hand, and cannot bid/play. Multiple spectators can
+    watch the same table at once, including while it is full or mid-game."""
+
+    name: str
+    writer: asyncio.StreamWriter | None
+    connected: bool = True
+
+
 class Table:
     """A single table's seats, connections, and game state."""
 
@@ -124,6 +138,10 @@ class Table:
         self.bot_think_seconds = bot_think_seconds
         self.lock = asyncio.Lock()
         self.seats: dict[Seat, ClientSession | None] = {seat: None for seat in SEAT_ORDER}
+        # Seatless watchers keyed by their (case-insensitive) chat name so a
+        # spectator's own writer can be found for removal and duplicate names are
+        # rejected. They receive every `broadcast` but never a per-seat `send_to`.
+        self.spectators: dict[str, SpectatorSession] = {}
         self.game: Game | None = None
 
     def bot_think_delay(self) -> float:
@@ -241,6 +259,30 @@ class Table:
         assert self.game is None
         self.seats[seat] = None
 
+    def add_spectator(self, name: str, writer: asyncio.StreamWriter | None) -> str:
+        """Register a seatless watcher and return the (possibly disambiguated) name.
+
+        A spectator name must not collide with a connected seated player's name
+        (they share the chat namespace) nor another current spectator; a numeric
+        suffix is appended when it would. Unlike `add_player`, this never raises
+        and is always allowed -- a full or in-progress table can still be watched.
+        """
+        seated = {s.name.lower() for s in self.seats.values() if s is not None and s.connected}
+        watching = set(self.spectators.keys())
+        taken = seated | watching
+        unique = name
+        if unique.lower() in taken:
+            suffix = 2
+            while f"{name} {suffix}".lower() in taken:
+                suffix += 1
+            unique = f"{name} {suffix}"
+        self.spectators[unique.lower()] = SpectatorSession(name=unique, writer=writer)
+        return unique
+
+    def remove_spectator(self, name: str) -> None:
+        """Drop a spectator by name (idempotent)."""
+        self.spectators.pop(name.lower(), None)
+
     def fill_with_bots(self) -> list[Seat]:
         """Fill every open pre-game seat with a server-controlled bot."""
         if self.game is not None:
@@ -284,6 +326,21 @@ class Table:
                 await session.writer.drain()
             except (ConnectionError, OSError):
                 self.mark_disconnected(seat)
+        # Spectators receive every public broadcast (bidding/plays/tricks/scores/
+        # chat) but never a per-seat `send_to` (so no hands leak, BR-U1-6). A
+        # spectator whose socket errors is dropped outright -- there's no seat to
+        # hold open for reconnection.
+        await self._broadcast_to_spectators(data)
+
+    async def _broadcast_to_spectators(self, data: bytes) -> None:
+        for key, spectator in list(self.spectators.items()):
+            if spectator.writer is None:
+                continue
+            try:
+                spectator.writer.write(data)
+                await spectator.writer.drain()
+            except (ConnectionError, OSError):
+                self.spectators.pop(key, None)
 
     async def send_to(self, seat: Seat, msg_type: str, payload: dict) -> None:
         session = self.seats.get(seat)
@@ -295,6 +352,19 @@ class Table:
             await session.writer.drain()
         except (ConnectionError, OSError):
             self.mark_disconnected(seat)
+
+    @staticmethod
+    async def send_to_writer(writer: asyncio.StreamWriter | None, msg_type: str, payload: dict) -> None:
+        """Send one message directly to an arbitrary writer (a spectator, which
+        holds no seat). Best-effort: a dropped socket is swallowed, matching
+        `send_to` -- the connection loop notices the EOF and cleans up."""
+        if writer is None:
+            return
+        try:
+            writer.write(protocol.encode(msg_type, payload))
+            await writer.drain()
+        except (ConnectionError, OSError):
+            pass
 
 
 TABLES: dict[str, Table] = {}
@@ -336,6 +406,7 @@ def tables_listing() -> list[dict]:
                 "table_key": table.table_key,
                 "in_progress": table.game is not None,
                 "seats_filled": seats_filled,
+                "spectators": len(table.spectators),
                 "players": [
                     {
                         "seat": _seat_to_str(seat),

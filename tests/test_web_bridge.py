@@ -139,8 +139,8 @@ class FakeLink:
         self.calls.append(("chat", text))
         return True
 
-    async def send_join(self, table_key, player_name, team_name, seat=None) -> bool:
-        self.calls.append(("join", table_key, player_name, team_name, seat))
+    async def send_join(self, table_key, player_name, team_name, seat=None, spectate=False) -> bool:
+        self.calls.append(("join", table_key, player_name, team_name, seat, spectate))
         return True
 
     async def send_rematch(self) -> bool:
@@ -289,7 +289,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
                 await asyncio.sleep(0.01)
             assert ("bid", "bid", "♠", 90) in link.calls
             assert ("chat", "salut") in link.calls
-            assert ("join", "t1", "Zoe", None, None) in link.calls
+            assert ("join", "t1", "Zoe", None, None, False) in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
             assert ("fill_bots",) in link.calls

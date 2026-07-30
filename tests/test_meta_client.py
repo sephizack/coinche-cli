@@ -360,7 +360,7 @@ def test_leave_forgets_remembered_join() -> None:
 
         # A browser join is remembered (drives auto-rejoin after a drop).
         await session.bridge.on_browser_message({"action": "join", "table_key": "table1", "player_name": "Bob"})
-        assert session._join_args == ("table1", "Bob", None)
+        assert session._join_args == ("table1", "Bob", None, False)
 
         # Leaving forgets it.
         await session.bridge.on_browser_message({"action": "leave"})

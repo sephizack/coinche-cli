@@ -363,7 +363,11 @@ class WebOverlayServer:
             await self.link.send_chat(msg["text"])
         elif action == "join":
             await self.link.send_join(
-                msg["table_key"], msg["player_name"], msg.get("team_name"), msg.get("seat")
+                msg["table_key"],
+                msg["player_name"],
+                msg.get("team_name"),
+                msg.get("seat"),
+                spectate=bool(msg.get("spectate")),
             )
         elif action == "continue" and self.on_round_continue is not None:
             await self.on_round_continue()

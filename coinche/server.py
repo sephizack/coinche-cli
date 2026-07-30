@@ -112,6 +112,37 @@ def _snapshot_to_wire(snapshot: dict, table_key: str, table: Table) -> dict:
     }
 
 
+def _public_snapshot_to_wire(snapshot: dict, table_key: str, table: Table, spectator_name: str) -> dict:
+    """Wire form of `Game.public_snapshot` for the SPECTATING message: a seatless,
+    hand-free view a spectator can render immediately on join (mid-bid or mid-play).
+
+    Mirrors `_snapshot_to_wire`'s enum->string conversions but carries no `hand`
+    (a spectator never sees cards) and adds `spectator_name` so the client knows
+    it is watching, not seated, and can label its own chat lines."""
+    current_highest_bid = _bid_to_wire(snapshot["current_highest_bid"])
+    bid_history = [{**entry, "seat": _seat_to_str(entry["seat"])} for entry in snapshot["bid_history"]]
+    contract = snapshot.get("contract")
+    return {
+        "table_key": table_key,
+        "spectator_name": spectator_name,
+        "players": _players_summary(table),
+        "phase": snapshot["phase"],
+        "current_highest_bid": current_highest_bid,
+        "bid_history": bid_history,
+        "current_trick": _trick_to_wire(snapshot["current_trick"]),
+        "trump": snapshot["trump"],
+        "whose_turn": _seat_to_str(snapshot["whose_turn"]) if snapshot["whose_turn"] is not None else None,
+        "cumulative_scores": snapshot["cumulative_scores"],
+        "round_number": snapshot["round_number"],
+        "dealer_seat": _seat_to_str(snapshot["dealer_seat"]),
+        "contract": (
+            {**contract, "seat": _seat_to_str(contract["seat"])} if contract is not None else None
+        ),
+        "target_score": table.target_score,
+        "server_version": __version__,
+    }
+
+
 async def _send_error(writer: asyncio.StreamWriter, code: str, message: str) -> None:
     try:
         writer.write(protocol.encode(protocol.ERROR, {"code": code, "message": message}))
@@ -165,6 +196,20 @@ async def _broadcast_deal(table: Table) -> None:
                 "round_number": game.round_number,
             },
         )
+    # Spectators get the same new-round signal (dealer, first bidder, round
+    # number) so they reset the board and start following the auction, but with
+    # NO hand -- a spectator is never dealt cards (BR-U1-6/NFR4).
+    if table.spectators:
+        deal_data = protocol.encode(
+            protocol.DEAL,
+            {
+                "hand": [],
+                "dealer_seat": _seat_to_str(game.dealer),
+                "first_bidder_seat": _seat_to_str(game.next_to_act),
+                "round_number": game.round_number,
+            },
+        )
+        await table._broadcast_to_spectators(deal_data)
 
 
 async def _handle_bid_result(table: Table, seat: Seat, result: dict) -> None:
@@ -437,7 +482,9 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
     # Chat works in the lobby as well as mid-game; handle it before the
     # game-is-None guard that otherwise drops all game-phase messages.
     if msg_type == protocol.CHAT:
-        await table.broadcast(protocol.CHAT, {"seat": _seat_to_str(seat), "text": payload["text"]})
+        session = table.seats.get(seat)
+        name = session.name if session is not None else _seat_to_str(seat)
+        await table.broadcast(protocol.CHAT, {"seat": _seat_to_str(seat), "name": name, "text": payload["text"]})
         return
 
     if msg_type == protocol.FILL_BOTS:
@@ -556,6 +603,53 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
     return True
 
 
+async def _spectator_snapshot_payload(table: Table, spectator_name: str) -> dict:
+    """Build the SPECTATING payload for a freshly attached spectator.
+
+    When a game is under way, this is the hand-free public snapshot (mid-bid or
+    mid-play) so the watcher's board is immediately in sync; before the game
+    starts there is no `Game` yet, so a minimal waiting-room payload (just the
+    seated players) is sent and the spectator catches up on the first DEAL."""
+    if table.game is not None:
+        return _public_snapshot_to_wire(table.game.public_snapshot(), table.table_key, table, spectator_name)
+    return {
+        "table_key": table.table_key,
+        "spectator_name": spectator_name,
+        "players": _players_summary(table),
+        "phase": "waiting",
+        "current_highest_bid": None,
+        "bid_history": [],
+        "current_trick": [],
+        "trump": None,
+        "whose_turn": None,
+        "cumulative_scores": {"NS": 0, "EW": 0},
+        "round_number": 0,
+        "dealer_seat": None,
+        "contract": None,
+        "target_score": table.target_score,
+        "server_version": __version__,
+    }
+
+
+async def _handle_spectator_leave(table: Table, spectator_name: str, writer: asyncio.StreamWriter) -> None:
+    """Drop a spectator off a table and return its connection to the live lobby.
+
+    Symmetric to `_handle_leave` for a seated player but simpler: there is no
+    seat to free and never a game-in-progress guard (leaving as a spectator is
+    always fine). Confirms with LEFT + a fresh listing and re-subscribes the
+    writer so its table picker is live again on the same socket."""
+    table.remove_spectator(spectator_name)
+    logger.info("[%s] DEPART SPECTATEUR %s", table.table_key, spectator_name)
+    LOBBY_SUBSCRIBERS.add(writer)
+    try:
+        writer.write(protocol.encode(protocol.LEFT, {}))
+        writer.write(protocol.encode(protocol.TABLE_LISTING, {"tables": tables_listing()}))
+        await writer.drain()
+    except (ConnectionError, OSError):
+        pass
+    await notify_lobby_subscribers()
+
+
 async def _resolve_join(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -563,12 +657,15 @@ async def _resolve_join(
     trick_pause_seconds: float,
     round_pause_seconds: float,
     bot_think_seconds: float,
-) -> tuple[Table, Seat] | None:
+) -> tuple[Table, Seat | None, str | None] | None:
     """Read messages from a fresh client connection until a JOIN arrives.
 
     LIST_TABLES is served inline (TABLE_LISTING reply) and the loop continues
     so the same connection can then send JOIN -- no extra round trip needed.
     SUBSCRIBE_LOBBY registers the writer for live push TABLE_LISTING updates.
+
+    Returns `(table, seat, None)` for a seated player, `(table, None, name)` for
+    a spectator, or None if the connection dropped/was rejected before joining.
     """
     try:
         return await _resolve_join_inner(
@@ -585,7 +682,7 @@ async def _resolve_join_inner(
     trick_pause_seconds: float,
     round_pause_seconds: float,
     bot_think_seconds: float,
-) -> tuple[Table, Seat] | None:
+) -> tuple[Table, Seat | None, str | None] | None:
     while True:
         try:
             line = await reader.readline()
@@ -627,6 +724,7 @@ async def _resolve_join_inner(
     table_key = str(payload["table_key"]).lower()
     player_name = str(payload["player_name"]).strip()
     team_name = str(payload["team_name"]).strip() if payload.get("team_name") else None
+    spectate = bool(payload.get("spectate"))
 
     preferred_seat: Seat | None = None
     if payload.get("seat"):
@@ -652,6 +750,19 @@ async def _resolve_join_inner(
     )
 
     async with table.lock:
+        if spectate:
+            # A spectator joins without a seat and is always accepted (full or
+            # in-progress tables are exactly what one wants to watch). Send the
+            # current public snapshot so the board is immediately in sync, then
+            # let `broadcast` keep it live; chat reaches spectators too.
+            unique_name = table.add_spectator(player_name, writer)
+            logger.info("[%s] SPECTATEUR %s", table_key, unique_name)
+            await table.send_to_writer(
+                writer, protocol.SPECTATING, await _spectator_snapshot_payload(table, unique_name)
+            )
+            await notify_lobby_subscribers()
+            return table, None, unique_name
+
         reconnect_seat = table.find_disconnected_seat(player_name) if table.game is not None else None
 
         if reconnect_seat is not None:
@@ -673,7 +784,7 @@ async def _resolve_join_inner(
                 elif table.game.phase == "trick_play":
                     await _send_play_request(table, seat)
             await notify_lobby_subscribers()
-            return table, seat
+            return table, seat, None
 
         try:
             seat = table.add_player(player_name, writer, team_name=team_name, preferred_seat=preferred_seat)
@@ -716,7 +827,7 @@ async def _resolve_join_inner(
             await _send_bid_request(table, table.game.next_to_act)
 
         await notify_lobby_subscribers()
-        return table, seat
+        return table, seat, None
 
 
 async def handle_connection(
@@ -729,6 +840,7 @@ async def handle_connection(
 ) -> None:
     table: Table | None = None
     seat: Seat | None = None
+    spectator_name: str | None = None
     try:
         # Outer loop: a connection can join a table, LEAVE it (pre-game) to
         # return to the lobby, and then join another -- all on the same socket,
@@ -741,7 +853,7 @@ async def handle_connection(
             )
             if joined is None:
                 return
-            table, seat = joined
+            table, seat, spectator_name = joined
 
             left = False
             while True:
@@ -758,6 +870,24 @@ async def handle_connection(
                     msg_type, payload = protocol.decode(line)
                 except protocol.ProtocolError as exc:
                     await _send_error(writer, protocol.MALFORMED_MESSAGE, str(exc))
+                    continue
+
+                # Spectator branch: no seat, so game actions don't apply. A
+                # spectator can chat and can LEAVE to return to the lobby; every
+                # other action is silently ignored (the client never sends them).
+                if spectator_name is not None:
+                    if msg_type == protocol.LEAVE:
+                        async with table.lock:
+                            await _handle_spectator_leave(table, spectator_name, writer)
+                        table = None
+                        spectator_name = None
+                        left = True
+                        break
+                    if msg_type == protocol.CHAT:
+                        async with table.lock:
+                            await table.broadcast(
+                                protocol.CHAT, {"seat": None, "name": spectator_name, "text": payload["text"]}
+                            )
                     continue
 
                 if msg_type == protocol.LEAVE:
@@ -782,7 +912,12 @@ async def handle_connection(
     except (ConnectionError, asyncio.IncompleteReadError):
         pass
     finally:
-        if table is not None and seat is not None:
+        if table is not None and spectator_name is not None:
+            async with table.lock:
+                table.remove_spectator(spectator_name)
+                logger.info("[%s] DEPART SPECTATEUR %s", table.table_key, spectator_name)
+                await notify_lobby_subscribers()
+        elif table is not None and seat is not None:
             async with table.lock:
                 if table.game is None:
                     table.remove_player(seat)

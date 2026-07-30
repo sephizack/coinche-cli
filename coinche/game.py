@@ -486,3 +486,48 @@ class Game:
             snapshot["bid_history"] = []
 
         return snapshot
+
+    def public_snapshot(self) -> dict:
+        """Pure, I/O-free spectator view of the game: everything a seated player's
+        resync carries EXCEPT any player's hand (BR-U1-6/NFR4 -- a spectator must
+        never see cards). Reuses `snapshot_for` for the shared, seat-agnostic
+        fields (phase, trick, trump, scores, bid state) and simply omits `hand`.
+
+        `seat` is None here because a spectator occupies no seat. When bidding has
+        settled the settled contract is included so a mid-game spectator can render
+        the "Annonce : ..." badge immediately, matching what a reconnecting player
+        would see."""
+        assert self.round_state is not None
+        # Any seat works for the seat-agnostic fields; discard `seat`/`hand`.
+        base = self.snapshot_for(self.dealer)
+        snapshot: dict = {
+            "seat": None,
+            "phase": base["phase"],
+            "current_trick": base["current_trick"],
+            "trump": base["trump"],
+            "whose_turn": base["whose_turn"],
+            "cumulative_scores": base["cumulative_scores"],
+            "round_number": base["round_number"],
+            "dealer_seat": base["dealer_seat"],
+            "current_highest_bid": base["current_highest_bid"],
+            "bid_history": base["bid_history"],
+        }
+        # After bidding settles, expose the standing contract so the spectator's
+        # contract badge matches the seated players' view (these fields are None
+        # during bidding, where `current_highest_bid`/`bid_history` cover it).
+        if self.phase == "trick_play":
+            assert self.bid_state is not None
+            contract = self.bid_state.current_highest_bid
+            snapshot["contract"] = (
+                {
+                    "seat": contract["seat"],
+                    "trump": contract["trump"],
+                    "points": contract["points"],
+                    "coinche_level": self.bid_state.coinche_level,
+                }
+                if contract is not None
+                else None
+            )
+        else:
+            snapshot["contract"] = None
+        return snapshot

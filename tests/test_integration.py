@@ -1348,3 +1348,150 @@ def test_unsubscribed_connection_does_not_receive_pushes():
             await srv.wait_closed()
 
     asyncio.run(scenario())
+
+
+def test_spectator_can_join_full_table_and_receives_public_board():
+    """A 5th connection can spectate a full table: it gets a SPECTATING snapshot
+    (no hand), the table is not disturbed, and it follows the public auction."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server()
+        try:
+            conns = await _join_all(port, "spec01")  # 4 seats filled -> game starts
+
+            # A 5th client cannot sit (table full) but CAN spectate.
+            sr, sw = await _connect(port)
+            await _send(sw, protocol.JOIN, {"table_key": "spec01", "player_name": "Eve", "spectate": True})
+            spec = await _read_until(sr, protocol.SPECTATING)
+            assert spec["spectator_name"] == "Eve"
+            assert "hand" not in spec  # a spectator is never dealt cards
+            assert spec["phase"] in ("bidding", "trick_play")
+            assert len(spec["players"]) == 4
+
+            # The spectator follows the public auction: it sees BID_UPDATE for W.
+            bid_req = await _read_until(conns["W"][0], protocol.BID_REQUEST)
+            action = bid_req["legal_actions"][0]
+            await _send(
+                conns["W"][1], protocol.BID, {"action": "bid", "trump": action["trump"], "points": action["points"]}
+            )
+            update = await _read_until(sr, protocol.BID_UPDATE)
+            assert update["seat"] == "W" and update["action"] == "bid"
+
+            sw.close()
+            for _reader, writer in conns.values():
+                writer.close()
+        finally:
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_spectator_chat_reaches_seated_players_and_carries_name():
+    """A spectator's chat is broadcast to seated players with its name (spectators
+    have no seat, so the seat field is null)."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server()
+        try:
+            conns = await _join_all(port, "spec02")
+
+            sr, sw = await _connect(port)
+            await _send(sw, protocol.JOIN, {"table_key": "spec02", "player_name": "Eve", "spectate": True})
+            await _read_until(sr, protocol.SPECTATING)
+
+            await _send(sw, protocol.CHAT, {"text": "Allez Nord !"})
+            chat = await _read_until(conns["N"][0], protocol.CHAT)
+            assert chat["text"] == "Allez Nord !"
+            assert chat["name"] == "Eve"
+            assert chat["seat"] is None
+            # The spectator also receives its own chat echo (it's on the table's
+            # broadcast list); drain that before checking the seated reply below.
+            own_echo = await _read_until(sr, protocol.CHAT)
+            assert own_echo["text"] == "Allez Nord !"
+
+            # And a seated player's chat reaches the spectator, with a name.
+            await _send(conns["N"][1], protocol.CHAT, {"text": "Merci !"})
+            chat2 = await _read_until(sr, protocol.CHAT)
+            assert chat2["text"] == "Merci !"
+            assert chat2["seat"] == "N"
+            assert chat2["name"] == "Alice"
+
+            sw.close()
+            for _reader, writer in conns.values():
+                writer.close()
+        finally:
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_spectator_leave_frees_lobby_and_updates_count():
+    """Leaving as a spectator returns to the lobby (LEFT + listing) and the
+    table's spectator count drops back to zero."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server()
+        try:
+            conns = await _join_all(port, "spec03")
+
+            sr, sw = await _connect(port)
+            await _send(sw, protocol.JOIN, {"table_key": "spec03", "player_name": "Eve", "spectate": True})
+            await _read_until(sr, protocol.SPECTATING)
+
+            # A lobby subscriber sees the spectator count via the listing.
+            lr, lw = await _connect(port)
+            await _send(lw, protocol.SUBSCRIBE_LOBBY, {})
+            listing = await _read_until(lr, protocol.TABLE_LISTING)
+            entry = next(t for t in listing["tables"] if t["table_key"] == "spec03")
+            assert entry["spectators"] == 1
+
+            await _send(sw, protocol.LEAVE, {})
+            await _read_until(sr, protocol.LEFT)
+
+            listing2 = await _read_until(lr, protocol.TABLE_LISTING)
+            entry2 = next(t for t in listing2["tables"] if t["table_key"] == "spec03")
+            assert entry2["spectators"] == 0
+
+            sw.close()
+            lw.close()
+            for _reader, writer in conns.values():
+                writer.close()
+        finally:
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_spectator_can_watch_a_pregame_table_without_taking_a_seat():
+    """Spectating a table that hasn't started yet keeps all seats free and sends
+    a 'waiting' snapshot; a later DEAL reaches the spectator with no hand."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server()
+        try:
+            # One seated player; table not full, game not started.
+            pr, pw = await _connect(port)
+            await _send(pw, protocol.JOIN, {"table_key": "spec04", "player_name": "Alice"})
+            await _read_until(pr, protocol.JOINED)
+
+            sr, sw = await _connect(port)
+            await _send(sw, protocol.JOIN, {"table_key": "spec04", "player_name": "Eve", "spectate": True})
+            spec = await _read_until(sr, protocol.SPECTATING)
+            assert spec["phase"] == "waiting"
+
+            # Filling with bots starts the game; the spectator gets a hand-free DEAL.
+            await _send(pw, protocol.FILL_BOTS, {})
+            deal = await _read_until(sr, protocol.DEAL)
+            assert deal["hand"] == []
+            assert deal["round_number"] == 1
+
+            sw.close()
+            pw.close()
+        finally:
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())

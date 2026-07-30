@@ -27,6 +27,7 @@ CLIENT_MESSAGE_TYPES = {JOIN, BID, PLAY_CARD, CHAT, REMATCH, LIST_TABLES, SUBSCR
 # --- Server -> Client message types -------------------------------------------
 
 JOINED = "joined"
+SPECTATING = "spectating"
 LOBBY_UPDATE = "lobby_update"
 DEAL = "deal"
 BID_REQUEST = "bid_request"
@@ -47,6 +48,7 @@ ERROR = "error"
 
 SERVER_MESSAGE_TYPES = {
     JOINED,
+    SPECTATING,
     LOBBY_UPDATE,
     DEAL,
     BID_REQUEST,
@@ -94,6 +96,11 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
 # shared with a teammate to try to be seated on the same team, best-effort; see
 # Table.add_player) and an optional "seat" field (one of N/E/S/W) requesting a
 # specific chair, honoured when still free (see Table.add_player.preferred_seat).
+# JOIN also accepts an optional boolean "spectate" field: when true the connection
+# joins as a read-only spectator (no seat, no cards, no game actions) that still
+# receives public game broadcasts and can participate in chat. Spectating is
+# allowed even when the table is full or a game is already in progress -- it is
+# the sanctioned way to watch a table you can't sit at (see server._resolve_join).
 
 _VALID_BID_ACTIONS = {"pass", "bid", "coinche", "surcoinche"}
 
