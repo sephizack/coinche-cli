@@ -21,12 +21,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import hmac
 import json
 import logging
 import mimetypes
 import secrets
+import time
 from urllib.parse import parse_qs, urlsplit
 
 from coinche.meta.session import MetaSession
@@ -45,6 +47,14 @@ logger = logging.getLogger(__name__)
 _MAX_NAME_LEN = 24
 _REALM = "Coinche"
 
+# Idle-session reaper defaults. A session with no browser attached and no
+# activity for `IDLE_TIMEOUT_SECONDS` is kicked: it LEAVEs its table (freeing
+# the seat / tearing down an abandoned table) and is torn down. The grace
+# window is comfortably longer than a page refresh or a brief network blip, so
+# a returning player resumes their session instead of being reaped.
+IDLE_TIMEOUT_SECONDS = 120.0
+REAP_INTERVAL_SECONDS = 15.0
+
 _LANDING_PAGE = """<!doctype html>
 <html lang="fr">
   <head>
@@ -56,15 +66,65 @@ _LANDING_PAGE = """<!doctype html>
   </head>
   <body>
     <div class="lobby">
-      <div class="lobby__card">
+      <div class="lobby__card" id="landing-card" hidden>
         <h1 class="lobby__title">Coinche — Casino</h1>
         <form class="lobby__field" action="/new" method="get" autocomplete="off">
           <label for="name">Votre nom</label>
-          <input id="name" name="name" type="text" maxlength="24" required autofocus placeholder="Alice" />
+          <input id="name" name="name" type="text" maxlength="24" required placeholder="Alice" />
           <button class="rematch-btn" style="width:100%;margin-top:1rem" type="submit">Jouer</button>
         </form>
       </div>
+      <div class="lobby__card" id="resume-card" hidden>
+        <span class="lobby__spinner" aria-hidden="true"></span>
+        <p style="margin-top:1rem">Reprise de votre partie…</p>
+      </div>
     </div>
+    <script>
+      // Session recovery: the SPA stores its méta-session id in localStorage.
+      // On the landing page we probe whether that session is still live and, if
+      // so, jump straight back into it — so a refresh or an accidental tab
+      // close returns the player to their seat instead of spawning a new,
+      // orphaned session. A stale/expired id falls back to the name form.
+      (function () {
+        var KEY = "coinche.metaSessionId";
+        var landing = document.getElementById("landing-card");
+        var resume = document.getElementById("resume-card");
+        function showForm() {
+          resume.hidden = true;
+          landing.hidden = false;
+          var input = document.getElementById("name");
+          if (input) input.focus();
+        }
+        var id = null;
+        try {
+          id = window.localStorage.getItem(KEY);
+        } catch (e) {
+          /* localStorage unavailable (private mode) — just show the form */
+        }
+        if (!id) {
+          showForm();
+          return;
+        }
+        resume.hidden = false;
+        fetch("/api/session?id=" + encodeURIComponent(id))
+          .then(function (r) {
+            return r.ok ? r.json() : { alive: false };
+          })
+          .then(function (data) {
+            if (data && data.alive) {
+              window.location.replace("/s/" + encodeURIComponent(id));
+            } else {
+              try {
+                window.localStorage.removeItem(KEY);
+              } catch (e) {
+                /* ignore */
+              }
+              showForm();
+            }
+          })
+          .catch(showForm);
+      })();
+    </script>
   </body>
 </html>
 """
@@ -81,6 +141,8 @@ class MetaClientServer:
         auth_pass: str,
         host: str = "0.0.0.0",
         port: int = 0,
+        idle_timeout: float = IDLE_TIMEOUT_SECONDS,
+        reap_interval: float = REAP_INTERVAL_SECONDS,
     ) -> None:
         self.game_host = game_host
         self.game_port = game_port
@@ -88,6 +150,8 @@ class MetaClientServer:
         self.auth_pass = auth_pass
         self.host = host
         self.port = port
+        self.idle_timeout = idle_timeout
+        self.reap_interval = reap_interval
         self.sessions: dict[str, MetaSession] = {}
         self._bound: tuple[str, int] | None = None
         self.urls: list[str] = []
@@ -101,14 +165,50 @@ class MetaClientServer:
         print(f"Méta-client Coinche : sessions vers le serveur de jeu {self.game_host}:{self.game_port}")
         for url in self.urls:
             print(f"Interface web disponible : {_terminal_hyperlink(url)}")
+        reaper = asyncio.ensure_future(self._reap_idle_sessions())
         try:
             async with server:
                 await server.serve_forever()
         finally:
+            reaper.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reaper
             for session in list(self.sessions.values()):
                 await session.stop()
             self.sessions.clear()
             server.close()
+
+    async def _reap_idle_sessions(self) -> None:
+        """Kick sessions that have had no browser and no activity for too long.
+
+        Runs forever on a fixed interval. A reaped session LEAVEs its table
+        first (`leave_and_stop`), so an abandoned seat is freed / a bot takes
+        over / an empty table is torn down — this doubles as table housekeeping,
+        not just process cleanup. Never lets a single session's teardown fault
+        stop the loop."""
+        try:
+            while True:
+                await asyncio.sleep(self.reap_interval)
+                now = time.monotonic()
+                stale = [
+                    (sid, session)
+                    for sid, session in list(self.sessions.items())
+                    if session.is_idle(self.idle_timeout, now)
+                ]
+                for sid, session in stale:
+                    logger.info(
+                        "Session %s (« %s ») inactive %.0fs — expulsée",
+                        sid,
+                        session.player_name,
+                        session.idle_seconds(now),
+                    )
+                    self.sessions.pop(sid, None)
+                    try:
+                        await session.leave_and_stop()
+                    except Exception:  # noqa: BLE001 — one bad teardown must not stop the reaper
+                        logger.exception("Échec de l'expulsion de la session %s", sid)
+        except asyncio.CancelledError:
+            raise
 
     async def _bound_urls(self) -> list[str]:
         if self._bound is None:
@@ -180,6 +280,14 @@ class MetaClientServer:
             await self._create_and_redirect(split.query, writer)
             return
 
+        # Liveness probe for a stored session id (browser localStorage): the
+        # landing page hits this before auto-resuming, so a stale/expired id
+        # falls back to the name form instead of a dead reconnect. Returns the
+        # remembered player name so the SPA can restore it too.
+        if route == "/api/session":
+            await self._session_status(split.query, writer)
+            return
+
         session_id = route[len("/s/") :].strip("/") if route.startswith("/s/") else ""
         if session_id and "/" not in session_id:
             session = self.sessions.get(session_id)
@@ -213,6 +321,23 @@ class MetaClientServer:
         logger.info("Nouvelle session %s pour « %s »", session_id, name)
         await self._redirect(writer, f"/s/{session_id}")
 
+    async def _session_status(self, query: str, writer: asyncio.StreamWriter) -> None:
+        """Report whether a stored session id is still live (JSON).
+
+        `{"alive": true, "name": "Alice"}` when the id maps to a live session,
+        `{"alive": false}` otherwise. Deliberately does NOT `touch()` the
+        session: a background liveness poll must not keep a truly abandoned
+        session alive — only a real browser attach/action does."""
+        session_id = (parse_qs(query).get("id", [""])[0] or "").strip()
+        session = self.sessions.get(session_id) if session_id else None
+        body = (
+            json.dumps({"alive": True, "name": session.player_name})
+            if session is not None
+            else json.dumps({"alive": False})
+        )
+        await WebOverlayServer._write_http(writer, 200, "application/json; charset=utf-8", body.encode("utf-8"))
+        _safe_close(writer)
+
     async def _serve_game_page(self, session: MetaSession, writer: asyncio.StreamWriter) -> None:
         """Serve the vendored SPA shell with a per-session `window.__META__`."""
         try:
@@ -221,9 +346,13 @@ class MetaClientServer:
             await WebOverlayServer._write_http(writer, 404, "text/plain; charset=utf-8", b"Not Found")
             _safe_close(writer)
             return
-        meta = json.dumps({"wsPath": f"/s/{session.session_id}/ws", "name": session.player_name}).replace(
-            "<", "\\u003c"
-        )
+        meta = json.dumps(
+            {
+                "wsPath": f"/s/{session.session_id}/ws",
+                "name": session.player_name,
+                "sessionId": session.session_id,
+            }
+        ).replace("<", "\\u003c")
         inject = f'\n    <base href="/" />\n    <script>window.__META__ = {meta};</script>'
         html = html.replace("<head>", "<head>" + inject, 1)
         await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))

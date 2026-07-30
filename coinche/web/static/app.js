@@ -452,6 +452,18 @@ const App = {
     // original behaviour (root `/ws`, empty name).
     const META = window.__META__ || {};
 
+    // Session recovery (méta-client only): persist this session's id so the
+    // landing page can bring the player straight back here after a refresh or
+    // an accidental tab close (see the landing-page script in meta/server.py).
+    // Absent in the mono-session overlay (no sessionId), where it's a no-op.
+    if (META.sessionId) {
+      try {
+        window.localStorage.setItem("coinche.metaSessionId", META.sessionId);
+      } catch (e) {
+        /* localStorage unavailable (private mode) — recovery just won't persist */
+      }
+    }
+
     // Lobby form (there is no table-list in the snapshot contract; U2 pushes
     // players/status only — so the lobby is a join form driven by that state).
     const lobby = reactive({ name: META.name || "", table: "table1", team: "" });
@@ -462,6 +474,25 @@ const App = {
     let bidEffectTimer = null;
     let beloteEffectTimer = null;
     let bidAnnouncementTimer = null;
+    // Consecutive reconnect attempts that never managed to open. On the
+    // méta-client this is how we detect that our session no longer exists
+    // server-side (e.g. the server rebooted, or the session was reaped): the WS
+    // keeps closing without ever opening. After a few tries we give up, drop
+    // the stale localStorage id, and bounce to the landing page — which
+    // re-probes and shows the name form for a fresh session.
+    let failedOpens = 0;
+    const MAX_FAILED_OPENS = 5;
+
+    function abandonDeadSession() {
+      try {
+        window.localStorage.removeItem("coinche.metaSessionId");
+      } catch (e) {
+        /* ignore */
+      }
+      // Only the méta-client can recover via the landing page; the mono-session
+      // overlay has nowhere to bounce to, so it just keeps retrying.
+      if (META.sessionId) window.location.replace("/");
+    }
 
     // -------- WebSocket (ConnectionLayer) --------
     function wsUrl() {
@@ -471,9 +502,12 @@ const App = {
     }
 
     function connect() {
+      let opened = false;
       ws = new WebSocket(wsUrl());
       ws.addEventListener("open", () => {
+        opened = true;
         backoff = 500;
+        failedOpens = 0; // a successful open means the session is alive
         // Ask U2 to start streaming lobby updates so the join screen is live.
         sendAction("lobby", {});
       });
@@ -493,6 +527,17 @@ const App = {
         }
       });
       ws.addEventListener("close", () => {
+        // Closed without ever opening this attempt: count it. A dead session
+        // (server reboot / reaped) rejects the /s/<id>/ws upgrade, so the WS
+        // closes without opening every time — after a few tries we give up and
+        // recover to the landing page instead of reconnecting forever.
+        if (!opened) {
+          failedOpens += 1;
+          if (failedOpens >= MAX_FAILED_OPENS) {
+            abandonDeadSession();
+            return;
+          }
+        }
         showToast("reconnexion…", "info", 4000);
         setTimeout(connect, backoff);
         backoff = Math.min(backoff * 2, 4000);
