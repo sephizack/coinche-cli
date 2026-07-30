@@ -456,8 +456,17 @@ async def _run_bot_turns(table: Table) -> None:
         target = table.bot_think_delay()
         started = time.monotonic()
 
+        loop = asyncio.get_running_loop()
+
         if game.phase == "bidding":
-            action = choose_bid(game, seat)
+            # Run the Monte-Carlo decision in a worker thread: it's CPU-bound and
+            # otherwise blocks this single event loop, stalling every other table
+            # and the lobby's SUBSCRIBE_LOBBY reply until the bot finishes
+            # "thinking". Safe to offload — `choose_*` only *read* `game` (the
+            # rollouts deepcopy it), and it stays the bot's turn throughout, so no
+            # coroutine mutates `game` concurrently (out-of-turn plays are
+            # rejected before mutating; mid-game LEAVE only swaps the seat).
+            action = await loop.run_in_executor(None, choose_bid, game, seat)
             elapsed = time.monotonic() - started
             if elapsed < target:
                 await asyncio.sleep(target - elapsed)
@@ -469,7 +478,8 @@ async def _run_bot_turns(table: Table) -> None:
             )
             await _handle_bid_result(table, seat, result)
         elif game.phase == "trick_play":
-            card = choose_card(game, seat)
+            # See the bidding branch: offloaded to keep the event loop responsive.
+            card = await loop.run_in_executor(None, choose_card, game, seat)
             elapsed = time.monotonic() - started
             if elapsed < target:
                 await asyncio.sleep(target - elapsed)

@@ -982,6 +982,12 @@ const App = {
         .sort((a, b) => a.key.localeCompare(b.key));
     });
 
+    // The lobby only knows its tables once the first snapshot lands. Until then
+    // we show a loading state rather than the (misleading) "no tables" message,
+    // so a slow WS connection doesn't flash "aucune table" before the tables pop
+    // in. `snapshot` is null before the first {type:"state"} frame.
+    const lobbyLoaded = computed(() => snapshot.value !== null);
+
     // Next free "tableN" key not already present, for the create card.
     const nextTableKey = computed(() => {
       const keys = new Set(lobbyTables.value.map((t) => t.key.toLowerCase()));
@@ -1072,6 +1078,7 @@ const App = {
       statusMessage,
       lobbyTeams,
       lobbyTables,
+      lobbyLoaded,
       nextTableKey,
       joinSpecificTable,
       spectateTable,
@@ -1117,7 +1124,15 @@ const App = {
           </div>
         </header>
 
-        <div class="lobby__grid">
+        <!-- Before the first snapshot lands the table list is unknown; show a
+             loading state instead of "aucune table" so a slow WS connection
+             doesn't flash an empty lobby before the tables appear. -->
+        <div v-if="!lobbyLoaded" class="lobby__loading" data-testid="lobby-loading" role="status" aria-live="polite">
+          <span class="lobby__spinner" aria-hidden="true"></span>
+          <span>Chargement des tables…</span>
+        </div>
+
+        <div v-else class="lobby__grid">
           <!-- Create-a-table card -->
           <button class="minitable minitable--create" data-testid="lobby-create" @click="createTable()">
             <div class="minitable--create__plus">＋</div>
@@ -1176,7 +1191,7 @@ const App = {
           </div>
         </div>
 
-        <p v-if="!lobbyTables.length" class="lobby__empty">
+        <p v-if="lobbyLoaded && !lobbyTables.length" class="lobby__empty">
           Aucune table pour le moment — créez-en une !
         </p>
       </div>
