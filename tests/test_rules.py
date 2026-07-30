@@ -150,6 +150,7 @@ def test_legal_cards_can_pisser_when_partner_is_master_via_a_cut():
     result = legal_cards_to_play(hand, trick, "♦", "♠", player_seat=Seat.W, partner_seat=Seat.E)
     assert result == hand  # free discard ("pisser"), partner already master via cut
 
+
 def test_legal_cards_can_pisser_when_partner_is_master_via_a_cut_and_adversaire_undercut():
     # Partner (E) is currently master of the trick because they cut the
     # non-trump lead (8♠) with A♦, not because they hold the led suit's

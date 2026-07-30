@@ -173,9 +173,7 @@ def test_render_bid_menu_always_offers_pass_first():
 def test_render_bid_menu_includes_coinche_and_surcoinche_tokens_when_allowed():
     legal_actions: list[dict] = []
     current = {"trump": "♠", "points": 90}
-    menu, tokens = render_bid_menu(
-        legal_actions, current_highest_bid=current, can_coinche=True, can_surcoinche=False
-    )
+    menu, tokens = render_bid_menu(legal_actions, current_highest_bid=current, can_coinche=True, can_surcoinche=False)
     assert any(choice.get("action") == "coinche" for choice in tokens.values())
     assert not any(choice.get("action") == "surcoinche" for choice in tokens.values())
 
@@ -244,9 +242,7 @@ def test_render_bid_menu_omits_capot_entry_once_capot_no_longer_offered():
     # After capot has been announced, legal_actions carries no capot options, so
     # the menu offers none either -- only pass (and coinche/surcoinche if any).
     legal_actions = []
-    _, tokens = render_bid_menu(
-        legal_actions, current_highest_bid={"trump": "♠", "points": "capot"}, can_coinche=True
-    )
+    _, tokens = render_bid_menu(legal_actions, current_highest_bid={"trump": "♠", "points": "capot"}, can_coinche=True)
     assert not any(c.get("points") == "capot" for c in tokens.values())
 
 
@@ -553,10 +549,15 @@ def test_render_lobby_cursor_highlight():
 def test_render_lobby_shows_tables():
     """Existing tables are rendered with their key, seats, and member names."""
     tables = [
-        {"table_key": "tbl1", "in_progress": False, "seats_filled": 2, "players": [
-            {"seat": "N", "name": "Alice", "team_name": "Equipe 1"},
-            {"seat": "S", "name": "Bob", "team_name": "Equipe 2"},
-        ]},
+        {
+            "table_key": "tbl1",
+            "in_progress": False,
+            "seats_filled": 2,
+            "players": [
+                {"seat": "N", "name": "Alice", "team_name": "Equipe 1"},
+                {"seat": "S", "name": "Bob", "team_name": "Equipe 2"},
+            ],
+        },
     ]
     panel = render_lobby(tables, cursor_index=1)
     console = Console(record=True, width=100)
@@ -571,12 +572,17 @@ def test_render_lobby_shows_tables():
 def test_render_lobby_in_progress_locked():
     """In-progress tables are shown with a lock icon."""
     tables = [
-        {"table_key": "live1", "in_progress": True, "seats_filled": 4, "players": [
-            {"seat": "N", "name": "A", "team_name": None},
-            {"seat": "E", "name": "B", "team_name": None},
-            {"seat": "S", "name": "C", "team_name": None},
-            {"seat": "W", "name": "D", "team_name": None},
-        ]},
+        {
+            "table_key": "live1",
+            "in_progress": True,
+            "seats_filled": 4,
+            "players": [
+                {"seat": "N", "name": "A", "team_name": None},
+                {"seat": "E", "name": "B", "team_name": None},
+                {"seat": "S", "name": "C", "team_name": None},
+                {"seat": "W", "name": "D", "team_name": None},
+            ],
+        },
     ]
     panel = render_lobby(tables, cursor_index=1)
     console = Console(record=True, width=100)
@@ -590,12 +596,17 @@ def test_render_lobby_reconnectable_not_locked():
     """An in-progress table with a disconnected seat matching the player's name is
     shown as selectable (↻ reconnexion), not locked, so the player can rejoin."""
     tables = [
-        {"table_key": "live1", "in_progress": True, "seats_filled": 4, "players": [
-            {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "connected": False},
-            {"seat": "E", "name": "Bob", "team_name": "Equipe 2", "connected": True},
-            {"seat": "S", "name": "Carol", "team_name": "Equipe 1", "connected": True},
-            {"seat": "W", "name": "Dave", "team_name": "Equipe 2", "connected": True},
-        ]},
+        {
+            "table_key": "live1",
+            "in_progress": True,
+            "seats_filled": 4,
+            "players": [
+                {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "connected": False},
+                {"seat": "E", "name": "Bob", "team_name": "Equipe 2", "connected": True},
+                {"seat": "S", "name": "Carol", "team_name": "Equipe 1", "connected": True},
+                {"seat": "W", "name": "Dave", "team_name": "Equipe 2", "connected": True},
+            ],
+        },
     ]
     # Matching player name (case-insensitive): reconnectable.
     panel = render_lobby(tables, cursor_index=1, player_name="alice")
@@ -616,9 +627,14 @@ def test_render_lobby_reconnectable_not_locked():
 
 def test_render_team_picker_shows_members():
     """Team picker shows member names under each Equipe option."""
-    table = {"table_key": "t1", "in_progress": False, "seats_filled": 1, "players": [
-        {"seat": "N", "name": "Alice", "team_name": "Equipe 1"},
-    ]}
+    table = {
+        "table_key": "t1",
+        "in_progress": False,
+        "seats_filled": 1,
+        "players": [
+            {"seat": "N", "name": "Alice", "team_name": "Equipe 1"},
+        ],
+    }
     panel = render_team_picker(table, team_cursor=0)
     console = Console(record=True, width=100)
     console.print(panel)
@@ -630,11 +646,16 @@ def test_render_team_picker_shows_members():
 
 def test_render_team_picker_full_team_locked():
     """A full team shows the lock marker in the team picker."""
-    table = {"table_key": "t1", "in_progress": False, "seats_filled": 3, "players": [
-        {"seat": "N", "name": "Alice", "team_name": "Equipe 1"},
-        {"seat": "S", "name": "Bob", "team_name": "Equipe 1"},
-        {"seat": "E", "name": "Carol", "team_name": "Equipe 2"},
-    ]}
+    table = {
+        "table_key": "t1",
+        "in_progress": False,
+        "seats_filled": 3,
+        "players": [
+            {"seat": "N", "name": "Alice", "team_name": "Equipe 1"},
+            {"seat": "S", "name": "Bob", "team_name": "Equipe 1"},
+            {"seat": "E", "name": "Carol", "team_name": "Equipe 2"},
+        ],
+    }
     panel = render_team_picker(table, team_cursor=1)
     console = Console(record=True, width=100)
     console.print(panel)
@@ -644,9 +665,14 @@ def test_render_team_picker_full_team_locked():
 
 def test_render_team_picker_malicious_name_not_markup():
     """Player names in team picker are not parsed as rich markup."""
-    table = {"table_key": "bad1", "in_progress": False, "seats_filled": 1, "players": [
-        {"seat": "N", "name": MALICIOUS_NAME, "team_name": None},
-    ]}
+    table = {
+        "table_key": "bad1",
+        "in_progress": False,
+        "seats_filled": 1,
+        "players": [
+            {"seat": "N", "name": MALICIOUS_NAME, "team_name": None},
+        ],
+    }
     panel = render_team_picker(table, team_cursor=0)
     console = Console(record=True, width=100)
     console.print(panel)
@@ -682,9 +708,14 @@ def test_render_lobby_empty_table_vide():
 def test_render_lobby_malicious_name_not_markup():
     """Player names with rich-markup-like content are not parsed as markup."""
     tables = [
-        {"table_key": "bad1", "in_progress": False, "seats_filled": 1, "players": [
-            {"seat": "N", "name": MALICIOUS_NAME, "team_name": None},
-        ]},
+        {
+            "table_key": "bad1",
+            "in_progress": False,
+            "seats_filled": 1,
+            "players": [
+                {"seat": "N", "name": MALICIOUS_NAME, "team_name": None},
+            ],
+        },
     ]
     panel = render_lobby(tables, cursor_index=1)
     console = Console(record=True, width=100)

@@ -44,9 +44,7 @@ def test_full_round_e2e_deal_bid_tricks_score():
     assert final_result["round_complete"] is True
     assert "round_score" in final_result
     assert set(final_result["round_score"].keys()) == {"NS", "EW"}
-    total_scored = (
-        final_result["round_score"]["NS"]["total"] + final_result["round_score"]["EW"]["total"]
-    )
+    total_scored = final_result["round_score"]["NS"]["total"] + final_result["round_score"]["EW"]["total"]
     assert final_result["cumulative_scores"]["NS"] + final_result["cumulative_scores"]["EW"] == total_scored
     assert final_result["completed_round_hands"] == starting_hands
 
@@ -146,8 +144,7 @@ def test_a13_tie_break_sudden_death_then_resolves():
     # sweep would upgrade the numeric contract to a capot bonus.
     opponent = bidder.next()  # adjacent seats are on opposing teams (A2)
     game.round_state.trick_history = [
-        {"winner_seat": bidder if i < 5 else opponent, "trick": [], "points_won": 0}
-        for i in range(8)
+        {"winner_seat": bidder if i < 5 else opponent, "trick": [], "points_won": 0} for i in range(8)
     ]
     game.round_state.tricks_played = 8
     game.round_state.belote_holder = None  # force determinism regardless of random deal
@@ -167,8 +164,7 @@ def test_a13_tie_break_sudden_death_then_resolves():
     game.round_state.captured_points = {attacking_team2: 90, defending_team2: 10}
     opponent2 = bidder2.next()
     game.round_state.trick_history = [
-        {"winner_seat": bidder2 if i < 5 else opponent2, "trick": [], "points_won": 0}
-        for i in range(8)
+        {"winner_seat": bidder2 if i < 5 else opponent2, "trick": [], "points_won": 0} for i in range(8)
     ]
     game.round_state.tricks_played = 8
     game.round_state.belote_holder = None  # force determinism regardless of random deal

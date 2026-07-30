@@ -284,9 +284,7 @@ class Table:
         """
         session = self.seats[seat]
         assert session is not None
-        used_names = {
-            s.name.lower() for other, s in self.seats.items() if s is not None and other != seat
-        }
+        used_names = {s.name.lower() for other, s in self.seats.items() if s is not None and other != seat}
         session.name = _pick_bot_name(used_names)
         session.writer = None
         session.connected = True

@@ -758,7 +758,9 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
                 legal_cards,
             )
     # tenter une couleur jamais jouée si possible
-    never_played_suits = {card.suit for card in legal_cards if card.suit != trump and not _has_been_played(card, game.round_state)}
+    never_played_suits = {
+        card.suit for card in legal_cards if card.suit != trump and not _has_been_played(card, game.round_state)
+    }
     if never_played_suits:
         return min(
             (card for card in legal_cards if card.suit in never_played_suits),

@@ -16,10 +16,12 @@ def _table(players):
 
 
 def test_matches_disconnected_seat_case_insensitive():
-    entry = _table([
-        {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "connected": False},
-        {"seat": "E", "name": "Bob", "team_name": "Equipe 2", "connected": True},
-    ])
+    entry = _table(
+        [
+            {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "connected": False},
+            {"seat": "E", "name": "Bob", "team_name": "Equipe 2", "connected": True},
+        ]
+    )
     match = _reconnectable_seat(entry, "ALICE")
     assert match is not None
     assert match["seat"] == "N"
@@ -27,42 +29,52 @@ def test_matches_disconnected_seat_case_insensitive():
 
 
 def test_no_match_for_connected_seat():
-    entry = _table([
-        {"seat": "N", "name": "Alice", "team_name": None, "connected": True},
-    ])
+    entry = _table(
+        [
+            {"seat": "N", "name": "Alice", "team_name": None, "connected": True},
+        ]
+    )
     assert _reconnectable_seat(entry, "Alice") is None
 
 
 def test_no_match_for_different_name():
-    entry = _table([
-        {"seat": "N", "name": "Alice", "team_name": None, "connected": False},
-    ])
+    entry = _table(
+        [
+            {"seat": "N", "name": "Alice", "team_name": None, "connected": False},
+        ]
+    )
     assert _reconnectable_seat(entry, "Zoe") is None
 
 
 def test_empty_player_name_never_matches():
-    entry = _table([
-        {"seat": "N", "name": "", "team_name": None, "connected": False},
-    ])
+    entry = _table(
+        [
+            {"seat": "N", "name": "", "team_name": None, "connected": False},
+        ]
+    )
     assert _reconnectable_seat(entry, "") is None
     assert _reconnectable_seat(entry, "   ") is None
 
 
 def test_missing_connected_defaults_to_connected():
     # Older listings without the field must be treated as connected (not reconnectable).
-    entry = _table([
-        {"seat": "N", "name": "Alice", "team_name": None},
-    ])
+    entry = _table(
+        [
+            {"seat": "N", "name": "Alice", "team_name": None},
+        ]
+    )
     assert _reconnectable_seat(entry, "Alice") is None
 
 
 def test_replaceable_bot_seats_lists_bots_on_running_table():
-    entry = _table([
-        {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "is_bot": False},
-        {"seat": "E", "name": "Sephiroth", "team_name": "Equipe 2", "is_bot": True},
-        {"seat": "S", "name": "Cloud", "team_name": "Equipe 1", "is_bot": True},
-        {"seat": "W", "name": "Tifa", "team_name": "Equipe 2", "is_bot": True},
-    ])
+    entry = _table(
+        [
+            {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "is_bot": False},
+            {"seat": "E", "name": "Sephiroth", "team_name": "Equipe 2", "is_bot": True},
+            {"seat": "S", "name": "Cloud", "team_name": "Equipe 1", "is_bot": True},
+            {"seat": "W", "name": "Tifa", "team_name": "Equipe 2", "is_bot": True},
+        ]
+    )
     bots = _replaceable_bot_seats(entry)
     assert [p["seat"] for p in bots] == ["E", "S", "W"]
 
@@ -79,8 +91,10 @@ def test_replaceable_bot_seats_empty_when_not_in_progress():
 
 
 def test_replaceable_bot_seats_empty_for_all_human_running_table():
-    entry = _table([
-        {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "is_bot": False},
-        {"seat": "E", "name": "Bob", "team_name": "Equipe 2", "is_bot": False},
-    ])
+    entry = _table(
+        [
+            {"seat": "N", "name": "Alice", "team_name": "Equipe 1", "is_bot": False},
+            {"seat": "E", "name": "Bob", "team_name": "Equipe 2", "is_bot": False},
+        ]
+    )
     assert _replaceable_bot_seats(entry) == []
