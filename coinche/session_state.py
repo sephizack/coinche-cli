@@ -43,6 +43,12 @@ class ClientState:
     spectator_name: str | None = None
     table_key: str | None = None
     players: dict[Seat, str] = field(default_factory=dict)
+    # Which seats are currently held by a server-controlled bot (seat -> True).
+    # Sourced from the wire `players` entries' `is_bot` flag and kept in sync by
+    # CONNECTION_STATUS, so the web felt can show a "bot" badge on those chairs
+    # (mirroring the lobby mini-tables). Empty for the terminal client, which
+    # doesn't render bot badges around the table.
+    bots: dict[Seat, bool] = field(default_factory=dict)
     team_of: dict[Seat, str] = field(default_factory=dict)
     hand: list[str] = field(default_factory=list)
     legal_cards: list[str] = field(default_factory=list)
@@ -176,6 +182,15 @@ class ApplyResult:
 
 def _players_from_wire(entries: list[dict]) -> dict[Seat, str]:
     return {Seat(p["seat"]): p["name"] for p in entries}
+
+
+def _bots_from_wire(entries: list[dict]) -> dict[Seat, bool]:
+    """Map each seat to whether it's a bot (from the wire `players` entries).
+
+    Every server payload carrying a `players` list builds it via
+    `_players_summary`, which includes `is_bot`, so the flag is always present;
+    `.get("is_bot", False)` is just defensive against an older/partial entry."""
+    return {Seat(p["seat"]): bool(p.get("is_bot", False)) for p in entries}
 
 
 def _team_names_from_wire(entries: list[dict]) -> dict[str, str]:
@@ -376,6 +391,7 @@ def _reset_to_lobby(state: ClientState) -> None:
     state.spectator_name = fresh.spectator_name
     state.table_key = fresh.table_key
     state.players = fresh.players
+    state.bots = fresh.bots
     state.team_of = fresh.team_of
     state.team_names = fresh.team_names
     state.hand = fresh.hand
@@ -432,6 +448,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.table_key = payload["table_key"]
         state.seat = Seat(payload["seat"])
         state.players = _players_from_wire(payload["players"])
+        state.bots = _bots_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({len(state.players)}/4)..."
@@ -450,6 +467,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.seat = None
         state.table_key = payload["table_key"]
         state.players = _players_from_wire(payload["players"])
+        state.bots = _bots_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.can_fill_bots = False
@@ -488,6 +506,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
 
     elif msg_type == protocol.LOBBY_UPDATE:
         state.players = _players_from_wire(payload["players"])
+        state.bots = _bots_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({payload['seats_filled']}/4)..."
@@ -705,6 +724,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.round_over_screen = False
         if payload.get("players"):
             state.players = _players_from_wire(payload["players"])
+            state.bots = _bots_from_wire(payload["players"])
             state.team_names = _team_names_from_wire(payload["players"])
         if state.seat not in state.players:
             state.players[state.seat] = state.players.get(state.seat, "Moi")
@@ -732,9 +752,21 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.connection_status[seat] = payload["status"] != "disconnected"
         # A human just replaced a bot at this seat: the chair's displayed name
         # changes from the bot's to the newcomer's, so the other players' name
-        # map must follow (the seat's team is unchanged -- seats never move).
-        if payload["status"] == "bot_replaced" and seat in state.players:
-            state.players[seat] = payload["name"]
+        # map must follow (the seat's team is unchanged -- seats never move) and
+        # the seat stops being a bot.
+        if payload["status"] == "bot_replaced":
+            if seat in state.players:
+                state.players[seat] = payload["name"]
+            state.bots[seat] = False
+        # A human just left and a bot took over this seat mid-game: the chair is
+        # renamed to the bot's fresh identity (`bot_name`) and flagged as a bot,
+        # so the felt relabels it and shows the bot badge. `name` still carries
+        # the departed human for the banner text below.
+        elif payload["status"] == "replaced_by_bot":
+            bot_name = payload.get("bot_name")
+            if bot_name and seat in state.players:
+                state.players[seat] = bot_name
+            state.bots[seat] = True
         # IN1/BR-U1-7: build the plain notice here (no `rich`); the terminal
         # side may re-render it styled from `last_action` in its redraw path.
         state.last_action = _connection_banner_text(payload["name"], payload["status"])
@@ -777,6 +809,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "spectator_name": state.spectator_name,
         "table_key": state.table_key,
         "players": {seat.value: name for seat, name in state.players.items()},
+        "bots": {seat.value: is_bot for seat, is_bot in state.bots.items()},
         "team_of": {seat.value: team for seat, team in state.team_of.items()},
         "team_names": dict(state.team_names),
         "hand": list(state.hand),  # LOCAL seat only — never other hands

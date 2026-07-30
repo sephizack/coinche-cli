@@ -627,12 +627,20 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
         # Mid-game: convert the seat to a bot rather than removing it, so the
         # other three players' game keeps running instead of stalling on an
         # empty chair.
-        table.replace_with_bot(seat)
-        logger.info("[%s] DEPART %s (%s) -> repris par un bot", table.table_key, name, _seat_to_str(seat))
-        # Let the table (and any lobby watchers) see the seat is now a bot.
+        bot_name = table.replace_with_bot(seat)
+        logger.info(
+            "[%s] DEPART %s (%s) -> repris par un bot (%s)",
+            table.table_key,
+            name,
+            _seat_to_str(seat),
+            bot_name,
+        )
+        # Let the table (and any lobby watchers) see the seat is now a bot. `name`
+        # is the departed human (for the "a quitté" banner); `bot_name` is the
+        # fresh bot identity now holding the seat, so clients relabel the chair.
         await table.broadcast(
             protocol.CONNECTION_STATUS,
-            {"seat": _seat_to_str(seat), "name": name, "status": "replaced_by_bot"},
+            {"seat": _seat_to_str(seat), "name": name, "bot_name": bot_name, "status": "replaced_by_bot"},
             exclude=seat,
         )
     else:

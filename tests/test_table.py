@@ -87,6 +87,32 @@ def test_replace_bot_rejects_a_non_bot_seat():
         table.replace_bot(Seat.N, "Mallory", FakeWriter())
 
 
+def test_replace_with_bot_renames_seat_to_a_fresh_bot_name():
+    table = Table("abcd")
+    table.add_player("Alice", FakeWriter())  # N, human
+    table.add_player("Bob", FakeWriter())  # E, human
+    table.fill_with_bots()  # S, W bots
+    assert table.game is not None
+    bot_names_in_use = {table.seats[Seat.S].name, table.seats[Seat.W].name}
+
+    new_name = table.replace_with_bot(Seat.N)
+
+    session = table.seats[Seat.N]
+    assert session is not None
+    # The seat is now a bot, driven by the server (no writer), and no longer
+    # carries the departed human's name/team.
+    assert session.is_bot is True
+    assert session.writer is None
+    assert session.connected is True
+    assert session.team_name is None
+    assert session.name != "Alice"
+    assert new_name == session.name
+    # The fresh name is drawn from the bot pool and doesn't collide with the
+    # other bots already at the table.
+    assert new_name in BOT_NAMES
+    assert new_name not in bot_names_in_use
+
+
 def test_bot_think_delay_adds_one_second_of_random_jitter(monkeypatch):
     table = Table("abcd", bot_think_seconds=1.0)
     bounds: list[tuple[float, float]] = []
