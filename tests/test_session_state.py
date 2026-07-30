@@ -606,9 +606,27 @@ def test_connection_banner_matches_ui_renderer():
 
     state = ClientState()
     _join(state)
-    for status in ("disconnected", "connected"):
+    for status in ("disconnected", "connected", "replaced_by_bot", "bot_replaced"):
         apply_message(state, protocol.CONNECTION_STATUS, {"seat": "N", "name": "Nord", "status": status})
         assert state.last_action == ui.render_connection_banner("Nord", status).plain
+
+
+def test_bot_replaced_status_swaps_seat_name_and_shows_banner():
+    """A human replacing a bot: the seat's displayed name follows to the human's
+    and the other players see a join banner (seat/team are unchanged)."""
+    state = ClientState()
+    _join(state)
+    # A bot occupies seat E under some game-character name.
+    state.players[Seat.E] = "Sephiroth"
+    result = apply_message(
+        state,
+        protocol.CONNECTION_STATUS,
+        {"seat": "E", "name": "Bob", "status": "bot_replaced"},
+    )
+    assert result.action_requested is False
+    assert state.players[Seat.E] == "Bob"
+    assert state.connection_status[Seat.E] is True
+    assert state.last_action == "🙋 Bob a rejoint la table à la place d'un bot"
 
 
 def test_chat_appends_message_with_team():

@@ -48,6 +48,45 @@ def test_fill_with_bots_occupies_open_seats_and_starts_game():
     assert len(set(bot_names)) == len(bot_names)
 
 
+def test_bot_seats_lists_only_bot_held_seats_in_order():
+    table = Table("abcd")
+    table.add_player("Alice", FakeWriter())  # N, human
+    table.fill_with_bots()  # E, S, W bots
+    assert table.bot_seats() == [Seat.E, Seat.S, Seat.W]
+
+
+def test_replace_bot_swaps_a_bot_seat_to_a_human_keeping_the_hand():
+    table = Table("abcd")
+    table.add_player("Alice", FakeWriter())  # N, human
+    table.fill_with_bots()  # E, S, W bots
+    assert table.game is not None
+    bot_hand_before = list(table.game.get_hand(Seat.E))
+
+    writer = FakeWriter()
+    snapshot = table.replace_bot(Seat.E, "Bob", writer, team_name="Equipe 2")
+
+    session = table.seats[Seat.E]
+    assert session is not None
+    assert session.is_bot is False
+    assert session.name == "Bob"
+    assert session.writer is writer
+    assert session.connected is True
+    assert session.team_name == "Equipe 2"
+    # The Game is keyed by seat, so taking over the chair inherits its hand.
+    assert snapshot["seat"] == Seat.E
+    assert snapshot["hand"] == bot_hand_before
+    # Bob's seat no longer counts as a replaceable bot; the others still do.
+    assert table.bot_seats() == [Seat.S, Seat.W]
+
+
+def test_replace_bot_rejects_a_non_bot_seat():
+    table = Table("abcd")
+    table.add_player("Alice", FakeWriter())  # N, human
+    table.fill_with_bots()
+    with pytest.raises(AssertionError):
+        table.replace_bot(Seat.N, "Mallory", FakeWriter())
+
+
 def test_bot_think_delay_adds_one_second_of_random_jitter(monkeypatch):
     table = Table("abcd", bot_think_seconds=1.0)
     bounds: list[tuple[float, float]] = []

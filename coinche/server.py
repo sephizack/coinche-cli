@@ -16,7 +16,7 @@ import urllib.request
 from coinche import __version__, protocol, rules
 from coinche.bot import choose_bid, choose_card, configure_samples
 from coinche.cards import Card, Seat
-from coinche.game import TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
+from coinche.game import PARTNER_OF, TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
     LOBBY_SUBSCRIBERS,
     GameInProgressError,
@@ -83,6 +83,40 @@ def _players_summary(table: Table) -> list[dict]:
         for seat, session in table.seats.items()
         if session is not None
     ]
+
+
+def _resolve_bot_seat(
+    table: Table,
+    bot_seats: list[Seat],
+    preferred_seat: Seat | None,
+    team_name: str | None,
+) -> Seat:
+    """Pick which bot chair a human replacing a bot should take.
+
+    A requested `preferred_seat` wins outright when it's actually a bot seat
+    (the web lobby lets you click a specific bot). Otherwise, if a `team_name`
+    matches a seated human, prefer that human's partner seat when it's a bot so
+    teammates end up on the same team. Falling back to the first bot seat in
+    table order keeps the choice deterministic. `bot_seats` must be non-empty.
+    """
+    if preferred_seat is not None and preferred_seat in bot_seats:
+        return preferred_seat
+
+    normalized_team = team_name.strip().lower() if team_name else None
+    if normalized_team:
+        for seat, session in table.seats.items():
+            if (
+                session is not None
+                and not session.is_bot
+                and session.team_name is not None
+                and session.team_name.strip().lower() == normalized_team
+            ):
+                partner_seat = PARTNER_OF[seat]
+                if partner_seat in bot_seats:
+                    return partner_seat
+                break
+
+    return bot_seats[0]
 
 
 def _bid_to_wire(bid: dict | None) -> dict | None:
@@ -823,6 +857,50 @@ async def _resolve_join_inner(
                     await _send_play_request(table, seat)
             await notify_lobby_subscribers()
             return table, seat, None
+
+        # Replace-a-bot branch: a table with bots is one a human can sit down at
+        # mid-game by taking over a bot's chair (the inverse of a leaver being
+        # replaced by a bot). Only reached when the game is already running and
+        # at least one seat is bot-driven; a fresh/empty table falls through to
+        # normal seating below.
+        if table.game is not None:
+            bot_seats = table.bot_seats()
+            if bot_seats:
+                for session in table.seats.values():
+                    if (
+                        session is not None
+                        and not session.is_bot
+                        and session.connected
+                        and session.name.lower() == player_name.lower()
+                    ):
+                        await _send_error(writer, protocol.NAME_TAKEN, f"Name already taken: {player_name}")
+                        return None
+                target_seat = _resolve_bot_seat(table, bot_seats, preferred_seat, team_name)
+                bot_name = table.seats[target_seat].name  # type: ignore[union-attr]
+                snapshot = table.replace_bot(target_seat, player_name, writer, team_name=team_name)
+                logger.info(
+                    "[%s] REMPLACEMENT BOT %s -> %s (%s)%s",
+                    table_key,
+                    bot_name,
+                    player_name,
+                    _seat_to_str(target_seat),
+                    f" equipe={team_name}" if team_name else "",
+                )
+                await table.send_to(target_seat, protocol.RESYNC, _snapshot_to_wire(snapshot, table_key, table))
+                await table.broadcast(
+                    protocol.CONNECTION_STATUS,
+                    {"seat": _seat_to_str(target_seat), "name": player_name, "status": "bot_replaced"},
+                    exclude=target_seat,
+                )
+                # resync omits legal_actions/legal_cards; if it's this seat's turn,
+                # follow up with a normal request so the newcomer can act right away.
+                if table.game.next_to_act == target_seat:
+                    if table.game.phase == "bidding":
+                        await _send_bid_request(table, target_seat)
+                    elif table.game.phase == "trick_play":
+                        await _send_play_request(table, target_seat)
+                await notify_lobby_subscribers()
+                return table, target_seat, None
 
         try:
             seat = table.add_player(player_name, writer, team_name=team_name, preferred_seat=preferred_seat)

@@ -1033,16 +1033,23 @@ const App = {
           const teamOf = (team) =>
             TEAM_SEATS[team].map((seatId) => {
               const p = bySeat[seatId];
+              const bot = !!(p && p.is_bot);
               return {
                 seat: seatId,
                 name: p ? p.name : "",
                 empty: !p,
-                bot: !!(p && p.is_bot),
+                bot,
                 offline: !!(p && p.connected === false),
+                // A bot chair on a running table can be taken over by a human
+                // (the server's replace-a-bot path); the seat click joins there.
+                replaceable: bot && !!t.in_progress,
               };
             });
           const filled = t.seats_filled || 0;
           const full = filled >= 4;
+          // A table with bots is one a human can sit down at mid-game by taking
+          // over a bot's chair, so it's joinable even while "en cours"/full.
+          const hasBots = !!t.in_progress && (t.players || []).some((p) => p.is_bot);
           let status = "waiting";
           if (t.in_progress) status = "playing";
           else if (full) status = "full";
@@ -1052,10 +1059,12 @@ const App = {
             filled,
             full,
             status,
+            hasBots,
             spectators: t.spectators || 0,
-            // A table is joinable from the web only when it hasn't started and
-            // still has a free seat; the server remains the authority.
-            joinable: !t.in_progress && !full,
+            // A table is joinable from the web when it hasn't started and still
+            // has a free seat, OR it's running but has a bot to replace; the
+            // server remains the authority.
+            joinable: (!t.in_progress && !full) || hasBots,
             // Any table can be watched; the "Regarder" affordance is offered
             // wherever sitting down isn't possible (full or already playing).
             spectatable: t.in_progress || full,
@@ -1257,13 +1266,17 @@ const App = {
                 <span v-if="p.empty" class="seatchip--empty"
                       @click="t.joinable && joinSpecificTable(t.key, lobbyTeams.nsLabel, p.seat)"
                       :class="{ 'seatchip--joinable': t.joinable }">＋ libre</span>
-                <span v-else class="seatchip__name">{{ p.name }}<span v-if="p.bot" class="seatchip__tag">bot</span><span v-if="p.offline" class="seatchip__tag seatchip__tag--off">hors-ligne</span></span>
+                <span v-else class="seatchip__name" :class="{ 'seatchip__name--replaceable': p.replaceable }"
+                      :title="p.replaceable ? 'Remplacer ce bot' : ''"
+                      @click="p.replaceable && joinSpecificTable(t.key, lobbyTeams.nsLabel, p.seat)">{{ p.name }}<span v-if="p.bot" class="seatchip__tag">bot</span><span v-if="p.offline" class="seatchip__tag seatchip__tag--off">hors-ligne</span></span>
               </div>
               <div v-for="p in t.ew" :key="'ew'+p.seat" class="seatchip" :class="'seatchip--' + (p.seat === 'W' ? 'west' : 'east')">
                 <span v-if="p.empty" class="seatchip--empty"
                       @click="t.joinable && joinSpecificTable(t.key, lobbyTeams.ewLabel, p.seat)"
                       :class="{ 'seatchip--joinable': t.joinable }">＋ libre</span>
-                <span v-else class="seatchip__name">{{ p.name }}<span v-if="p.bot" class="seatchip__tag">bot</span><span v-if="p.offline" class="seatchip__tag seatchip__tag--off">hors-ligne</span></span>
+                <span v-else class="seatchip__name" :class="{ 'seatchip__name--replaceable': p.replaceable }"
+                      :title="p.replaceable ? 'Remplacer ce bot' : ''"
+                      @click="p.replaceable && joinSpecificTable(t.key, lobbyTeams.ewLabel, p.seat)">{{ p.name }}<span v-if="p.bot" class="seatchip__tag">bot</span><span v-if="p.offline" class="seatchip__tag seatchip__tag--off">hors-ligne</span></span>
               </div>
             </div>
 
@@ -1273,8 +1286,8 @@ const App = {
                 <span class="minitable__team minitable__team--eux">{{ lobbyTeams.ewLabel }}</span>
               </div>
               <button v-if="t.joinable" class="minitable__join" :data-testid="'join-' + t.key"
-                      @click="joinSpecificTable(t.key, '')">Rejoindre</button>
-              <button v-else class="minitable__spectate" :data-testid="'spectate-' + t.key"
+                      @click="joinSpecificTable(t.key, '')">{{ t.hasBots ? '🤖 Remplacer un bot' : 'Rejoindre' }}</button>
+              <button v-if="t.hasBots || !t.joinable" class="minitable__spectate" :data-testid="'spectate-' + t.key"
                       @click="spectateTable(t.key)">👁 Regarder</button>
             </div>
             <div v-if="t.spectators" class="minitable__spectators" :data-testid="'spectators-' + t.key">

@@ -121,6 +121,7 @@ async def run_session(
     team_name: str | None = None,
     connection: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None,
     web_port: int = 0,
+    seat: str | None = None,
 ) -> str:
     """Run one connection attempt end-to-end.
 
@@ -131,6 +132,10 @@ async def run_session(
 
     When *connection* is provided, reuse it (the lobby picker already opened
     it); otherwise open a fresh connection.
+
+    `seat` (one of N/E/S/W), if given, requests a specific chair: a free seat
+    pre-game, or a bot's chair to take over on an in-progress table (the
+    replace-a-bot path).
 
     Returns "not_joined" if the session never completed a join/resync,
     "game_over" if the game concluded normally, or "disconnected" if the
@@ -148,7 +153,7 @@ async def run_session(
             return "not_joined"
 
     link = ClientLink(writer)
-    if not await link.send_join(table_key, player_name, team_name):
+    if not await link.send_join(table_key, player_name, team_name, seat=seat):
         return "not_joined"
 
     # Web overlay bridge (U2): mirrors this session's state to any attached
@@ -694,19 +699,34 @@ def _reconnectable_seat(table_entry: dict, player_name: str) -> dict | None:
     return None
 
 
+def _replaceable_bot_seats(table_entry: dict) -> list[dict]:
+    """Bot-held seat entries on an in-progress table, in listing order.
+
+    A table with bots is one a human can join mid-game by sitting in a bot's
+    chair (the server's replace-a-bot path). Returns the player entries whose
+    `is_bot` is set, so the picker can offer them as selectable seats even
+    though the table is "en cours". Empty for tables with no bots."""
+    if not table_entry.get("in_progress"):
+        return []
+    return [p for p in table_entry.get("players", []) if p.get("is_bot")]
+
+
 async def _lobby_picker(
     host: str,
     port: int,
     player_name: str = "",
-) -> tuple[str, str | None, asyncio.StreamReader, asyncio.StreamWriter] | None:
-    """Live-updating interactive lobby picker using a two-step flow.
+) -> tuple[str, str | None, str | None, asyncio.StreamReader, asyncio.StreamWriter] | None:
+    """Live-updating interactive lobby picker.
 
     Step 1 — table selection: browse tables, Enter to pick one.
-    Step 2 — team selection: pick Equipe 1 or Equipe 2, Enter to JOIN.
+    Step 2a — team selection (table not yet started): pick Equipe 1 or Equipe 2.
+    Step 2b — bot selection (table already running, has bots): pick which bot to
+    replace, Enter to take over its seat.
 
-    Returns ``(table_key, team_name, reader, writer)`` on success, or ``None``
-    on cancel / connection error.  The reader/writer are kept open so the
-    caller can reuse them for JOIN via ``run_session``.
+    Returns ``(table_key, team_name, seat, reader, writer)`` on success (``seat``
+    is a specific N/E/S/W chair when replacing a bot, else ``None``), or ``None``
+    on cancel / connection error.  The reader/writer are kept open so the caller
+    can reuse them for JOIN via ``run_session``.
     """
     try:
         reader, writer = await asyncio.open_connection(host, port)
@@ -751,6 +771,7 @@ async def _lobby_picker(
     selected_table: dict | None = None
     new_table_mode = False
     team_cursor = 0
+    bot_cursor = 0
     lobby_error = ""
 
     live = Live(
@@ -765,6 +786,12 @@ async def _lobby_picker(
             live.update(ui.render_lobby(latest_tables, table_cursor, error=lobby_error, player_name=player_name))
         elif step == "team" and selected_table is not None:
             live.update(ui.render_team_picker(selected_table, team_cursor, error=lobby_error))
+        elif step == "bot" and selected_table is not None:
+            live.update(
+                ui.render_bot_picker(
+                    selected_table, _replaceable_bot_seats(selected_table), bot_cursor, error=lobby_error
+                )
+            )
         live.refresh()
 
     key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
@@ -803,6 +830,21 @@ async def _lobby_picker(
                             lobby_error = "Table en cours ou complète."
                         else:
                             selected_table = match
+                elif step == "bot" and selected_table is not None:
+                    tk = selected_table["table_key"]
+                    match = next((t for t in latest_tables if t["table_key"] == tk), None)
+                    if match is None:
+                        step = "table"
+                        selected_table = None
+                        lobby_error = "Table disparue."
+                    elif not _replaceable_bot_seats(match):
+                        # Every bot got taken (or the game ended): back to the list.
+                        step = "table"
+                        selected_table = None
+                        lobby_error = "Plus aucun bot à remplacer sur cette table."
+                    else:
+                        selected_table = match
+                        bot_cursor = min(bot_cursor, len(_replaceable_bot_seats(match)) - 1)
                 redraw()
 
             # Race: the persistent key-read task vs. the next live update.
@@ -833,7 +875,7 @@ async def _lobby_picker(
             lobby_error = ""
 
             if key == "esc":
-                if step == "team":
+                if step in ("team", "bot"):
                     step = "table"
                     selected_table = None
                     new_table_mode = False
@@ -878,8 +920,13 @@ async def _lobby_picker(
                             # directly. The server's RESYNC path restores our seat, so
                             # we skip team selection and reuse the disconnected seat's
                             # team label.
-                            return selected["table_key"], reconnect.get("team_name"), reader, writer
-                        if selected["in_progress"] or selected["seats_filled"] >= 4:
+                            return selected["table_key"], reconnect.get("team_name"), None, reader, writer
+                        if _replaceable_bot_seats(selected):
+                            # Running table with bots: pick which bot to take over.
+                            step = "bot"
+                            selected_table = selected
+                            bot_cursor = 0
+                        elif selected["in_progress"] or selected["seats_filled"] >= 4:
                             lobby_error = "Table en cours ou complète."
                         else:
                             step = "team"
@@ -908,7 +955,29 @@ async def _lobby_picker(
                     if len(equipes[team_label]) >= 2:
                         lobby_error = f"{team_label} est complète."
                     else:
-                        return selected_table["table_key"], team_label, reader, writer
+                        return selected_table["table_key"], team_label, None, reader, writer
+
+            elif current_step == "bot" and selected_table is not None:
+                bots = _replaceable_bot_seats(selected_table)
+                if not bots:
+                    step = "table"
+                    selected_table = None
+                    lobby_error = "Plus aucun bot à remplacer sur cette table."
+                elif key == "up":
+                    bot_cursor = max(0, bot_cursor - 1)
+                elif key == "down":
+                    bot_cursor = min(len(bots) - 1, bot_cursor + 1)
+                elif key in ("\r", "\n"):
+                    chosen = bots[min(bot_cursor, len(bots) - 1)]
+                    # Take over this bot's exact seat; reuse its team label so the
+                    # newcomer lands on the same team the bot was playing for.
+                    return (
+                        selected_table["table_key"],
+                        chosen.get("team_name"),
+                        chosen["seat"],
+                        reader,
+                        writer,
+                    )
 
             redraw()
             key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
@@ -937,6 +1006,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Team label ('Equipe 1'/'Equipe 2'); skips interactive team picker",
     )
     parser.add_argument(
+        "--seat",
+        choices=["N", "E", "S", "W", "n", "e", "s", "w"],
+        help="Request a specific seat (N/E/S/W): a free chair pre-game, or a bot's chair to replace mid-game",
+    )
+    parser.add_argument(
         "--web-port",
         type=int,
         default=0,
@@ -954,16 +1028,17 @@ async def main(argv: list[str] | None = None) -> None:
     if args.table is not None:
         table_key = args.table
         team_name = args.team.strip() if args.team else None
+        seat = args.seat.strip().upper() if args.seat else None
         connection: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None
     else:
         result = await _lobby_picker(host, port, player_name)
         if result is None:
             return
-        table_key, team_name, conn_reader, conn_writer = result
+        table_key, team_name, seat, conn_reader, conn_writer = result
         connection = (conn_reader, conn_writer)
 
     result = await run_session(
-        host, port, table_key, player_name, team_name, connection=connection, web_port=args.web_port
+        host, port, table_key, player_name, team_name, connection=connection, web_port=args.web_port, seat=seat
     )
     if result == "not_joined":
         return

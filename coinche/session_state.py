@@ -355,6 +355,8 @@ def _connection_banner_text(name: str, status: str) -> str:
         return f"⚠ En attente de {name} (reconnexion...)"
     if status == "replaced_by_bot":
         return f"👋 {name} a quitté — un bot prend la relève"
+    if status == "bot_replaced":
+        return f"🙋 {name} a rejoint la table à la place d'un bot"
     return f"✓ {name} reconnecté"
 
 
@@ -728,6 +730,11 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
     elif msg_type == protocol.CONNECTION_STATUS:
         seat = Seat(payload["seat"])
         state.connection_status[seat] = payload["status"] != "disconnected"
+        # A human just replaced a bot at this seat: the chair's displayed name
+        # changes from the bot's to the newcomer's, so the other players' name
+        # map must follow (the seat's team is unchanged -- seats never move).
+        if payload["status"] == "bot_replaced" and seat in state.players:
+            state.players[seat] = payload["name"]
         # IN1/BR-U1-7: build the plain notice here (no `rich`); the terminal
         # side may re-render it styled from `last_action` in its redraw path.
         state.last_action = _connection_banner_text(payload["name"], payload["status"])
