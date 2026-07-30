@@ -563,11 +563,14 @@ def _play_round(source: Game, optimize_ew: bool) -> int:
     raise AssertionError("round did not complete")
 
 
-def test_monte_carlo_team_outscores_greedy_play_across_deals() -> None:
+def test_monte_carlo_team_outscores_greedy_play_across_deals(monkeypatch) -> None:
     # Aggregate over several deals rather than a single fixed one: the Monte
     # Carlo advantage is a statistical property, and any one deal can swing the
     # other way. Summing EW's differential over a fixed seed range keeps the
     # test deterministic while asserting the property that actually matters.
+    # A small sample budget preserves that comparison without replaying a full
+    # production-strength search for every EW turn in eight complete deals.
+    monkeypatch.setattr(bot, "MONTE_CARLO_SAMPLES", 10)
     monte_carlo_total = 0
     greedy_total = 0
     for seed in range(8):
