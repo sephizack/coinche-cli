@@ -709,6 +709,65 @@ def _rollout_score(game: Game, seat: Seat, card: Card, hidden_hands: dict[Seat, 
     return round_score[team]["total"] - round_score[opponents]["total"]
 
 
+def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump: str) -> tuple[Card | None, list[Card]]:
+    """Apply the deterministic opening-lead rules before Monte-Carlo evaluation."""
+    assert game.round_state is not None
+    contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
+    if contract is None:
+        return None, legal_cards
+
+    # Hard safety rule for the actual choice, not only the rollout policy: a
+    # declaring-team player who leads may remove possible defensive ruffers
+    # before exposing an outside Ace or Ten. Monte-Carlo scores cannot override
+    # a master trump lead, or a lead while the trump Valet can still be with the
+    # partner. Once the Valet has fallen, a non-master trump is not forced.
+    if contract["team"] == TEAM_OF[seat] and _opponents_may_hold_trump(game, seat, trump):
+        trumps = [card for card in legal_cards if card.suit == trump]
+        best_trump = max(trumps, key=lambda card: _card_strength(card, trump), default=None)
+        worst_trump = min(trumps, key=lambda card: _card_strength(card, trump), default=None)
+        jack_has_not_fallen = not _has_been_played(Card("V", trump), game.round_state)
+        if best_trump is not None and _is_master(best_trump, game.get_hand(seat), game, trump):
+            return best_trump, legal_cards
+        if worst_trump is not None and jack_has_not_fallen:
+            return worst_trump, legal_cards
+
+    # Jouer les As hors atout
+    owned_non_trump_aces = [card for card in legal_cards if card.rank == "A" and card.suit != trump]
+    if owned_non_trump_aces:
+        return random.choice(owned_non_trump_aces), legal_cards
+
+    # Defending team on lead: drop trump from the candidates (unless the
+    # master lead is worth it) so neither Monte-Carlo nor the tactical
+    # fallback can gift the takers a trump lead.
+    if _defender_trump_lead_is_wasteful(game, seat, trump):
+        non_trumps = [card for card in legal_cards if card.suit != trump]
+        if non_trumps:
+            legal_cards = non_trumps
+
+    # Si ya plus d'atout, jouer les longeurs maitres
+    if not _opponents_may_hold_trump(game, seat, trump):
+        non_trump_masters = [
+            card for card in legal_cards if card.suit != trump and _is_master(card, game.get_hand(seat), game, trump)
+        ]
+        if non_trump_masters:
+            return (
+                max(
+                    non_trump_masters,
+                    key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)),
+                ),
+                legal_cards,
+            )
+    # tenter une couleur jamais jouée si possible
+    never_played_suits = {card.suit for card in legal_cards if card.suit != trump and not _has_been_played(card, game.round_state)}
+    if never_played_suits:
+        return min(
+            (card for card in legal_cards if card.suit in never_played_suits),
+            key=lambda card: _card_strength(card, trump),
+            default=None,
+        ), legal_cards
+    return None, legal_cards
+
+
 def choose_card(game: Game, seat: Seat) -> Card:
     """Choose the legal card with the best average result across plausible hidden deals.
 
@@ -722,46 +781,11 @@ def choose_card(game: Game, seat: Seat) -> Card:
     if len(legal_cards) == 1:
         return legal_cards[0]
 
-    # Algo ouverture by bot
-    contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
     trump = options["trump"]
-    if not game.round_state.current_trick and contract is not None and trump is not None:
-        # Hard safety rule for the actual choice, not only the rollout policy: a
-        # declaring-team player who leads may remove possible defensive ruffers
-        # before exposing an outside Ace or Ten. Monte-Carlo scores cannot override
-        # a master trump lead, or a lead while the trump Valet can still be with the
-        # partner. Once the Valet has fallen, a non-master trump is not forced.
-        if contract["team"] == TEAM_OF[seat] and _opponents_may_hold_trump(game, seat, trump):
-            trumps = [card for card in legal_cards if card.suit == trump]
-            best_trump = max(trumps, key=lambda card: _card_strength(card, trump), default=None)
-            worst_trump = min(trumps, key=lambda card: _card_strength(card, trump), default=None)
-            jack_has_not_fallen = not _has_been_played(Card("V", trump), game.round_state)
-            if best_trump is not None and _is_master(best_trump, game.get_hand(seat), game, trump):
-                return best_trump
-            if worst_trump is not None and jack_has_not_fallen:
-                return worst_trump
-        if not _opponents_may_hold_trump(game, seat, trump):
-            # If taker is master of a non trump suit, lead it to cash the side master.
-            non_trump_masters = [
-                card
-                for card in legal_cards
-                if card.suit != trump and _is_master(card, game.get_hand(seat), game, trump)
-            ]
-            if non_trump_masters:
-                return max(
-                    non_trump_masters, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump))
-                )
-        
-        owned_non_trump_aces = [card for card in legal_cards if card.rank == "A" and card.suit != trump]
-        if owned_non_trump_aces:
-            return random.choice(owned_non_trump_aces)
-        # Defending team on lead: drop trump from the candidates (unless the
-        # master lead is worth it) so neither Monte-Carlo nor the tactical
-        # fallback can gift the takers a trump lead.
-        elif _defender_trump_lead_is_wasteful(game, seat, trump):
-            non_trumps = [card for card in legal_cards if card.suit != trump]
-            if non_trumps:
-                legal_cards = non_trumps
+    if not game.round_state.current_trick and trump is not None:
+        opening_card, legal_cards = _choose_opening_card(game, seat, legal_cards, trump)
+        if opening_card is not None:
+            return opening_card
 
     if game.round_state.current_trick:
         # If the partner is winning the trick, discard a low card to develop the hand.
