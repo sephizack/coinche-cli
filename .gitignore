@@ -4,7 +4,7 @@ tests/__pycache__/
 coinche/__pycache__/
 *.py[cod]
 *$py.class
-
+.env
 aidlc
 .claude
 
