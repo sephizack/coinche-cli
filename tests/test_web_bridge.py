@@ -611,6 +611,21 @@ def test_round_recap_shows_captured_and_awarded_points() -> None:
     assert "{{ euxScore }}" in app
 
 
+def test_web_bid_panel_has_a_dedicated_capot_button() -> None:
+    """Capot must be announceable via its own button, not by stepping past 180."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    # A dedicated, labelled Capot action bound to its own handler.
+    assert 'data-testid="bid-capot"' in app
+    assert "Annoncer Capot" in app
+    assert "announceCapot()" in app
+    assert ".action-btn--capot" in styles
+    # The numeric stepper no longer carries a "capot" rung.
+    assert 'a.points !== "capot"' in app
+
+
 def test_overlay_startup_url_uses_an_osc8_terminal_hyperlink() -> None:
     """The launch URL remains readable and opens directly in capable terminals."""
     url = "http://127.0.0.1:8765"
