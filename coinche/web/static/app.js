@@ -474,6 +474,13 @@ const App = {
     const bidAnnouncementKey = ref(0);
     const sweepClass = ref(null); // e.g. "sweep-north" while a trick sweeps out
     const confetti = ref([]);
+    // True while a *dropped* WebSocket is being recovered. Drives the
+    // full-screen "reconnexion…" overlay that blocks input — so a player
+    // returning to a backgrounded tab sees clearly that clicks won't register
+    // yet, instead of tapping into the void while the socket comes back. Starts
+    // false: the very first connect is covered by the lobby's own loading
+    // spinner, so we only raise this on an actual drop (see scheduleReconnect).
+    const reconnecting = ref(false);
     // Optional méta-client context: when this page is served by the multi-
     // session méta-client, `window.__META__` carries the per-session WebSocket
     // path and the name the player already chose on the landing page. In the
@@ -526,13 +533,26 @@ const App = {
     let beloteEffectTimer = null;
     let bidAnnouncementTimer = null;
     // Consecutive reconnect attempts that never managed to open. On the
-    // méta-client this is how we detect that our session no longer exists
-    // server-side (e.g. the server rebooted, or the session was reaped): the WS
-    // keeps closing without ever opening. After a few tries we give up, drop
-    // the stale localStorage id, and bounce to the landing page — which
-    // re-probes and shows the name form for a fresh session.
+    // méta-client this *might* mean our session no longer exists server-side
+    // (server rebooted, or the session was reaped) — but it can equally be a
+    // transient network blip (a phone waking from sleep reconnects its radio
+    // over several seconds, during which every WS open fails). Those two cases
+    // look identical from the WS alone, so once we hit the threshold we don't
+    // wipe anything blindly: we ask the server which it is (see
+    // `verifyThenReconnect`). Abandoning a still-live session here is exactly
+    // what stranded a player on the landing page while their old socket kept
+    // their seat at the table.
     let failedOpens = 0;
     const MAX_FAILED_OPENS = 5;
+
+    function scheduleReconnect() {
+      // Raise the full-screen blocking overlay (replaces the old transient
+      // toast): while the socket is down, taps/clicks are dropped anyway, so we
+      // make that explicit rather than letting the player click into the void.
+      reconnecting.value = true;
+      setTimeout(connect, backoff);
+      backoff = Math.min(backoff * 2, 4000);
+    }
 
     function abandonDeadSession() {
       try {
@@ -543,6 +563,36 @@ const App = {
       // Only the méta-client can recover via the landing page; the mono-session
       // overlay has nowhere to bounce to, so it just keeps retrying.
       if (META.sessionId) window.location.replace("/");
+    }
+
+    // Reached after MAX_FAILED_OPENS consecutive WS opens failed. Before giving
+    // up and wiping our session id, confirm with the server whether the session
+    // is actually gone. Only a server-confirmed-dead session justifies bouncing
+    // home; a live session (or an unreachable probe — i.e. the network itself is
+    // down, not the session) keeps retrying so we land back in our seat.
+    function verifyThenReconnect() {
+      if (!META.sessionId) {
+        // Mono-session overlay: no session concept, just keep retrying.
+        failedOpens = 0;
+        scheduleReconnect();
+        return;
+      }
+      fetch("/api/session?id=" + encodeURIComponent(META.sessionId))
+        .then((r) => (r.ok ? r.json() : { alive: false }))
+        .then((data) => {
+          if (data && data.alive) {
+            failedOpens = 0; // still alive server-side — the WS drops are transient
+            scheduleReconnect();
+          } else {
+            abandonDeadSession();
+          }
+        })
+        .catch(() => {
+          // Couldn't even reach the probe: the network is down, not the
+          // session. Keep retrying rather than discarding a possibly-live seat.
+          failedOpens = 0;
+          scheduleReconnect();
+        });
     }
 
     // -------- WebSocket (ConnectionLayer) --------
@@ -559,6 +609,7 @@ const App = {
         opened = true;
         backoff = 500;
         failedOpens = 0; // a successful open means the session is alive
+        reconnecting.value = false; // socket is live again — drop the overlay
         // Ask U2 to start streaming lobby updates so the join screen is live.
         sendAction("lobby", {});
       });
@@ -580,18 +631,20 @@ const App = {
       ws.addEventListener("close", () => {
         // Closed without ever opening this attempt: count it. A dead session
         // (server reboot / reaped) rejects the /s/<id>/ws upgrade, so the WS
-        // closes without opening every time — after a few tries we give up and
-        // recover to the landing page instead of reconnecting forever.
+        // closes without opening every time. But a phone waking from sleep also
+        // fails to open for a few seconds while its radio reconnects — same
+        // symptom, live session. After a few tries we therefore *ask* the
+        // server which case it is instead of assuming the worst and wiping a
+        // still-live session (which would strand the player on a fresh seat
+        // while their old socket kept the real one).
         if (!opened) {
           failedOpens += 1;
           if (failedOpens >= MAX_FAILED_OPENS) {
-            abandonDeadSession();
+            verifyThenReconnect();
             return;
           }
         }
-        showToast("reconnexion…", "info", 4000);
-        setTimeout(connect, backoff);
-        backoff = Math.min(backoff * 2, 4000);
+        scheduleReconnect();
       });
       ws.addEventListener("error", () => {
         try {
@@ -1223,6 +1276,7 @@ const App = {
       bidAnnouncementKey,
       sweepClass,
       confetti,
+      reconnecting,
       lobby,
       REDUCED_MOTION,
       joined,
@@ -1271,6 +1325,15 @@ const App = {
     <!-- Toasts (transient errors / reconnection notice) -->
     <div class="toast-stack" aria-live="assertive">
       <div v-for="t in toasts" :key="t.id" class="toast" :class="{ 'toast--info': t.type === 'info' }">{{ t.message }}</div>
+    </div>
+
+    <!-- Reconnection overlay: full-screen, semi-transparent, and it swallows
+         pointer events so a returning (backgrounded) tab can't fire actions
+         into a dead socket. Shown whenever the WS isn't open. -->
+    <div v-if="reconnecting" class="reconnect-overlay" role="alertdialog" aria-live="assertive"
+         aria-label="Reconnexion en cours" data-testid="reconnect-overlay">
+      <span class="lobby__spinner" aria-hidden="true"></span>
+      <p class="reconnect-overlay__label">Reconnexion…</p>
     </div>
 
     <!-- Coinche / Surcoinche confirmation from the server-authoritative bid state. -->

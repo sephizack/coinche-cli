@@ -673,6 +673,33 @@ def test_web_client_animates_each_server_confirmed_contract_bid() -> None:
     assert "@keyframes bid-announcement-pop" in styles
 
 
+def test_web_client_shows_blocking_reconnect_overlay_while_socket_is_down() -> None:
+    """A dropped WebSocket must raise a full-screen, input-blocking overlay.
+
+    A backgrounded phone tab loses its socket; without a blocking overlay the
+    player taps cards/buttons that silently do nothing (the socket is gone).
+    The overlay is driven by `reconnecting`, shown while the WS isn't open, and
+    must sit above everything and swallow pointer events."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    # A dedicated reactive flag, raised on every scheduled reconnect and
+    # cleared on `open`.
+    assert "const reconnecting = ref(false);" in app
+    assert "reconnecting.value = false;" in app  # cleared on open
+    assert "reconnecting.value = true;" in app  # raised on reconnect
+    assert 'reconnecting,' in app  # exposed to the template
+
+    # The overlay element and its blocking, top-most styling.
+    assert 'data-testid="reconnect-overlay"' in app
+    assert 'v-if="reconnecting"' in app
+    assert ".reconnect-overlay" in styles
+    # Full-viewport and above every other layer (toasts/effects top out at 110).
+    assert "inset: 0;" in styles
+    assert "z-index: 200;" in styles
+
+
 def test_web_client_animates_each_new_trick_card() -> None:
     """Every CARD_PLAYED snapshot insertion, including bot plays, gets a Vue enter animation."""
     static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"

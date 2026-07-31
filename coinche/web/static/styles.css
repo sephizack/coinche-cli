@@ -1747,6 +1747,45 @@ body > .lobby {
   }
 }
 
+/* ---- Reconnection overlay ----
+   Covers the whole viewport while the WebSocket is down. It intentionally sits
+   above everything (including toasts and the bid effect at z-index 110) and
+   captures pointer events, so taps made on a just-restored/backgrounded tab
+   don't fire into a dead socket and appear to do nothing. */
+.reconnect-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  /* Deliberately quite transparent (per request): the table stays visible
+     underneath so it reads as "hang on, coming back", not "gone". */
+  background: rgba(3, 12, 8, 0.55);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  animation: reconnect-fade-in var(--dur-card, 0.2s) var(--ease-standard, ease);
+}
+.reconnect-overlay__label {
+  margin: 0;
+  color: var(--text-on-felt, #f5f5f5);
+  font-family: system-ui, sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+@keyframes reconnect-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Server-confirmed Coinche/Surcoinche announcement, matching the terminal effect
    without blocking the bid controls underneath. */
 .bid-effect {
