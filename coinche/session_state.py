@@ -637,6 +637,11 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.whose_turn = Seat(next_to_act) if next_to_act is not None else None
         if played_seat == state.seat and payload["card"] in state.hand:
             state.hand.remove(payload["card"])
+        # When it is not our turn, keep cards interactive so the player can
+        # pre-select the next card (shown with a spinner).  PLAY_REQUEST will
+        # refresh legal_cards to the actual legal subset.
+        if state.whose_turn != state.seat:
+            state.legal_cards = list(state.hand)
         state.bid_effect_level = 1
 
     elif msg_type == protocol.TRICK_RESULT:
@@ -844,7 +849,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "can_fill_bots": state.can_fill_bots,
         "last_action": state.last_action,
         "pending_bid_request": state.pending_bid_request,  # so the web can show the bid panel
-        "pending_play_request": bool(state.legal_cards),
+        "pending_play_request": state.whose_turn == state.seat and bool(state.legal_cards),
         "chat_messages": [
             {
                 "name": name,

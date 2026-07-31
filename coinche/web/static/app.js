@@ -71,6 +71,7 @@ const Card = {
     legal: { type: Boolean, default: false },
     illegal: { type: Boolean, default: false },
     shake: { type: Boolean, default: false },
+    pending: { type: Boolean, default: false },
     interactive: { type: Boolean, default: false },
   },
   emits: ["play"],
@@ -89,6 +90,7 @@ const Card = {
         "card--legal": this.legal,
         "card--illegal": this.illegal,
         "card--shake": this.shake,
+        "card--pending": this.pending,
       };
     },
   },
@@ -137,6 +139,12 @@ const Card = {
                 aria-hidden="true">♣</text>
         </template>
       </svg>
+      <div v-if="pending" class="card__spinner" aria-label="En attente">
+        <svg class="card__spinner-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" fill="none" stroke="var(--gold)" stroke-width="2.5"
+                  stroke-dasharray="31.4 31.4" stroke-linecap="round" />
+        </svg>
+      </div>
     </div>
   `,
 };
@@ -464,6 +472,7 @@ const App = {
     const leaving = ref(false); // "leave" sent, waiting for the server to return us to the lobby
     let leavingTimer = null;
     const shakeCard = ref(null);
+    const pendingCard = ref(null); // card pre-selected while waiting for our turn
     const dealing = ref(false);
     const badgeFlash = ref(false);
     const bidEffect = ref(null);
@@ -918,13 +927,12 @@ const App = {
       const s = snapshot.value;
       if (!s) return [];
       const canPlay = !!s.pending_play_request;
-      // Like the CLI: every card is presented as choosable during our turn
-      // (no greying of "illegal" cards). Legality is checked on click and a
-      // rejection message is shown instead — the server stays authoritative.
+      const pc = pendingCard.value;
       return (s.hand || []).map((card) => ({
         card,
-        legal: canPlay, // clickable/interactive on our turn
-        illegal: false, // never dim cards — all look playable
+        legal: canPlay || !!pc,
+        illegal: false,
+        pending: pc === card,
       }));
     });
 
@@ -1030,21 +1038,28 @@ const App = {
     // -------- actions --------
     function playCard(card) {
       const s = snapshot.value;
-      if (!s || !s.pending_play_request) return; // not our turn: ignore
-      const legal = new Set(s.legal_cards || []);
-      if (!legal.has(card)) {
-        // Illegal card: like the CLI, let the player try, then tell them it's
-        // not allowed (server stays authoritative — nothing is sent).
-        shakeCard.value = card;
-        setTimeout(() => (shakeCard.value = null), 400);
-        showToast(
-          `Impossible de jouer ${card} maintenant (carte non autorisée).`,
-          "error",
-          3500,
-        );
-        return;
+      if (!s) return;
+      if (s.pending_play_request) {
+        // Our turn: play immediately (server-authoritative validation).
+        const legal = new Set(s.legal_cards || []);
+        if (!legal.has(card)) {
+          shakeCard.value = card;
+          setTimeout(() => (shakeCard.value = null), 400);
+          showToast(
+            `Impossible de jouer ${card} maintenant (carte non autorisée).`,
+            "error",
+            3500,
+          );
+          return;
+        }
+        pendingCard.value = null;
+        sendAction("play", { card });
+      } else if (s.hand && s.hand.includes(card)) {
+        // Not our turn: queue the card (shown with a spinner).  It will be
+        // played automatically when PLAY_REQUEST arrives and the card is
+        // still legal.
+        pendingCard.value = card;
       }
-      sendAction("play", { card });
     }
     function submitBid(payload) {
       bidSending.value = true;
@@ -1253,6 +1268,40 @@ const App = {
     watch(chatOpen, (open) => {
       if (open) unread.value = 0;
     });
+
+    // Auto-play: when our turn arrives and a card was pre-selected, play it.
+    watch(
+      () => snapshot.value && snapshot.value.pending_play_request,
+      (isOurTurn) => {
+        if (!isOurTurn || !pendingCard.value) return;
+        const s = snapshot.value;
+        const legal = new Set(s.legal_cards || []);
+        const card = pendingCard.value;
+        pendingCard.value = null;
+        if (legal.has(card)) {
+          sendAction("play", { card });
+        } else {
+          shakeCard.value = card;
+          setTimeout(() => (shakeCard.value = null), 400);
+          showToast(
+            `${card} n'est plus valide pour ce tour.`,
+            "error",
+            3500,
+          );
+        }
+      },
+    );
+
+    // Clear pending card when the hand changes (new deal / resync) and it is
+    // no longer present.
+    watch(
+      () => snapshot.value && snapshot.value.hand,
+      (hand) => {
+        if (pendingCard.value && hand && !hand.includes(pendingCard.value)) {
+          pendingCard.value = null;
+        }
+      },
+    );
 
     onMounted(connect);
 
@@ -1582,6 +1631,7 @@ const App = {
                 :card="h.card"
                 :legal="h.legal"
                 :illegal="h.illegal"
+                :pending="h.pending"
                 :interactive="h.legal"
                 :shake="shakeCard === h.card"
                 :class="{ 'deal-enter': dealing }"

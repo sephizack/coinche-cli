@@ -680,6 +680,7 @@ button {
   width: var(--card-w);
   height: var(--card-h);
   display: inline-block;
+  position: relative;
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
   background: transparent;
@@ -698,6 +699,32 @@ button {
 }
 .card--legal:hover {
   box-shadow: var(--shadow-card-raised);
+}
+.card--pending {
+  cursor: wait;
+  opacity: 0.7;
+}
+.card--pending:hover {
+  box-shadow: none;
+  transform: none;
+}
+.card__spinner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.card__spinner-svg {
+  width: 28px;
+  height: 28px;
+  animation: card-spin 1s linear infinite;
+}
+@keyframes card-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* =========================================================================
