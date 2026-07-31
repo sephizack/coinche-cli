@@ -568,7 +568,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         try:
             result = game.submit_bid(seat, payload["action"], trump=payload.get("trump"), points=payload.get("points"))
         except NotYourTurnError:
-            await table.send_to(seat, protocol.ERROR, {"code": protocol.NOT_YOUR_TURN, "message": "Not your turn"})
+            await table.send_to(seat, protocol.ERROR, {"code": protocol.NOT_YOUR_TURN, "message": "Ce n'est pas encore votre tour"})
             return
         except IllegalBidError as exc:
             await table.send_to(seat, protocol.ERROR, {"code": protocol.ILLEGAL_BID, "message": str(exc)})
@@ -580,14 +580,14 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         card_str = payload["card"]
         if not isinstance(card_str, str) or len(card_str) < 2:
             await table.send_to(
-                seat, protocol.ERROR, {"code": protocol.ILLEGAL_CARD, "message": f"Malformed card: {card_str!r}"}
+                seat, protocol.ERROR, {"code": protocol.ILLEGAL_CARD, "message": "Carte invalide"}
             )
             return
         card = _wire_to_card(card_str)
         try:
             result = game.submit_card(seat, card)
         except NotYourTurnError:
-            await table.send_to(seat, protocol.ERROR, {"code": protocol.NOT_YOUR_TURN, "message": "Not your turn"})
+            await table.send_to(seat, protocol.ERROR, {"code": protocol.NOT_YOUR_TURN, "message": "Ce n'est pas encore votre tour"})
             return
         except IllegalCardError as exc:
             await table.send_to(seat, protocol.ERROR, {"code": protocol.ILLEGAL_CARD, "message": str(exc)})

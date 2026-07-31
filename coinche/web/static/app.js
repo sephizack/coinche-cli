@@ -792,7 +792,7 @@ const App = {
         snap.last_action &&
         prev &&
         snap.last_action !== prev.last_action &&
-        snap.last_action.startsWith("Erreur")
+        snap.errors && snap.errors.length > (prev.errors || []).length
       ) {
         showToast(snap.last_action, "error");
       }
@@ -833,11 +833,9 @@ const App = {
         toasts.value = toasts.value.filter((t) => t.type !== "error");
       }
       toasts.value.push({ id, message, type });
-      if (type !== "error") {
-        setTimeout(() => {
-          toasts.value = toasts.value.filter((t) => t.id !== id);
-        }, ttl);
-      }
+      setTimeout(() => {
+        toasts.value = toasts.value.filter((t) => t.id !== id);
+      }, ttl);
       return id;
     }
     function dismissToast(id) {
@@ -1075,7 +1073,12 @@ const App = {
         sendAction("play", { card });
       } else if (s.hand && s.hand.includes(card)) {
         // Not our turn: toggle queue.  Clicking the same card again cancels.
-        pendingCard.value = pendingCard.value === card ? null : card;
+        if (pendingCard.value === card) {
+          pendingCard.value = null;
+          document.activeElement?.blur();
+        } else {
+          pendingCard.value = card;
+        }
       }
     }
     function submitBid(payload) {

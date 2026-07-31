@@ -807,7 +807,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
     elif msg_type == protocol.ERROR:
         text = payload.get("message") or payload.get("code") or "Erreur inconnue"
         state.errors.append((time.time(), text))
-        state.last_action = f"Erreur : {text}"
+        state.last_action = text
 
     return ApplyResult(action_requested=action_requested)
 

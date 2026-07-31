@@ -730,7 +730,7 @@ def test_error_appends_and_sets_last_action():
     assert result.action_requested is False
     assert len(state.errors) == 1
     assert state.errors[0][1] == "NOT_YOUR_TURN"
-    assert state.last_action == "Erreur : NOT_YOUR_TURN"
+    assert state.last_action == "NOT_YOUR_TURN"
 
 
 # --------------------------------------------------------------------------- #
