@@ -85,6 +85,12 @@ class ClientState:
     # web client diffs to re-trigger the pop animation on each declaration.
     belote_effect: str | None = None
     belote_effect_seq: int = 0
+    # A short-lived, high-visibility alert when a human player joins the table
+    # (empty seat, bot replacement, or reconnection). `join_effect_name` holds
+    # the newcomer's display name; `join_effect_seq` is a monotonic counter the
+    # web client diffs to re-trigger the pop animation on each join.
+    join_effect_name: str | None = None
+    join_effect_seq: int = 0
     # Highest bid still standing *while bidding is ongoing* (distinct from
     # `trump`/`contract_points`/`contract_bidder` above, which only get set
     # once bidding has settled into a final contract at BIDDING_RESULT).
@@ -373,6 +379,8 @@ def _connection_banner_text(name: str, status: str) -> str:
         return f"👋 {name} a quitté — un bot prend la relève"
     if status == "bot_replaced":
         return f"🙋 {name} a rejoint la table à la place d'un bot"
+    if status == "joined":
+        return f"👋 {name} a rejoint la table"
     return f"✓ {name} reconnecté"
 
 
@@ -536,6 +544,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.contract_bidder = None
         state.coinche_level = 1
         state.bid_effect_level = 1
+        state.join_effect_name = None
         state.current_bid_trump = None
         state.current_bid_points = None
         state.current_bid_seat = None
@@ -787,6 +796,12 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             if bot_name and seat in state.players:
                 state.players[seat] = bot_name
             state.bots[seat] = True
+        # Trigger a short-lived join effect (like belote/rebelote) for
+        # statuses that represent a human arriving at the table: bot_replaced,
+        # reconnected, or the new "joined" (pre-game empty seat fill).
+        if payload["status"] in ("bot_replaced", "reconnected", "joined"):
+            state.join_effect_name = payload["name"]
+            state.join_effect_seq += 1
         # IN1/BR-U1-7: build the plain notice here (no `rich`); the terminal
         # side may re-render it styled from `last_action` in its redraw path.
         state.last_action = _connection_banner_text(payload["name"], payload["status"])
@@ -846,6 +861,8 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "bid_effect_level": state.bid_effect_level,
         "belote_effect": state.belote_effect,
         "belote_effect_seq": state.belote_effect_seq,
+        "join_effect_name": state.join_effect_name,
+        "join_effect_seq": state.join_effect_seq,
         "current_bid": {
             "trump": state.current_bid_trump,
             "points": state.current_bid_points,

@@ -29,6 +29,7 @@ from coinche.ui import (
     render_bid_value_prompt,
     render_connection_banner,
     render_game_over,
+    render_join_effect,
     render_lobby,
     render_play_menu,
     render_round_score,
@@ -116,6 +117,17 @@ def test_render_bid_effect_emphasizes_coinche_and_surcoinche():
     assert coinche is not None and "COINCHE" in _plain(coinche)
     assert surcoinche is not None and "SURCOINCHE" in _plain(surcoinche)
     assert render_bid_effect(1) is None
+
+
+def test_render_join_effect_shows_player_name():
+    effect = render_join_effect("Bob")
+    plain = _plain(effect)
+    assert "Bob" in plain
+    assert "a rejoint" in plain
+
+
+def test_render_join_effect_is_not_none():
+    assert render_join_effect("Alice") is not None
 
 
 def test_build_table_view_places_contract_in_a_banner_before_the_player_grid():

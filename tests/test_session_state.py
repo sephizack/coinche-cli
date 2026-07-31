@@ -606,7 +606,7 @@ def test_connection_banner_matches_ui_renderer():
 
     state = ClientState()
     _join(state)
-    for status in ("disconnected", "connected", "replaced_by_bot", "bot_replaced"):
+    for status in ("disconnected", "connected", "replaced_by_bot", "bot_replaced", "joined"):
         apply_message(state, protocol.CONNECTION_STATUS, {"seat": "N", "name": "Nord", "status": status})
         assert state.last_action == ui.render_connection_banner("Nord", status).plain
 
@@ -647,6 +647,82 @@ def test_replaced_by_bot_status_renames_seat_and_flags_bot():
     assert state.bots[Seat.N] is True
     assert state.last_action == "👋 Nord a quitté — un bot prend la relève"
     assert snapshot_to_dict(state)["bots"]["N"] is True
+
+
+def test_join_effect_set_on_bot_replaced():
+    """A human replacing a bot triggers the join effect with the newcomer's name."""
+    state = ClientState()
+    _join(state)
+    state.players[Seat.E] = "Sephiroth"
+    apply_message(
+        state,
+        protocol.CONNECTION_STATUS,
+        {"seat": "E", "name": "Bob", "status": "bot_replaced"},
+    )
+    assert state.join_effect_name == "Bob"
+    assert state.join_effect_seq == 1
+    snap = snapshot_to_dict(state)
+    assert snap["join_effect_name"] == "Bob"
+    assert snap["join_effect_seq"] == 1
+
+
+def test_join_effect_set_on_reconnected():
+    """A reconnecting player triggers the join effect."""
+    state = ClientState()
+    _join(state)
+    apply_message(
+        state,
+        protocol.CONNECTION_STATUS,
+        {"seat": "N", "name": "Nord", "status": "reconnected"},
+    )
+    assert state.join_effect_name == "Nord"
+    assert state.join_effect_seq == 1
+
+
+def test_join_effect_set_on_joined():
+    """A pre-game empty seat fill triggers the join effect."""
+    state = ClientState()
+    _join(state)
+    apply_message(
+        state,
+        protocol.CONNECTION_STATUS,
+        {"seat": "E", "name": "Est", "status": "joined"},
+    )
+    assert state.join_effect_name == "Est"
+    assert state.join_effect_seq == 1
+    assert state.last_action == "👋 Est a rejoint la table"
+
+
+def test_join_effect_not_set_on_disconnected():
+    """A disconnection does NOT trigger the join effect."""
+    state = ClientState()
+    _join(state)
+    apply_message(
+        state,
+        protocol.CONNECTION_STATUS,
+        {"seat": "N", "name": "Nord", "status": "disconnected"},
+    )
+    assert state.join_effect_name is None
+    assert state.join_effect_seq == 0
+
+
+def test_join_effect_cleared_on_new_deal():
+    """The join effect is cleared when a new deal starts."""
+    state = ClientState()
+    _join(state)
+    state.join_effect_name = "Bob"
+    state.join_effect_seq = 1
+    apply_message(
+        state,
+        protocol.DEAL,
+        {
+            "hand": ["7♠", "8♠", "9♠", "10♠", "V♠", "D♠", "R♠", "A♠", "7♥"],
+            "round_number": 1,
+            "first_bidder_seat": "E",
+            "dealer_seat": "N",
+        },
+    )
+    assert state.join_effect_name is None
 
 
 def test_chat_appends_message_with_team():

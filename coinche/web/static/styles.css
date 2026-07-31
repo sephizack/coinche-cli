@@ -1076,6 +1076,7 @@ button {
   flex-direction: column;
   background: var(--panel-bg-solid);
   border-left: 1px solid rgba(212, 175, 55, 0.25);
+  border-radius: var(--radius-panel) 0 0 var(--radius-panel);
   z-index: 40;
 }
 .chat-panel__header {
@@ -1547,7 +1548,8 @@ body > .lobby {
 }
 .lobby__card .lobby__logo {
   width: min(220px, 100%);
-  max-height: 84px;
+  max-height: 400px;
+  border-radius: var(--radius-panel);
   margin: 0 auto var(--sp-4);
   object-position: center;
 }
@@ -1905,6 +1907,13 @@ body > .lobby {
   box-shadow:
     0 0 0 5px rgba(168, 216, 255, 0.25),
     0 0 48px rgba(47, 123, 196, 0.85);
+}
+.bid-effect--join {
+  border-color: #a8ffb0;
+  background: linear-gradient(135deg, #1a5c2a, #2da34a 52%, #1a5c2a);
+  box-shadow:
+    0 0 0 5px rgba(168, 255, 176, 0.25),
+    0 0 48px rgba(45, 163, 74, 0.85);
 }
 .bid-effect__actor {
   font-size: 0.62em;

@@ -261,6 +261,7 @@ async def run_session(
                 team_names=state.team_names,
                 web_url=web.urls[0] if web.urls else None,
                 can_fill_bots=state.can_fill_bots,
+                join_effect_name=state.join_effect_name,
             )
             game_focused = state.active_pane == "game"
             left_border = "bold cyan" if game_focused else "grey50"

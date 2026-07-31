@@ -215,6 +215,15 @@ def render_bid_effect(coinche_level: int) -> Panel | None:
     return Panel(Align.center(Text(label, style=style)), border_style=border_style, padding=(0, 2), expand=False)
 
 
+def render_join_effect(name: str) -> Panel:
+    """Render a temporary, prominent alert when a human player joins the table."""
+    label = Text()
+    label.append("🙋 ", style="bold green")
+    label.append(name, style="bold white")
+    label.append(" a rejoint !", style="bold green")
+    return Panel(Align.center(label), border_style="bold green", padding=(0, 2), expand=False)
+
+
 def last_trick_grid(local_seat: Seat, last_trick: dict[Seat, str]) -> Panel | None:
     """Mini table-shaped rendering of the most recently completed trick: each
     card is positioned at its own player's seat, rotated so `local_seat`
@@ -317,6 +326,7 @@ def build_table_view(
     team_names: dict[str, str] | None = None,
     web_url: str | None = None,
     can_fill_bots: bool = False,
+    join_effect_name: str | None = None,
 ) -> Group:
     """Compose the whole table view into one root renderable for rich.live.Live.
 
@@ -358,6 +368,8 @@ def build_table_view(
     bid_effect = render_bid_effect(bid_effect_level)
     if bid_effect is not None:
         blocks.extend([Align.center(bid_effect), Text("")])
+    if join_effect_name is not None:
+        blocks.extend([Align.center(render_join_effect(join_effect_name)), Text("")])
     blocks.extend([Align.center(table_layout), Text(""), Align.center(build_hand(hand, legal_cards))])
     if bid_menu is not None:
         blocks.append(Text(""))
@@ -539,6 +551,10 @@ def render_connection_banner(name: str, status: str) -> Text:
         text.append("🙋 ", style="bold green")
         text.append(name, style="bold white")
         text.append(" a rejoint la table à la place d'un bot", style="italic grey70")
+    elif status == "joined":
+        text.append("👋 ", style="bold green")
+        text.append(name, style="bold white")
+        text.append(" a rejoint la table", style="italic grey70")
     else:
         text.append("✓ ", style="bold green")
         text.append(name, style="bold white")

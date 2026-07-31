@@ -485,6 +485,8 @@ const App = {
     const bidEffectKey = ref(0);
     const beloteEffect = ref(null);
     const beloteEffectKey = ref(0);
+    const joinEffect = ref(null);
+    const joinEffectKey = ref(0);
     const bidAnnouncement = ref(null);
     const bidAnnouncementKey = ref(0);
     const sweepClass = ref(null); // e.g. "sweep-north" while a trick sweeps out
@@ -546,6 +548,7 @@ const App = {
     let toastId = 0;
     let bidEffectTimer = null;
     let beloteEffectTimer = null;
+    let joinEffectTimer = null;
     let bidAnnouncementTimer = null;
     // Consecutive reconnect attempts that never managed to open. On the
     // méta-client this *might* mean our session no longer exists server-side
@@ -722,6 +725,19 @@ const App = {
         beloteEffectTimer = setTimeout(() => {
           beloteEffect.value = null;
           beloteEffectTimer = null;
+        }, 2400);
+      }
+
+      // Join effect: a human player joined the table (empty seat, bot
+      // replacement, or reconnection). The seq counter bumps once per join,
+      // re-triggering the pop each time.
+      if (prev && snap.join_effect_seq > (prev.join_effect_seq || 0)) {
+        joinEffect.value = snap.join_effect_name;
+        joinEffectKey.value += 1;
+        if (joinEffectTimer) clearTimeout(joinEffectTimer);
+        joinEffectTimer = setTimeout(() => {
+          joinEffect.value = null;
+          joinEffectTimer = null;
         }, 2400);
       }
 
@@ -1409,6 +1425,11 @@ const App = {
          role="status" aria-live="assertive">
       <span v-if="beloteEffect === 'rebelote'">👑 REBELOTE ! 👑</span>
       <span v-else>💑 BELOTE ! 💑</span>
+    </div>
+    <!-- Join effect: a human player arrived at the table. -->
+    <div v-if="joinEffect" :key="'join-' + joinEffectKey" class="bid-effect bid-effect--join"
+         role="status" aria-live="assertive">
+      <span>🙋 {{ joinEffect }} a rejoint !</span>
     </div>
     <div v-if="bidAnnouncement" :key="bidAnnouncementKey" class="bid-effect bid-effect--announcement"
          role="status" aria-live="polite">

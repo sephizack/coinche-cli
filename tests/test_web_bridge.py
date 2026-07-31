@@ -673,6 +673,22 @@ def test_web_client_animates_each_server_confirmed_contract_bid() -> None:
     assert "@keyframes bid-announcement-pop" in styles
 
 
+def test_web_client_animates_join_effect_on_human_arrival() -> None:
+    """A human player joining the table must produce a visible pop effect."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert "const joinEffect = ref(null);" in app
+    assert "const joinEffectKey = ref(0);" in app
+    assert "snap.join_effect_seq > (prev.join_effect_seq || 0)" in app
+    assert "joinEffectKey.value += 1" in app
+    assert "joinEffect.value = snap.join_effect_name" in app
+    assert "a rejoint !" in app
+    assert "bid-effect--join" in app
+    assert ".bid-effect--join" in styles
+
+
 def test_web_client_shows_blocking_reconnect_overlay_while_socket_is_down() -> None:
     """A dropped WebSocket must raise a full-screen, input-blocking overlay.
 

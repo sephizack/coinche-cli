@@ -948,6 +948,12 @@ async def _resolve_join_inner(
             {"players": players, "seats_filled": len(players), "waiting_for": 4 - len(players)},
             exclude=seat,
         )
+        # Notify seated players of the new arrival so the join effect fires.
+        await table.broadcast(
+            protocol.CONNECTION_STATUS,
+            {"seat": _seat_to_str(seat), "name": player_name, "status": "joined"},
+            exclude=seat,
+        )
         if table.game is not None:
             await _broadcast_deal(table)
             await _send_bid_request(table, table.game.next_to_act)
