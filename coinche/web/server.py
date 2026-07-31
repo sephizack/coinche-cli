@@ -68,6 +68,10 @@ def _detect_lan_ip() -> str | None:
     of that file)."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            # A timeout so a stuck routing lookup (VPN, no route) can never wedge
+            # the executor thread — otherwise `asyncio.run` hangs at shutdown
+            # waiting to join it. `socket.timeout` subclasses `OSError`.
+            s.settimeout(1.0)
             s.connect(("8.8.8.8", 80))
             return s.getsockname()[0]
     except OSError:
