@@ -481,9 +481,25 @@ class Game:
             assert self.bid_state is not None
             snapshot["current_highest_bid"] = self.bid_state.current_highest_bid
             snapshot["bid_history"] = list(self.bid_state.history)
+            snapshot["contract"] = None
         else:
             snapshot["current_highest_bid"] = None
             snapshot["bid_history"] = []
+            if self.phase == "trick_play":
+                assert self.bid_state is not None
+                contract = self.bid_state.current_highest_bid
+                snapshot["contract"] = (
+                    {
+                        "seat": contract["seat"],
+                        "trump": contract["trump"],
+                        "points": contract["points"],
+                        "coinche_level": self.bid_state.coinche_level,
+                    }
+                    if contract is not None
+                    else None
+                )
+            else:
+                snapshot["contract"] = None
 
         return snapshot
 

@@ -740,8 +740,21 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             _apply_current_highest_bid(state, payload.get("current_highest_bid"))
             for entry in payload.get("bid_history", []):
                 state.bid_marks[Seat(entry["seat"])] = _bid_mark_label(entry)
+            state.contract_bidder = None
+            state.contract_points = None
+            state.coinche_level = 1
         else:
             _apply_current_highest_bid(state, None)
+            contract = payload.get("contract")
+            if contract is not None:
+                state.trump = contract["trump"]
+                state.contract_points = contract["points"]
+                state.contract_bidder = Seat(contract["seat"])
+                state.coinche_level = contract.get("coinche_level", 1)
+            else:
+                state.contract_bidder = None
+                state.contract_points = None
+                state.coinche_level = 1
         state.status_message = "Reconnecté — synchronisation effectuée"
         state.last_action = "Reconnecté — synchronisation effectuée"
 

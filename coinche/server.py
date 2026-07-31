@@ -129,6 +129,7 @@ def _bid_to_wire(bid: dict | None) -> dict | None:
 def _snapshot_to_wire(snapshot: dict, table_key: str, table: Table) -> dict:
     current_highest_bid = _bid_to_wire(snapshot["current_highest_bid"])
     bid_history = [{**entry, "seat": _seat_to_str(entry["seat"])} for entry in snapshot["bid_history"]]
+    contract = snapshot.get("contract")
     return {
         "table_key": table_key,
         "seat": _seat_to_str(snapshot["seat"]),
@@ -143,6 +144,7 @@ def _snapshot_to_wire(snapshot: dict, table_key: str, table: Table) -> dict:
         "cumulative_scores": snapshot["cumulative_scores"],
         "round_number": snapshot["round_number"],
         "dealer_seat": _seat_to_str(snapshot["dealer_seat"]),
+        "contract": ({**contract, "seat": _seat_to_str(contract["seat"])} if contract is not None else None),
         "server_version": __version__,
     }
 

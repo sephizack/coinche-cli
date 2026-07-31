@@ -1476,7 +1476,7 @@ const App = {
                 <span class="minitable__team minitable__team--eux">{{ lobbyTeams.ewLabel }}</span>
               </div>
               <button v-if="t.joinable" class="minitable__join" :data-testid="'join-' + t.key"
-                      @click="joinSpecificTable(t.key, '')">{{ t.hasBots ? '🤖 Remplacer un bot' : 'Rejoindre' }}</button>
+                      @click="t.hasBots ? showToast('Choisissez votre place', 'info', 3500) : joinSpecificTable(t.key, '')">{{ t.hasBots ? '🤖 Remplacer un bot' : 'Rejoindre' }}</button>
               <button v-if="t.hasBots || !t.joinable" class="minitable__spectate" :data-testid="'spectate-' + t.key"
                       @click="spectateTable(t.key)">👁 Regarder</button>
             </div>
