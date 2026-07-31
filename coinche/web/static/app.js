@@ -787,6 +787,16 @@ const App = {
       bidSending.value = false;
       fillingBots.value = false;
 
+      // Surface server errors as toast (they arrive via last_action).
+      if (
+        snap.last_action &&
+        prev &&
+        snap.last_action !== prev.last_action &&
+        snap.last_action.startsWith("Erreur")
+      ) {
+        showToast(snap.last_action, "error");
+      }
+
       // Back in the lobby (the server sent LEFT and cleared joined_once): a
       // pending leave has completed, so drop the "Départ en cours…" state.
       if (leaving.value && !(snap.flags && snap.flags.joined_once)) {
