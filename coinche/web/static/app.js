@@ -1357,6 +1357,7 @@ const App = {
       lobbyLoaded,
       nextTableKey,
       joinSpecificTable,
+      showToast,
       spectateTable,
       createTable,
       playCard,
