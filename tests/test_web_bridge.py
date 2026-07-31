@@ -689,7 +689,7 @@ def test_web_client_shows_blocking_reconnect_overlay_while_socket_is_down() -> N
     assert "const reconnecting = ref(false);" in app
     assert "reconnecting.value = false;" in app  # cleared on open
     assert "reconnecting.value = true;" in app  # raised on reconnect
-    assert 'reconnecting,' in app  # exposed to the template
+    assert "reconnecting," in app  # exposed to the template
 
     # The overlay element and its blocking, top-most styling.
     assert 'data-testid="reconnect-overlay"' in app
