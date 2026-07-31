@@ -1,5 +1,7 @@
 """Tests for coinche.table: seat assignment, disconnection, reconnection (A14-A16)."""
 
+from __future__ import annotations
+
 import asyncio
 
 import pytest

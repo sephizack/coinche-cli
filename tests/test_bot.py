@@ -1,5 +1,7 @@
 """Tests for the pure server-controlled bot strategy."""
 
+from __future__ import annotations
+
 import copy
 import random
 from collections import Counter
