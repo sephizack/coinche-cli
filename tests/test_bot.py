@@ -379,7 +379,7 @@ def test_hard_trump_hook_pulls_a_master_after_jack_has_fallen(monkeypatch) -> No
     assert choose_card(game, Seat.S) == Card("10", "♠")
 
 
-def test_opening_cashes_a_side_ace_after_the_jack_has_fallen(monkeypatch) -> None:
+def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine(monkeypatch) -> None:
     # Once V♠ has been played, 10♠ is not a guaranteed winner. The opening
     # policy instead cashes the available side Ace before Monte-Carlo runs.
     game = Game()
@@ -411,8 +411,86 @@ def test_opening_cashes_a_side_ace_after_the_jack_has_fallen(monkeypatch) -> Non
         return []
 
     monkeypatch.setattr(bot, "_sample_hidden_hands", no_samples)
+    assert choose_card(game, Seat.S) == Card("10", "♠")
+    assert not samples_called
+
+
+def test_opening_cashes_a_side_ace_after_the_jack_and_nine_has_fallen(monkeypatch) -> None:
+    # Once V♠ has been played, 10♠ is not a guaranteed winner. The opening
+    # policy instead cashes the available side Ace before Monte-Carlo runs.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.W, Card("9", "♠")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.E, Card("R", "♠")),
+            ],
+            "points_won": 24,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♣")
+
+    samples_called = False
+
+    def no_samples(*args: object) -> list[dict[Seat, list[Card]]]:
+        nonlocal samples_called
+        samples_called = True
+        return []
+
+    monkeypatch.setattr(bot, "_sample_hidden_hands", no_samples)
     assert choose_card(game, Seat.S) == Card("A", "♥")
     assert not samples_called
+
+
+def test_opening_cashes_a_side_ace_when_partner_cannot_hold_unseen_nine(monkeypatch) -> None:
+    # The 9♠ remains unseen, but N discarded while E was winning a side-suit
+    # trick, which proves N has no trump. S must not lead 10♠ merely to let a
+    # partner that cannot hold the 9♠ cover it.
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.E, Card("R", "♠")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.W, Card("7", "♠")),
+            ],
+            "points_won": 24,
+        },
+        {
+            "winner_seat": Seat.E,
+            "trick": [
+                (Seat.E, Card("A", "♦")),
+                (Seat.S, Card("7", "♦")),
+                (Seat.N, Card("7", "♣")),
+                (Seat.W, Card("8", "♦")),
+            ],
+            "points_won": 11,
+        },
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♣")
+
+    def no_samples(*args: object) -> list[dict[Seat, list[Card]]]:
+        return []
+
+    monkeypatch.setattr(bot, "_sample_hidden_hands", no_samples)
+    assert choose_card(game, Seat.S) == Card("A", "♥")
 
 
 def test_taker_stops_pulling_once_all_opponent_trumps_are_gone() -> None:

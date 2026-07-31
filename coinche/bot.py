@@ -727,9 +727,14 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
         worst_trump = min(trumps, key=lambda card: _card_strength(card, trump), default=None)
         jack_has_not_fallen = not _has_been_played(Card("V", trump), game.round_state)
         nine_has_not_fallen = not _has_been_played(Card("9", trump), game.round_state)
+        can_ally_have_nine_trump = (
+            nine_has_not_fallen
+            and Card("9", trump) not in game.get_hand(seat)
+            and trump not in _known_void_suits(game.round_state)[PARTNER_OF[seat]]
+        )
         if best_trump is not None and _is_master(best_trump, game.get_hand(seat), game, trump):
             return best_trump, legal_cards
-        if worst_trump is not None and (jack_has_not_fallen or nine_has_not_fallen):
+        if worst_trump is not None and (jack_has_not_fallen or can_ally_have_nine_trump):
             return worst_trump, legal_cards
 
     # Jouer les As hors atout. Le choix doit rester déterministe pour une même
