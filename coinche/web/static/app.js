@@ -1420,7 +1420,7 @@ const App = {
     <div v-if="!joined" class="lobby">
       <div class="lobby__inner">
         <header class="lobby__header">
-          <h1 class="lobby__title">Coinche — Casino</h1>
+          <h1 class="lobby__title"><img src="/images/favicon.ico" alt="" class="lobby__favicon" /> Coinche — Casino</h1>
           <div class="lobby__namefield">
             <label for="lobby-name">Votre nom</label>
             <input id="lobby-name" type="text" v-model="lobby.name" maxlength="24"
@@ -1568,7 +1568,7 @@ const App = {
     <!-- ================= TABLE VIEW ================= -->
     <template v-else>
       <header class="topbar">
-        <span class="topbar__brand">Coinche</span>
+        <span class="topbar__brand"><img src="/images/favicon.ico" alt="" class="topbar__favicon" /> Coinche</span>
         <div class="scoreboard">
           <span class="scoreboard__team scoreboard__team--nous">
             <span class="scoreboard__label">{{ nousLabel }}</span>

@@ -128,6 +128,11 @@ button {
   color: var(--gold);
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
 }
+.topbar__favicon {
+  height: 1.1em;
+  vertical-align: middle;
+  margin-right: 0.15em;
+}
 
 .scoreboard {
   display: flex;
@@ -1537,6 +1542,11 @@ body > .lobby {
   color: var(--gold);
   text-align: center;
   font-size: 1.5rem;
+}
+.lobby__favicon {
+  height: 1.3em;
+  vertical-align: middle;
+  margin-right: 0.2em;
 }
 .lobby__field {
   margin-bottom: var(--sp-4);
