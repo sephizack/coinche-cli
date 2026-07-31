@@ -21,11 +21,11 @@ qu'elles passent (ce sont exactement celles que la CI exécute sur Python 3.10 e
 
 ```bash
 ruff check .                              # lint (E, F, I, B, UP)
-ruff format --check coinche demo_table.py # formatage
+ruff format --check coinche               # formatage
 python -m pytest                          # tests (~1,5 s)
 ```
 
-Corrections automatiques : `ruff check . --fix` et `ruff format coinche demo_table.py`.
+Corrections automatiques : `ruff check . --fix` et `ruff format coinche`.
 
 ## Attentes sur les changements
 

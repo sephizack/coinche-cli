@@ -11,7 +11,7 @@
 ## Verification
 
 - [ ] `ruff check .` passes
-- [ ] `ruff format --check coinche demo_table.py` passes
+- [ ] `ruff format --check coinche` passes
 - [ ] `python -m pytest` passes
 - [ ] Behavior changes to rules/scoring/protocol have matching tests
 
