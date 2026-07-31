@@ -15,6 +15,7 @@ from coinche.bot import (
     _known_void_suits,
     _sample_hidden_hands,
     _select_tactical_card_for_simulation,
+    _team_auction_supports_trump,
     choose_bid,
     choose_card,
     configure_samples,
@@ -379,7 +380,7 @@ def test_hard_trump_hook_pulls_a_master_after_jack_has_fallen(monkeypatch) -> No
     assert choose_card(game, Seat.S) == Card("10", "♠")
 
 
-def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine(monkeypatch) -> None:
+def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_but_annonce_pourrie(monkeypatch) -> None:
     # Once V♠ has been played, 10♠ is not a guaranteed winner. The opening
     # policy instead cashes the available side Ace before Monte-Carlo runs.
     game = Game()
@@ -403,7 +404,46 @@ def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine(monkey
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♣")
 
+    assert not _team_auction_supports_trump(game, Seat.S, "♠"), "Only announces 80 points, so the team is not expected to have V and 9 of trump"
+
     samples_called = False
+
+    def no_samples(*args: object) -> list[dict[Seat, list[Card]]]:
+        nonlocal samples_called
+        samples_called = True
+        return []
+
+    monkeypatch.setattr(bot, "_sample_hidden_hands", no_samples)
+    assert choose_card(game, Seat.S) == Card("A", "♥")
+    assert not samples_called
+
+
+def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_with_big_annonce(monkeypatch) -> None:
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.history.append({"team": "NS", "seat": Seat.N, "action": "bid", "trump": "♠", "points": 130})
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 130}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.W, Card("7", "♠")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.E, Card("R", "♠")),
+            ],
+            "points_won": 24,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♣")
+
+    samples_called = False
+
+    assert _team_auction_supports_trump(game, Seat.S, "♠"), "Announces 130 points, so the team is expected to have V and 9 of trump"
 
     def no_samples(*args: object) -> list[dict[Seat, list[Card]]]:
         nonlocal samples_called
@@ -414,6 +454,43 @@ def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine(monkey
     assert choose_card(game, Seat.S) == Card("10", "♠")
     assert not samples_called
 
+
+def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_with_montage_annonce(monkeypatch) -> None:
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.history.append({"team": "NS", "seat": Seat.S, "action": "bid", "trump": "♠", "points": 80})
+    game.bid_state.history.append({"team": "NS", "seat": Seat.N, "action": "bid", "trump": "♠", "points": 90})
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 90}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.W, Card("7", "♠")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.E, Card("R", "♠")),
+            ],
+            "points_won": 24,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♣")
+
+    assert _team_auction_supports_trump(game, Seat.S, "♠"), "Announced 80 then partner increased, so the team is expected to have V and 9 of trump"
+
+    samples_called = False
+
+    def no_samples(*args: object) -> list[dict[Seat, list[Card]]]:
+        nonlocal samples_called
+        samples_called = True
+        return []
+
+    monkeypatch.setattr(bot, "_sample_hidden_hands", no_samples)
+    assert choose_card(game, Seat.S) == Card("10", "♠")
+    assert not samples_called
 
 def test_opening_cashes_a_side_ace_after_the_jack_and_nine_has_fallen(monkeypatch) -> None:
     # Once V♠ has been played, 10♠ is not a guaranteed winner. The opening
@@ -751,3 +828,96 @@ def test_server_parser_accepts_only_positive_bot_sample_counts() -> None:
     assert parser.parse_args(["--bot-samples", "250"]).bot_samples == 250
     with pytest.raises(SystemExit):
         parser.parse_args(["--bot-samples", "0"])
+
+
+# ---------------------------------------------------------------------------
+# _team_auction_supports_trump
+# ---------------------------------------------------------------------------
+
+
+def test_team_auction_true_when_both_allies_bid_trump() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 90}
+    game.bid_state.history = [
+        {"seat": Seat.N, "action": "bid", "trump": "♠", "points": 80},
+        {"seat": Seat.E, "action": "pass"},
+        {"seat": Seat.S, "action": "bid", "trump": "♠", "points": 90},
+        {"seat": Seat.W, "action": "pass"},
+    ]
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is True
+    assert _team_auction_supports_trump(game, Seat.S, "♠") is True
+
+
+def test_team_auction_true_when_single_high_bid() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 110}
+    game.bid_state.history = [
+        {"seat": Seat.N, "action": "bid", "trump": "♠", "points": 110},
+        {"seat": Seat.E, "action": "pass"},
+        {"seat": Seat.S, "action": "pass"},
+        {"seat": Seat.W, "action": "pass"},
+    ]
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is True
+
+
+def test_team_auction_true_when_single_capot_bid() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": "capot"}
+    game.bid_state.history = [
+        {"seat": Seat.N, "action": "pass"},
+        {"seat": Seat.E, "action": "pass"},
+        {"seat": Seat.S, "action": "bid", "trump": "♠", "points": "capot"},
+        {"seat": Seat.W, "action": "pass"},
+    ]
+    assert _team_auction_supports_trump(game, Seat.S, "♠") is True
+
+
+def test_team_auction_false_when_single_low_bid() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.bid_state.history = [
+        {"seat": Seat.N, "action": "bid", "trump": "♠", "points": 80},
+        {"seat": Seat.E, "action": "pass"},
+        {"seat": Seat.S, "action": "pass"},
+        {"seat": Seat.W, "action": "pass"},
+    ]
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is False
+
+
+def test_team_auction_false_when_no_bids_on_trump() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.bid_state.history = []
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is False
+
+
+def test_team_auction_false_when_bids_on_different_trump() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.bid_state.history = [
+        {"seat": Seat.N, "action": "bid", "trump": "♥", "points": 80},
+        {"seat": Seat.E, "action": "pass"},
+        {"seat": Seat.S, "action": "pass"},
+        {"seat": Seat.W, "action": "pass"},
+    ]
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is False
+
+
+def test_team_auction_true_when_both_allies_bid_trump_regardless_of_points() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": 80}
+    game.bid_state.history = [
+        {"seat": Seat.N, "action": "bid", "trump": "♠", "points": 80},
+        {"seat": Seat.E, "action": "pass"},
+        {"seat": Seat.S, "action": "bid", "trump": "♠", "points": 90},
+        {"seat": Seat.W, "action": "pass"},
+    ]
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is True
+    assert _team_auction_supports_trump(game, Seat.S, "♠") is True

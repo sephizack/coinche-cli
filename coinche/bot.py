@@ -709,12 +709,36 @@ def _rollout_score(game: Game, seat: Seat, card: Card, hidden_hands: dict[Seat, 
     return round_score[team]["total"] - round_score[opponents]["total"]
 
 
+def _team_auction_supports_trump(game: Game, seat: Seat, trump: str) -> bool:
+    """Return True when the declaring team's auction signals confidence in *trump*.
+
+    Two conditions suffice:
+    - Both members of the team each placed at least one bid on *trump*, OR
+    - The team placed exactly one bid on *trump* and it was high (≥ 110).
+    """
+    assert game.bid_state is not None
+    team = TEAM_OF[seat]
+    team_bids_on_trump = [
+        entry
+        for entry in game.bid_state.history
+        if entry["action"] == "bid" and entry["trump"] == trump and TEAM_OF[entry["seat"]] == team
+    ]
+    if len(team_bids_on_trump) >= 2:
+        return True
+    if len(team_bids_on_trump) == 1:
+        points = team_bids_on_trump[0]["points"]
+        return points == rules.CAPOT or points >= 100
+    return False
+
+
 def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump: str) -> tuple[Card | None, list[Card]]:
     """Apply the deterministic opening-lead rules before Monte-Carlo evaluation."""
     assert game.round_state is not None
     contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
     if contract is None:
         return None, legal_cards
+
+    own_hand = game.get_hand(seat)
 
     # Hard safety rule for the actual choice, not only the rollout policy: a
     # declaring-team player who leads may remove possible defensive ruffers
@@ -725,17 +749,16 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
         trumps = [card for card in legal_cards if card.suit == trump]
         best_trump = max(trumps, key=lambda card: _card_strength(card, trump), default=None)
         worst_trump = min(trumps, key=lambda card: _card_strength(card, trump), default=None)
-        jack_has_not_fallen = not _has_been_played(Card("V", trump), game.round_state)
-        nine_has_not_fallen = not _has_been_played(Card("9", trump), game.round_state)
-        can_ally_have_nine_trump = (
-            nine_has_not_fallen
-            and Card("9", trump) not in game.get_hand(seat)
-            and trump not in _known_void_suits(game.round_state)[PARTNER_OF[seat]]
-        )
-        if best_trump is not None and _is_master(best_trump, game.get_hand(seat), game, trump):
+        # Si on a le meilleur atout, on le joue
+        if best_trump is not None and _is_master(best_trump, own_hand, game, trump):
             return best_trump, legal_cards
-        if worst_trump is not None and (jack_has_not_fallen or can_ally_have_nine_trump):
-            return worst_trump, legal_cards
+        if worst_trump is not None:
+            if not _has_been_played(Card("V", trump), game.round_state):
+                return worst_trump, legal_cards
+            nine_has_not_fallen = not _has_been_played(Card("9", trump), game.round_state)
+            partner_might_have_trumps = not trump in _known_void_suits(game.round_state)[PARTNER_OF[seat]]
+            if partner_might_have_trumps and nine_has_not_fallen and _team_auction_supports_trump(game, seat, trump):
+                return worst_trump, legal_cards
 
     # Jouer les As hors atout. Le choix doit rester déterministe pour une même
     # information publique : on encaisse l'As de la couleur latérale la plus
@@ -743,9 +766,9 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
     # départageant par la force de la couleur afin d'éviter tout aléa global.
     owned_non_trump_aces = [card for card in legal_cards if card.rank == "A" and card.suit != trump]
     if owned_non_trump_aces:
-        hand = game.get_hand(seat)
         suit_length = {
-            suit: sum(1 for card in hand if card.suit == suit) for suit in {ace.suit for ace in owned_non_trump_aces}
+            suit: sum(1 for card in own_hand if card.suit == suit)
+            for suit in {ace.suit for ace in owned_non_trump_aces}
         }
         chosen_ace = min(
             owned_non_trump_aces,
@@ -764,7 +787,7 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
     # Si ya plus d'atout, jouer les longeurs maitres
     if not _opponents_may_hold_trump(game, seat, trump):
         non_trump_masters = [
-            card for card in legal_cards if card.suit != trump and _is_master(card, game.get_hand(seat), game, trump)
+            card for card in legal_cards if card.suit != trump and _is_master(card, own_hand, game, trump)
         ]
         if non_trump_masters:
             return (
