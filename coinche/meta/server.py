@@ -462,3 +462,7 @@ class MetaClientServer:
         head = f"HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
         writer.write(head.encode("latin-1"))
         await writer.drain()
+        # We announced `Connection: close`; actually close so a client reading to
+        # EOF (e.g. `reader.read()`) unblocks immediately instead of waiting for
+        # the writer to be GC'd — a wait that can never end on some platforms.
+        _safe_close(writer)
