@@ -726,6 +726,20 @@ button {
   }
 }
 
+.card--trump {
+  box-shadow: var(--glow-gold);
+  transition: box-shadow var(--dur-card) ease;
+  animation: trump-pulse 2s ease-in-out infinite;
+}
+.card--trump:hover {
+  box-shadow: 0 0 0 3px var(--gold), 0 0 24px rgba(212, 175, 55, 0.8);
+  animation: none;
+}
+@keyframes trump-pulse {
+  0%, 100% { box-shadow: var(--glow-gold); }
+  50% { box-shadow: 0 0 0 2px var(--gold-soft), 0 0 22px rgba(232, 207, 122, 0.7); }
+}
+
 /* =========================================================================
    Status footer
    ========================================================================= */

@@ -73,6 +73,7 @@ const Card = {
     shake: { type: Boolean, default: false },
     pending: { type: Boolean, default: false },
     interactive: { type: Boolean, default: false },
+    trump: { type: String, default: null },
   },
   emits: ["play"],
   computed: {
@@ -81,6 +82,9 @@ const Card = {
     },
     isRed() {
       return RED_SUITS.has(this.parts.suit);
+    },
+    isTrump() {
+      return this.trump != null && this.faceUp && this.parts.suit === this.trump;
     },
     label() {
       return this.faceUp ? cardLabel(this.card) : "Carte face cachée";
@@ -91,6 +95,7 @@ const Card = {
         "card--illegal": this.illegal,
         "card--shake": this.shake,
         "card--pending": this.pending,
+        "card--trump": this.isTrump,
       };
     },
   },
@@ -165,6 +170,7 @@ const SeatPanel = {
     isDealer: Boolean,
     isBot: Boolean,
     connected: { type: Boolean, default: true },
+    trump: { type: String, default: null },
   },
   computed: {
     seatClasses() {
@@ -188,7 +194,7 @@ const SeatPanel = {
       </div>
       <span v-if="!connected" class="seat__offline-note">déconnecté</span>
       <div class="seat__slot">
-        <card v-if="playedCard" :card="playedCard"></card>
+        <card v-if="playedCard" :card="playedCard" :trump="trump"></card>
         <span v-else-if="bidMark" class="bid-mark" :class="{ 'bid-mark--pass': isPass }">{{ bidMark }}</span>
       </div>
     </div>
@@ -944,6 +950,11 @@ const App = {
       }));
     });
 
+    const trumpSuit = computed(() => {
+      const s = snapshot.value;
+      return s ? s.trump : null;
+    });
+
     const contract = computed(() => {
       const s = snapshot.value;
       if (!s || !s.trump || s.contract_points == null) return null;
@@ -1327,6 +1338,7 @@ const App = {
       trickCards,
       lastTrickCells,
       handCards,
+      trumpSuit,
       contract,
       currentBid,
       bidRequest,
@@ -1580,13 +1592,14 @@ const App = {
                   :is-dealer="s.isDealer"
                   :is-bot="s.isBot"
                   :connected="s.connected"
+                  :trump="trumpSuit"
                 ></seat-panel>
 
                 <!-- Trick center / current bid -->
                 <transition-group name="trick-card" tag="div" class="trick-area"
                                   :class="[sweepClass, { 'trick-area--sweeping': sweepClass }]">
                   <div v-for="(tc, i) in trickCards" :key="tc.slot" class="trick-card" :class="'trick-card--' + tc.slot">
-                    <card :card="tc.card"></card>
+                    <card :card="tc.card" :trump="trumpSuit"></card>
                   </div>
                 </transition-group>
                 <div v-if="!trickCards.length && currentBid" class="center-bid">
@@ -1604,7 +1617,7 @@ const App = {
               <div class="last-trick__title">Dernier pli</div>
               <div class="last-trick__grid">
                 <template v-for="(c, i) in lastTrickCells" :key="i">
-                  <card v-if="c" :card="c"></card>
+                  <card v-if="c" :card="c" :trump="trumpSuit"></card>
                   <span v-else></span>
                 </template>
               </div>
@@ -1623,6 +1636,7 @@ const App = {
                 :pending="h.pending"
                 :interactive="h.legal"
                 :shake="shakeCard === h.card"
+                :trump="trumpSuit"
                 :class="{ 'deal-enter': dealing }"
                 :style="{ animationDelay: dealing ? (i * 60) + 'ms' : '0ms' }"
                 @play="playCard"
