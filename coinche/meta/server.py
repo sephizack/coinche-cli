@@ -67,6 +67,7 @@ _LANDING_PAGE = """<!doctype html>
   <body>
     <div class="lobby">
       <div class="lobby__card" id="landing-card" hidden>
+                <img src="/images/coinche-cli.png" alt="Coinche" class="lobby__logo" />
         <h1 class="lobby__title">Coinche — Casino</h1>
         <form id="landing-form" class="lobby__field" action="/new" method="get" autocomplete="off">
           <label for="name">Votre nom</label>
