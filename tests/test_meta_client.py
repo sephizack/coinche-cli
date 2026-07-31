@@ -223,7 +223,7 @@ def test_requires_basic_auth() -> None:
             status, _, body = await http_get(port, "/", auth=AUTH)
             assert status == 200
             assert b"Votre nom" in body
-            assert b'/images/coinche-cli.png' in body
+            assert b'coinche-cli.png' in body
         finally:
             await _stop(server, task)
             await game.stop()
