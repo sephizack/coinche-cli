@@ -29,3 +29,6 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Disable the npypy pytest plugin (installed globally via protocols-lib) which
+# tries to write reports to /remote on session finish and crashes at shutdown.
+addopts = ["-p", "no:npypy-report"]

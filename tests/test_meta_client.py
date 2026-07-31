@@ -54,6 +54,15 @@ class FakeGameServer:
                 self.received.append((msg_type, payload))
         except (ConnectionError, OSError):
             pass
+        finally:
+            # Close the server side too, so its transport isn't left dangling to
+            # be GC'd after the event loop is gone (PytestUnraisableException
+            # warning from StreamWriter.__del__ at interpreter shutdown).
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (ConnectionError, OSError):
+                pass
 
     async def send_to_all(self, msg_type: str, payload: dict) -> None:
         for w in list(self.writers):
@@ -63,6 +72,11 @@ class FakeGameServer:
     async def stop(self) -> None:
         if self._server is not None:
             self._server.close()
+        for w in list(self.writers):
+            try:
+                w.close()
+            except (ConnectionError, OSError):
+                pass
 
 
 # --------------------------------------------------------------------------- #
