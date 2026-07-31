@@ -1443,7 +1443,6 @@ const App = {
         <header class="lobby__header">
           <h1 class="lobby__title"><img src="favicon.ico" alt="" class="lobby__favicon" /> Coinche — Casino</h1>
           <div class="lobby__namefield">
-            <img src="coinche-cli.png" alt="Coinche" class="lobby__logo" />
             <label for="lobby-name">Votre nom</label>
             <input id="lobby-name" type="text" v-model="lobby.name" maxlength="24"
                    data-testid="lobby-name" placeholder="Aline" />
