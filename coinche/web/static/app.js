@@ -1053,9 +1053,8 @@ const App = {
         pendingCard.value = null;
         sendAction("play", { card });
       } else if (s.hand && s.hand.includes(card)) {
-        // Not our turn: queue the card (shown with a spinner).  It will be
-        // played automatically when our turn arrives.
-        pendingCard.value = card;
+        // Not our turn: toggle queue.  Clicking the same card again cancels.
+        pendingCard.value = pendingCard.value === card ? null : card;
       }
     }
     function submitBid(payload) {
