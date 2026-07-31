@@ -1446,7 +1446,7 @@ const App = {
             <img src="coinche-cli.png" alt="Coinche" class="lobby__logo" />
             <label for="lobby-name">Votre nom</label>
             <input id="lobby-name" type="text" v-model="lobby.name" maxlength="24"
-                   data-testid="lobby-name" placeholder="Alice" />
+                   data-testid="lobby-name" placeholder="Aline" />
           </div>
         </header>
 
