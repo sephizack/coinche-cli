@@ -787,14 +787,12 @@ const App = {
       bidSending.value = false;
       fillingBots.value = false;
 
-      // Surface server errors as toast (they arrive via last_action).
+      // Surface server errors as toast (they arrive via last_error).
       if (
-        snap.last_action &&
-        prev &&
-        snap.last_action !== prev.last_action &&
-        snap.errors && snap.errors.length > (prev.errors || []).length
+        snap.last_error &&
+        snap.last_error !== (prev && prev.last_error)
       ) {
-        showToast(snap.last_action, "error");
+        showToast(snap.last_error, "error");
       }
 
       // Back in the lobby (the server sent LEFT and cleared joined_once): a
@@ -950,9 +948,10 @@ const App = {
       const s = snapshot.value;
       if (!s) return [];
       const pc = pendingCard.value;
+      const bidding = !!s.pending_bid_request;
       return (s.hand || []).map((card) => ({
         card,
-        legal: true,
+        legal: !bidding,
         illegal: false,
         pending: pc === card,
       }));

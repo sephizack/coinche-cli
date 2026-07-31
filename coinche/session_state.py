@@ -105,6 +105,7 @@ class ClientState:
     # happened. Combined with `whose_turn` in the footer to show both
     # "what happened last" and "who we're waiting for now" at once.
     last_action: str = ""
+    last_error: str | None = None
     # Set on BID_REQUEST while it's this seat's turn to bid; both UIs show the
     # bid prompt/panel directly from it (the CLI stage-1 choice grid inline in
     # the live view, the web bid panel). Cleared once the turn ends — locally
@@ -442,6 +443,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
     per-message state transition is identical to the former `_apply_message`
     (BR-U1-3)."""
     action_requested = False
+    state.last_error = None
 
     if msg_type == protocol.JOINED:
         state.joined_once = True
@@ -808,6 +810,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         text = payload.get("message") or payload.get("code") or "Erreur inconnue"
         state.errors.append((time.time(), text))
         state.last_action = text
+        state.last_error = text
 
     return ApplyResult(action_requested=action_requested)
 
@@ -861,6 +864,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "tables": [dict(t) for t in state.tables],
         "can_fill_bots": state.can_fill_bots,
         "last_action": state.last_action,
+        "last_error": state.last_error,
         "pending_bid_request": state.pending_bid_request,  # so the web can show the bid panel
         "pending_play_request": state.whose_turn == state.seat and bool(state.legal_cards),
         "chat_messages": [
