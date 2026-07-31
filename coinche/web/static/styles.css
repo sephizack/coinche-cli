@@ -727,6 +727,7 @@ button {
 }
 
 .card--trump {
+  background: var(--card-face);
   box-shadow: var(--glow-gold);
   transition: box-shadow var(--dur-card) ease;
   animation: trump-pulse 2s ease-in-out infinite;
