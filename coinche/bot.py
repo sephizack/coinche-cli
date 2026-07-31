@@ -731,10 +731,21 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
         if worst_trump is not None and jack_has_not_fallen:
             return worst_trump, legal_cards
 
-    # Jouer les As hors atout
+    # Jouer les As hors atout. Le choix doit rester déterministe pour une même
+    # information publique : on encaisse l'As de la couleur latérale la plus
+    # courte en main (pour créer une chicane et pouvoir couper ensuite), en
+    # départageant par la force de la couleur afin d'éviter tout aléa global.
     owned_non_trump_aces = [card for card in legal_cards if card.rank == "A" and card.suit != trump]
     if owned_non_trump_aces:
-        return random.choice(owned_non_trump_aces), legal_cards
+        hand = game.get_hand(seat)
+        suit_length = {
+            suit: sum(1 for card in hand if card.suit == suit) for suit in {ace.suit for ace in owned_non_trump_aces}
+        }
+        chosen_ace = min(
+            owned_non_trump_aces,
+            key=lambda ace: (suit_length[ace.suit], ace.suit),
+        )
+        return chosen_ace, legal_cards
 
     # Defending team on lead: drop trump from the candidates (unless the
     # master lead is worth it) so neither Monte-Carlo nor the tactical
