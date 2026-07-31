@@ -1420,8 +1420,9 @@ const App = {
     <div v-if="!joined" class="lobby">
       <div class="lobby__inner">
         <header class="lobby__header">
-          <h1 class="lobby__title"><img src="/images/favicon.ico" alt="" class="lobby__favicon" /> Coinche — Casino</h1>
+          <h1 class="lobby__title"><img src="images/favicon.ico" alt="" class="lobby__favicon" /> Coinche — Casino</h1>
           <div class="lobby__namefield">
+            <img src="images/coinche-cli.png" alt="Coinche" class="lobby__logo" />
             <label for="lobby-name">Votre nom</label>
             <input id="lobby-name" type="text" v-model="lobby.name" maxlength="24"
                    data-testid="lobby-name" placeholder="Alice" />
