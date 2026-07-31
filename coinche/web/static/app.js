@@ -813,10 +813,19 @@ const App = {
 
     function showToast(message, type = "error", ttl = 5000) {
       const id = ++toastId;
+      if (type === "error") {
+        toasts.value = toasts.value.filter((t) => t.type !== "error");
+      }
       toasts.value.push({ id, message, type });
-      setTimeout(() => {
-        toasts.value = toasts.value.filter((t) => t.id !== id);
-      }, ttl);
+      if (type !== "error") {
+        setTimeout(() => {
+          toasts.value = toasts.value.filter((t) => t.id !== id);
+        }, ttl);
+      }
+      return id;
+    }
+    function dismissToast(id) {
+      toasts.value = toasts.value.filter((t) => t.id !== id);
     }
 
     // -------- derived view state --------
@@ -926,11 +935,10 @@ const App = {
     const handCards = computed(() => {
       const s = snapshot.value;
       if (!s) return [];
-      const canPlay = !!s.pending_play_request;
       const pc = pendingCard.value;
       return (s.hand || []).map((card) => ({
         card,
-        legal: canPlay || !!pc,
+        legal: true,
         illegal: false,
         pending: pc === card,
       }));
@@ -1039,25 +1047,14 @@ const App = {
     function playCard(card) {
       const s = snapshot.value;
       if (!s) return;
-      if (s.pending_play_request) {
+      const isOurTurn = s.whose_turn === s.seat;
+      if (isOurTurn) {
         // Our turn: play immediately (server-authoritative validation).
-        const legal = new Set(s.legal_cards || []);
-        if (!legal.has(card)) {
-          shakeCard.value = card;
-          setTimeout(() => (shakeCard.value = null), 400);
-          showToast(
-            `Impossible de jouer ${card} maintenant (carte non autorisée).`,
-            "error",
-            3500,
-          );
-          return;
-        }
         pendingCard.value = null;
         sendAction("play", { card });
       } else if (s.hand && s.hand.includes(card)) {
         // Not our turn: queue the card (shown with a spinner).  It will be
-        // played automatically when PLAY_REQUEST arrives and the card is
-        // still legal.
+        // played automatically when our turn arrives.
         pendingCard.value = card;
       }
     }
@@ -1271,24 +1268,14 @@ const App = {
 
     // Auto-play: when our turn arrives and a card was pre-selected, play it.
     watch(
-      () => snapshot.value && snapshot.value.pending_play_request,
-      (isOurTurn) => {
-        if (!isOurTurn || !pendingCard.value) return;
+      () => snapshot.value && snapshot.value.whose_turn,
+      (turn) => {
+        if (!pendingCard.value) return;
         const s = snapshot.value;
-        const legal = new Set(s.legal_cards || []);
+        if (!s || turn !== s.seat) return;
         const card = pendingCard.value;
         pendingCard.value = null;
-        if (legal.has(card)) {
-          sendAction("play", { card });
-        } else {
-          shakeCard.value = card;
-          setTimeout(() => (shakeCard.value = null), 400);
-          showToast(
-            `${card} n'est plus valide pour ce tour.`,
-            "error",
-            3500,
-          );
-        }
+        sendAction("play", { card });
       },
     );
 
@@ -1358,6 +1345,7 @@ const App = {
       nextTableKey,
       joinSpecificTable,
       showToast,
+      dismissToast,
       spectateTable,
       createTable,
       playCard,
@@ -1374,7 +1362,8 @@ const App = {
   template: `
     <!-- Toasts (transient errors / reconnection notice) -->
     <div class="toast-stack" aria-live="assertive">
-      <div v-for="t in toasts" :key="t.id" class="toast" :class="{ 'toast--info': t.type === 'info' }">{{ t.message }}</div>
+      <div v-for="t in toasts" :key="t.id" class="toast" :class="{ 'toast--info': t.type === 'info', 'toast--error': t.type === 'error' }"
+           @click="t.type === 'error' && dismissToast(t.id)">{{ t.message }}</div>
     </div>
 
     <!-- Reconnection overlay: full-screen, semi-transparent, and it swallows

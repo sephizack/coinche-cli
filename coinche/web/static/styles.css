@@ -1763,6 +1763,9 @@ body > .lobby {
 .toast--info {
   background: #1f6f52;
 }
+.toast--error {
+  cursor: pointer;
+}
 @keyframes toast-in {
   from {
     transform: translateY(-16px);
