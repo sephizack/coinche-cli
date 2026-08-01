@@ -756,7 +756,7 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
             if not _has_been_played(Card("V", trump), game.round_state):
                 return worst_trump, legal_cards
             nine_has_not_fallen = not _has_been_played(Card("9", trump), game.round_state)
-            partner_might_have_trumps = not trump in _known_void_suits(game.round_state)[PARTNER_OF[seat]]
+            partner_might_have_trumps = trump not in _known_void_suits(game.round_state)[PARTNER_OF[seat]]
             if partner_might_have_trumps and nine_has_not_fallen and _team_auction_supports_trump(game, seat, trump):
                 return worst_trump, legal_cards
 

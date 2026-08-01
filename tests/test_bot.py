@@ -404,7 +404,9 @@ def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_but_an
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♣")
 
-    assert not _team_auction_supports_trump(game, Seat.S, "♠"), "Only announces 80 points, so the team is not expected to have V and 9 of trump"
+    assert not _team_auction_supports_trump(game, Seat.S, "♠"), (
+        "Only announces 80 points, so the team is not expected to have V and 9 of trump"
+    )
 
     samples_called = False
 
@@ -443,7 +445,9 @@ def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_with_b
 
     samples_called = False
 
-    assert not _team_auction_supports_trump(game, Seat.S, "♠"), "Announces 130 points himself, without partner support, so we dont assume anything on the team"
+    assert not _team_auction_supports_trump(game, Seat.S, "♠"), (
+        "Announces 130 points himself, without partner support, so we dont assume anything on the team"
+    )
 
     def no_samples(*args: object) -> list[dict[Seat, list[Card]]]:
         nonlocal samples_called
@@ -480,7 +484,9 @@ def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_with_b
 
     samples_called = False
 
-    assert _team_auction_supports_trump(game, Seat.S, "♠"), "Announces 130 points, so the team is expected to have V and 9 of trump"
+    assert _team_auction_supports_trump(game, Seat.S, "♠"), (
+        "Announces 130 points, so the team is expected to have V and 9 of trump"
+    )
 
     def no_samples(*args: object) -> list[dict[Seat, list[Card]]]:
         nonlocal samples_called
@@ -516,7 +522,9 @@ def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_with_m
     game.round_state.current_trick = []
     game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♣")
 
-    assert _team_auction_supports_trump(game, Seat.S, "♠"), "Announced 80 then partner increased, so the team is expected to have V and 9 of trump"
+    assert _team_auction_supports_trump(game, Seat.S, "♠"), (
+        "Announced 80 then partner increased, so the team is expected to have V and 9 of trump"
+    )
 
     samples_called = False
 
@@ -528,6 +536,7 @@ def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_with_m
     monkeypatch.setattr(bot, "_sample_hidden_hands", no_samples)
     assert choose_card(game, Seat.S) == Card("10", "♠")
     assert not samples_called
+
 
 def test_opening_cashes_a_side_ace_after_the_jack_and_nine_has_fallen(monkeypatch) -> None:
     # Once V♠ has been played, 10♠ is not a guaranteed winner. The opening
