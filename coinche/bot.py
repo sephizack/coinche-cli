@@ -725,7 +725,7 @@ def _team_auction_supports_trump(game: Game, seat: Seat, trump: str) -> bool:
     ]
     if len(team_bids_on_trump) >= 2:
         return True
-    if len(team_bids_on_trump) == 1:
+    if len(team_bids_on_trump) == 1 and team_bids_on_trump[0]["seat"] != seat:
         points = team_bids_on_trump[0]["points"]
         return points == rules.CAPOT or points >= 100
     return False

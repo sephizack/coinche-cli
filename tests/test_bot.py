@@ -418,6 +418,43 @@ def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_but_an
     assert not samples_called
 
 
+def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_with_big_annonce_self(monkeypatch) -> None:
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.history.append({"team": "NS", "seat": Seat.S, "action": "bid", "trump": "♠", "points": 130})
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": 130}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.W, Card("7", "♠")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.E, Card("R", "♠")),
+            ],
+            "points_won": 24,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♠", "A♥", "7♣")
+
+    samples_called = False
+
+    assert not _team_auction_supports_trump(game, Seat.S, "♠"), "Announces 130 points himself, without partner support, so we dont assume anything on the team"
+
+    def no_samples(*args: object) -> list[dict[Seat, list[Card]]]:
+        nonlocal samples_called
+        samples_called = True
+        return []
+
+    monkeypatch.setattr(bot, "_sample_hidden_hands", no_samples)
+    assert choose_card(game, Seat.S) == Card("A", "♥")
+    assert not samples_called
+
+
 def test_opening_cashes_a_side_ace_after_the_jack_has_fallen_but_not_nine_with_big_annonce(monkeypatch) -> None:
     game = Game()
     assert game.round_state is not None and game.bid_state is not None
@@ -849,7 +886,20 @@ def test_team_auction_true_when_both_allies_bid_trump() -> None:
     assert _team_auction_supports_trump(game, Seat.S, "♠") is True
 
 
-def test_team_auction_true_when_single_high_bid() -> None:
+def test_team_auction_true_when_single_high_bid_by_partner() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": 110}
+    game.bid_state.history = [
+        {"seat": Seat.S, "action": "bid", "trump": "♠", "points": 110},
+        {"seat": Seat.E, "action": "pass"},
+        {"seat": Seat.S, "action": "pass"},
+        {"seat": Seat.W, "action": "pass"},
+    ]
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is True
+
+
+def test_team_auction_false_when_single_high_bid_by_self() -> None:
     game = Game()
     assert game.bid_state is not None
     game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 110}
@@ -859,17 +909,30 @@ def test_team_auction_true_when_single_high_bid() -> None:
         {"seat": Seat.S, "action": "pass"},
         {"seat": Seat.W, "action": "pass"},
     ]
-    assert _team_auction_supports_trump(game, Seat.N, "♠") is True
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is False
 
 
-def test_team_auction_true_when_single_capot_bid() -> None:
+def test_team_auction_true_when_single_capot_bid_by_self() -> None:
     game = Game()
     assert game.bid_state is not None
     game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": "capot"}
     game.bid_state.history = [
-        {"seat": Seat.N, "action": "pass"},
+        {"seat": Seat.S, "action": "pass"},
         {"seat": Seat.E, "action": "pass"},
         {"seat": Seat.S, "action": "bid", "trump": "♠", "points": "capot"},
+        {"seat": Seat.W, "action": "pass"},
+    ]
+    assert _team_auction_supports_trump(game, Seat.S, "♠") is False
+
+
+def test_team_auction_true_when_single_capot_bid_by_partner() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": "capot"}
+    game.bid_state.history = [
+        {"seat": Seat.N, "action": "pass"},
+        {"seat": Seat.E, "action": "pass"},
+        {"seat": Seat.N, "action": "bid", "trump": "♠", "points": "capot"},
         {"seat": Seat.W, "action": "pass"},
     ]
     assert _team_auction_supports_trump(game, Seat.S, "♠") is True
