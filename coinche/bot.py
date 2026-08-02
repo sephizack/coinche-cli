@@ -143,7 +143,7 @@ def _support_ceiling(hand: list[Card], trump: str, current_points: int, has_oppo
     )
     if partner_looking_for_34:
         if "V" in trump_ranks or "9" in trump_ranks:
-            return current_points + rules.BID_STEP * 2
+            return current_points + rules.BID_STEP
     else:
         additional_steps = _side_aces(hand, trump)
         if trump_count >= 3:
