@@ -292,16 +292,31 @@ def choose_bid(game: Game, seat: Seat) -> dict:
         if "V" not in trump_ranks and "9" not in trump_ranks:
             return {"action": "pass"}
         if "V" not in trump_ranks or "9" not in trump_ranks:
-            if options["current_highest_bid"] is None:
-                maximum_for_hand = rules.BID_MIN
-            elif (
-                options["current_highest_bid"]["points"] == rules.BID_MIN
-                and options["current_highest_bid"]["trump"] != best_trump
-                and options["current_highest_bid"]["team"] != TEAM_OF[seat]
-            ):
-                maximum_for_hand = rules.BID_MIN + rules.BID_STEP
+            has_partner_bid_on_trump = any(
+                bid
+                for bid in options["bid_history"]
+                if bid.get("action") == "bid"
+                and TEAM_OF[bid["seat"]] == TEAM_OF[seat]
+                and bid["trump"] == best_trump
+                and bid["seat"] != seat
+            )
+            if has_partner_bid_on_trump:
+                # consider we have the missing card, so we can bid higher
+                if maximum_for_hand != rules.CAPOT:
+                    maximum_for_hand = int(maximum_for_hand) + rules.BID_STEP*2
+                    if maximum_for_hand >= rules.BID_MAX:
+                        maximum_for_hand = rules.CAPOT
             else:
-                return {"action": "pass"}
+                if options["current_highest_bid"] is None:
+                    maximum_for_hand = rules.BID_MIN
+                elif (
+                    options["current_highest_bid"]["points"] == rules.BID_MIN
+                    and options["current_highest_bid"]["trump"] != best_trump
+                    and options["current_highest_bid"]["team"] != TEAM_OF[seat]
+                ):
+                    maximum_for_hand = rules.BID_MIN + rules.BID_STEP
+                else:
+                    return {"action": "pass"}
         legal_for_suit = [] if maximum_for_hand is None else _legal_bids_up_to(options, best_trump, maximum_for_hand)
         if legal_for_suit:
             choice = legal_for_suit[-1]
