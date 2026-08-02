@@ -233,6 +233,16 @@ def choose_bid(game: Game, seat: Seat) -> dict:
         rules.ALLOWED_TRUMPS,
         key=lambda trump: (_ceiling_value(opening_ceilings[trump]), strengths[trump]),
     )
+    last_self_bid = next(
+        (
+            bid
+            for bid in reversed(options["bid_history"])
+            if bid.get("action") == "bid" and bid["seat"] == seat
+        ),
+        None,
+    )
+    if last_self_bid is not None:
+        best_trump = last_self_bid["trump"]
     current = options["current_highest_bid"]
 
     if options["can_surcoinche"] and current is not None and strengths[current["trump"]] >= 98:
