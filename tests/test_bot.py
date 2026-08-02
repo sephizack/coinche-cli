@@ -1220,3 +1220,70 @@ def test_bot_passes_when_partner_80_but_no_v_nor_9() -> None:
     game.submit_bid(Seat.S, "pass")
 
     assert choose_bid(game, Seat.E) == {"action": "pass"}
+
+
+# ---------------------------------------------------------------------------
+# Opening cap: V or 9 missing
+# ---------------------------------------------------------------------------
+
+
+def test_bot_opens_exactly_80_when_missing_v_and_9() -> None:
+    # First opener, strong side aces + 4 trumps but no V nor 9.
+    # New rule: neither V nor 9 → forced pass.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("A♠", "10♠", "R♠", "D♠", "A♥", "A♦", "A♣", "7♣")
+
+    assert choose_bid(game, Seat.W) == {"action": "pass"}
+
+
+def test_bot_opens_90_to_outbid_opponent_when_missing_v_or_9() -> None:
+    # Opponent bid 80 on a different suit. Bot has V but no 9 on ♠.
+    # Can outbid to 90 because opponent opened on different trump.
+    # Bidding order: W passes, S passes, E bids 80♥, N's turn.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.N] = _cards("V♠", "A♠", "10♠", "7♠", "7♥", "8♥", "7♦", "7♣")
+    game.submit_bid(Seat.W, "pass")
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "bid", trump="♥", points=80)
+
+    assert choose_bid(game, Seat.N) == {"action": "bid", "trump": "♠", "points": 90}
+
+
+def test_bot_passes_when_missing_v_or_9_and_partner_bid_same_trump() -> None:
+    # Partner bid 80♠. Bot has ♠ but no V/9. Else branch -> pass.
+    # Bidding order: W (partner) bids 80♠, S passes, E's turn.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("A♠", "10♠", "R♠", "D♠", "A♥", "A♦", "A♣", "7♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+
+    assert choose_bid(game, Seat.E) == {"action": "pass"}
+
+
+def test_bot_passes_when_missing_v_or_9_and_opponent_bid_same_trump() -> None:
+    # Opponent bid 80 on same trump ♠. Bot has ♠ but no V/9. Else branch -> pass.
+    # Bidding order: W passes, S passes, E bids 80♠, N's turn.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.N] = _cards("A♠", "10♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣")
+    game.submit_bid(Seat.W, "pass")
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "bid", trump="♠", points=80)
+
+    assert choose_bid(game, Seat.N) == {"action": "pass"}
+
+
+def test_bot_opens_above_80_when_has_both_v_and_9() -> None:
+    # First opener, has both V and 9 -> no cap, normal ceiling applies.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "A♠", "A♥", "A♦", "8♥", "7♦", "7♣")
+
+    action = choose_bid(game, Seat.W)
+    assert action["action"] == "bid"
+    assert action["trump"] == "♠"
+    assert isinstance(action["points"], int)
+    assert action["points"] > 80
