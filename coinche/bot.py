@@ -234,11 +234,7 @@ def choose_bid(game: Game, seat: Seat) -> dict:
         key=lambda trump: (_ceiling_value(opening_ceilings[trump]), strengths[trump]),
     )
     last_self_bid = next(
-        (
-            bid
-            for bid in reversed(options["bid_history"])
-            if bid.get("action") == "bid" and bid["seat"] == seat
-        ),
+        (bid for bid in reversed(options["bid_history"]) if bid.get("action") == "bid" and bid["seat"] == seat),
         None,
     )
     if last_self_bid is not None:

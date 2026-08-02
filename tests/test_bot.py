@@ -1287,3 +1287,102 @@ def test_bot_opens_above_80_when_has_both_v_and_9() -> None:
     assert action["trump"] == "♠"
     assert isinstance(action["points"], int)
     assert action["points"] > 80
+
+
+# ---------------------------------------------------------------------------
+# Partner bid bonus: opener re-enters opening branch after opponent overbid
+# ---------------------------------------------------------------------------
+
+
+def test_opener_bids_higher_after_partner_support_and_opponent_overbid() -> None:
+    # Dealer=N → bidding order: W, S, E, N.
+    # W (bot) opens 80♠ (has V♠ but not 9♠), S passes, E supports to 100♠,
+    # N overbids 110♥ → back to W.
+    # W: last_partner_bid = E's 100♠. self_already_supported_partner =
+    # True (W bid ♠). Skip support. >=100 gate: 100>=100 but trump==best_trump
+    # → condition false → falls through to opening branch. V♠ but not 9♠ +
+    # partner bid on ♠ → bonus +20 → W outbids 110♥.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "A♠", "10♠", "7♠", "A♥", "A♦", "7♣", "8♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "bid", trump="♠", points=100)
+    game.submit_bid(Seat.N, "bid", trump="♥", points=110)
+
+    action = choose_bid(game, Seat.W)
+    assert action["action"] == "bid"
+    assert action["trump"] == "♠"
+    assert isinstance(action["points"], int)
+    assert action["points"] > 110
+
+
+def test_opener_bids_higher_with_nine_instead_of_v() -> None:
+    # Same as above but W holds 9♠ instead of V♠.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("9♠", "A♠", "10♠", "7♠", "A♥", "A♦", "7♣", "8♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "bid", trump="♠", points=100)
+    game.submit_bid(Seat.N, "bid", trump="♥", points=110)
+
+    action = choose_bid(game, Seat.W)
+    assert action["action"] == "bid"
+    assert action["trump"] == "♠"
+    assert isinstance(action["points"], int)
+    assert action["points"] > 110
+
+
+def test_opener_reaches_capot_with_partner_bonus() -> None:
+    # Very strong hand: bonus +20 pushes the ceiling to CAPOT.
+    # V + 3 other trumps + 3 side aces → high opening ceiling, +20 reaches 160.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "A♠", "10♠", "R♠", "A♥", "A♦", "A♣", "7♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "bid", trump="♠", points=100)
+    game.submit_bid(Seat.N, "bid", trump="♥", points=110)
+
+    action = choose_bid(game, Seat.W)
+    assert action == {"action": "bid", "trump": "♠", "points": "capot"}
+
+
+def test_opener_passes_without_partner_bonus_when_no_partner_bid_on_trump() -> None:
+    # Same hand as test_opener_bids_higher but partner never bid on ♠.
+    # Without the partner bonus the else-branch kicks in and W passes.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "A♠", "10♠", "7♠", "A♥", "A♦", "7♣", "8♣")
+    # W opens 80♠, opponent overbids 90♥, partner never bid on ♠.
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "bid", trump="♥", points=90)
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+
+    # last_partner_bid is None (E passed), so no partner bonus.
+    # current_highest_bid = 90♥, different trump and higher → else → pass.
+    assert choose_bid(game, Seat.W) == {"action": "pass"}
+
+
+def test_opener_passes_when_partner_last_bid_is_different_trump_and_high() -> None:
+    # Partner's last bid is on a different trump and >= 100.
+    # But the support branch fires first (W has A♥ → supports ♥).
+    # The >=100 guard only blocks the *opening* branch, not the support branch.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "A♠", "10♠", "7♠", "A♥", "A♦", "7♣", "8♣")
+    # Dealer=N → bidding order: W, S, E, N.
+    # W opens 80♠, S passes, E (partner) bids 110♥ (different trump, high).
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "bid", trump="♥", points=110)
+
+    # W has A♥ → supports partner's ♥ bid (support branch fires before guard).
+    action = choose_bid(game, Seat.W)
+    assert action["action"] == "bid"
+    assert action["trump"] == "♥"
+    assert isinstance(action["points"], int)
+    assert action["points"] > 110
+
