@@ -487,6 +487,8 @@ const App = {
     const beloteEffectKey = ref(0);
     const joinEffect = ref(null);
     const joinEffectKey = ref(0);
+    const redealEffect = ref(false);
+    const redealEffectKey = ref(0);
     const bidAnnouncement = ref(null);
     const bidAnnouncementKey = ref(0);
     const sweepClass = ref(null); // e.g. "sweep-north" while a trick sweeps out
@@ -549,6 +551,7 @@ const App = {
     let bidEffectTimer = null;
     let beloteEffectTimer = null;
     let joinEffectTimer = null;
+    let redealEffectTimer = null;
     let bidAnnouncementTimer = null;
     // Consecutive reconnect attempts that never managed to open. On the
     // méta-client this *might* mean our session no longer exists server-side
@@ -739,6 +742,17 @@ const App = {
           joinEffect.value = null;
           joinEffectTimer = null;
         }, 2400);
+      }
+
+      // Redeal effect: all players passed and the deck is being reshuffled.
+      if (prev && snap.redeal_effect_seq > (prev.redeal_effect_seq || 0)) {
+        redealEffect.value = true;
+        redealEffectKey.value += 1;
+        if (redealEffectTimer) clearTimeout(redealEffectTimer);
+        redealEffectTimer = setTimeout(() => {
+          redealEffect.value = false;
+          redealEffectTimer = null;
+        }, 3000);
       }
 
       // A contract bid is a server-confirmed announcement. Compare the
@@ -1346,6 +1360,8 @@ const App = {
       bidEffectKey,
       beloteEffect,
       beloteEffectKey,
+      redealEffect,
+      redealEffectKey,
       bidAnnouncement,
       bidAnnouncementKey,
       sweepClass,
@@ -1430,6 +1446,11 @@ const App = {
     <div v-if="joinEffect" :key="'join-' + joinEffectKey" class="bid-effect bid-effect--join"
          role="status" aria-live="assertive">
       <span>🙋 {{ joinEffect }} a rejoint !</span>
+    </div>
+    <!-- Redeal: all players passed, reshuffling the deck. -->
+    <div v-if="redealEffect" :key="'redeal-' + redealEffectKey" class="bid-effect bid-effect--redeal"
+         role="status" aria-live="assertive">
+      <span>🔀 Nouvelle donne — on redistribue !</span>
     </div>
     <div v-if="bidAnnouncement" :key="bidAnnouncementKey" class="bid-effect bid-effect--announcement"
          role="status" aria-live="polite">

@@ -290,6 +290,7 @@ async def _handle_bid_result(table: Table, seat: Seat, result: dict) -> None:
             game.round_number,
             _player_label(table, result["dealer_seat"]),
         )
+        await _announce_bot_starting_hands(table, result["completed_round_hands"])
         await table.broadcast(
             protocol.BIDDING_RESULT,
             {"outcome": "redeal", "dealer_seat": _seat_to_str(result["dealer_seat"])},

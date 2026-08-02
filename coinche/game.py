@@ -237,6 +237,7 @@ class Game:
 
     def _redeal(self) -> dict:
         assert self.round_state is not None
+        completed_round_hands = {seat: list(hand) for seat, hand in self.round_state.dealt_hands.items()}
         self.dealer = self.dealer.next()
         event = self.start_round()
         return {
@@ -244,6 +245,7 @@ class Game:
             "dealer_seat": event["dealer_seat"],
             "first_bidder_seat": event["first_bidder_seat"],
             "round_number": event["round_number"],
+            "completed_round_hands": completed_round_hands,
         }
 
     def _finalize_contract(self) -> dict:

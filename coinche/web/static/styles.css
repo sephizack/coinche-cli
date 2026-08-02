@@ -1915,6 +1915,33 @@ body > .lobby {
     0 0 0 5px rgba(168, 255, 176, 0.25),
     0 0 48px rgba(45, 163, 74, 0.85);
 }
+.bid-effect--redeal {
+  border-color: var(--gold-soft);
+  background: linear-gradient(135deg, #6e5010, #b58016 52%, #6e5010);
+  box-shadow:
+    0 0 0 5px rgba(232, 207, 122, 0.25),
+    0 0 52px rgba(212, 175, 55, 0.9);
+  animation: redeal-pop 3s var(--ease-standard) both;
+}
+@keyframes redeal-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -40px) scale(0.6) rotate(-6deg);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.12) rotate(2deg);
+  }
+  30%,
+  75% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1) rotate(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -20px) scale(0.85) rotate(-2deg);
+  }
+}
 .bid-effect__actor {
   font-size: 0.62em;
   font-weight: 700;

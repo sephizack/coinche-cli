@@ -91,6 +91,10 @@ class ClientState:
     # web client diffs to re-trigger the pop animation on each join.
     join_effect_name: str | None = None
     join_effect_seq: int = 0
+    # A short-lived, high-visibility alert for a redeal (all players passed).
+    # `redeal_effect_seq` is a monotonic counter the web client diffs to
+    # re-trigger the shuffle animation on each redeal.
+    redeal_effect_seq: int = 0
     # Highest bid still standing *while bidding is ongoing* (distinct from
     # `trump`/`contract_points`/`contract_bidder` above, which only get set
     # once bidding has settled into a final contract at BIDDING_RESULT).
@@ -593,6 +597,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         if payload["outcome"] == "redeal":
             state.last_action = "Tout le monde a passé — nouvelle donne"
             state.whose_turn = None
+            state.redeal_effect_seq += 1
         else:
             state.trump = payload["trump"]
             state.hand = _sort_hand(state.hand, state.trump)
@@ -863,6 +868,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "belote_effect_seq": state.belote_effect_seq,
         "join_effect_name": state.join_effect_name,
         "join_effect_seq": state.join_effect_seq,
+        "redeal_effect_seq": state.redeal_effect_seq,
         "current_bid": {
             "trump": state.current_bid_trump,
             "points": state.current_bid_points,
