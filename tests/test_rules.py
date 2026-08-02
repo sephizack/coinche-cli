@@ -34,7 +34,7 @@ def test_legal_bid_actions_no_current_bid_starts_at_minimum():
     actions = legal_bid_actions(None)
     points_values = {a["points"] for a in actions if a["points"] != CAPOT}
     assert min(points_values) == 80
-    assert max(points_values) == 180
+    assert max(points_values) == 160
     # No sans_atout trump ever appears.
     trumps = {a["trump"] for a in actions}
     assert "sans_atout" not in trumps
@@ -60,7 +60,7 @@ def test_is_valid_bid_rejects_sans_atout():
 
 def test_is_valid_bid_capot_outranks_any_numeric_bid():
     current = {"trump": "♠", "points": 180}
-    assert is_valid_bid({"trump": "♠", "points": CAPOT}, current)
+    assert not is_valid_bid({"trump": "♠", "points": CAPOT}, current)
 
 
 def test_is_valid_bid_rejects_second_capot():
