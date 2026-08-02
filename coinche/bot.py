@@ -289,6 +289,8 @@ def choose_bid(game: Game, seat: Seat) -> dict:
     maximum_for_hand = opening_ceilings[best_trump]
     if maximum_for_hand is not None:
         trump_ranks = {card.rank for card in hand if card.suit == best_trump}
+        if "V" not in trump_ranks and "9" not in trump_ranks:
+            return {"action": "pass"}
         if "V" not in trump_ranks or "9" not in trump_ranks:
             if options["current_highest_bid"] is None:
                 maximum_for_hand = rules.BID_MIN
