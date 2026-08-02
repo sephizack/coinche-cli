@@ -126,7 +126,7 @@ def _opening_ceiling(hand: list[Card], trump: str) -> int | str | None:
     return min(rules.BID_MAX, ceiling)
 
 
-def _support_ceiling(hand: list[Card], trump: str, current_points: int) -> int | None:
+def _support_ceiling(hand: list[Card], trump: str, current_points: int, has_opponents_bid_before: bool) -> int | None:
     """Return the highest safe support bid from the partner's announced strength.
 
     An opening of 80 promises a playable trump suit. A bot holding the Valet
@@ -138,23 +138,22 @@ def _support_ceiling(hand: list[Card], trump: str, current_points: int) -> int |
     trump_ranks = {card.rank for card in trump_cards}
     trump_count = len(trump_cards)
 
-    if current_points == rules.BID_MIN:
-        has_complementary_master = bool({"V", "9"} & trump_ranks)
-        if trump_count >= 3 or has_complementary_master:
-            return current_points + rules.BID_STEP
-        return None
-    if current_points == 90:
-        if (
-            "V" in trump_ranks
-            or trump_count >= 4
-            or ("9" in trump_ranks and trump_count >= 2)
-            or ("A" in trump_ranks and trump_count >= 3)
-        ):
-            return current_points + rules.BID_STEP
-        return None
-    if trump_count >= 3 and {"V", "9"}.issubset(trump_ranks):
-        extra_tricks = 1 + min(_side_aces(hand, trump), 1)
-        return current_points + extra_tricks * rules.BID_STEP
+    partner_looking_for_34 = current_points == rules.BID_MIN or (
+        current_points == rules.BID_MIN + rules.BID_STEP and has_opponents_bid_before
+    )
+    if partner_looking_for_34:
+        if "V" in trump_ranks or "9" in trump_ranks:
+            return current_points + rules.BID_STEP * 2
+    else:
+        additional_steps = _side_aces(hand, trump)
+        if trump_count >= 3:
+            additional_steps += 1
+        if "V" in trump_ranks or "9" in trump_ranks:
+            additional_steps += 2
+        if {"R", "D"}.issubset(trump_ranks):
+            additional_steps += 1
+        if additional_steps > 0:
+            return current_points + additional_steps * rules.BID_STEP
     return None
 
 
@@ -176,13 +175,42 @@ def _ceiling_value(ceiling: int | str | None) -> int:
     return ceiling if isinstance(ceiling, int) else 0
 
 
+def _forced_opener_trump(hand: list[Card]) -> str | None:
+    """Find a trump suit where the hand has V + at least 2 other trumps + a side Ace.
+
+    This is a last-resort opener: when nobody has bid and the normal
+    evaluation decides to pass, the bot checks whether its hand is strong
+    enough to try an 80 anyway.  The Valet plus two more trumps give
+    reasonable trump control, and a side Ace promises at least one
+    additional trick.
+    """
+    best_trump: str | None = None
+    best_count = 0
+    for trump in rules.ALLOWED_TRUMPS:
+        trump_cards = [card for card in hand if card.suit == trump]
+        trump_ranks = {card.rank for card in trump_cards}
+        if "V" not in trump_ranks:
+            continue
+        if len(trump_cards) < 3:
+            continue
+        side_aces = sum(1 for card in hand if card.rank == "A" and card.suit != trump)
+        if side_aces < 1:
+            continue
+        score = len(trump_cards) + side_aces
+        if score > best_count:
+            best_count = score
+            best_trump = trump
+    return best_trump
+
+
 def _hand_strength(hand: list[Card], trump: str) -> int:
     trump_cards = [card for card in hand if card.suit == trump]
     score = sum((_TRUMP_HAND_WEIGHTS if card.suit == trump else _NONTRUMP_HAND_WEIGHTS)[card.rank] for card in hand)
     score += max(0, len(trump_cards) - 2) * 7
+    score += _side_aces(hand, trump) * 6
     trump_ranks = {card.rank for card in trump_cards}
     if {"R", "D"}.issubset(trump_ranks):
-        score += 8
+        score += 6
 
     for suit in rules.ALLOWED_TRUMPS:
         if suit == trump:
@@ -207,7 +235,7 @@ def choose_bid(game: Game, seat: Seat) -> dict:
     )
     current = options["current_highest_bid"]
 
-    if options["can_surcoinche"] and current is not None and strengths[current["trump"]] >= 78:
+    if options["can_surcoinche"] and current is not None and strengths[current["trump"]] >= 98:
         return {"action": "surcoinche"}
     if (
         options["can_coinche"]
@@ -218,24 +246,65 @@ def choose_bid(game: Game, seat: Seat) -> dict:
     ):
         return {"action": "coinche"}
 
-    if current is not None and current["team"] == TEAM_OF[seat]:
-        if current["points"] == rules.CAPOT:
+    last_partner_bid = next(
+        (
+            bid
+            for bid in reversed(options["bid_history"])
+            if bid.get("action") == "bid" and TEAM_OF[bid["seat"]] == TEAM_OF[seat] and bid["seat"] != seat
+        ),
+        None,
+    )
+    if last_partner_bid:
+        if last_partner_bid["points"] == rules.CAPOT:
             return {"action": "pass"}
-        maximum = _support_ceiling(hand, current["trump"], current["points"])
-        if maximum is None:
-            return {"action": "pass"}
-        legal_for_suit = _legal_bids_up_to(options, current["trump"], maximum)
-    else:
-        maximum = opening_ceilings[best_trump]
-        legal_for_suit = [] if maximum is None else _legal_bids_up_to(options, best_trump, maximum)
-    if legal_for_suit:
-        choice = legal_for_suit[-1]
-        return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
+        self_already_supported_partner = any(
+            bid
+            for bid in options["bid_history"]
+            if bid.get("action") == "bid"
+            and TEAM_OF[bid["seat"]] == TEAM_OF[seat]
+            and bid["seat"] == seat
+            and bid["trump"] == last_partner_bid["trump"]
+        )
+        if not self_already_supported_partner:
+            has_opponents_bid_before = any(
+                bid
+                for bid in options["bid_history"]
+                if bid.get("action") == "bid"
+                and TEAM_OF[bid["seat"]] != TEAM_OF[seat]
+                and bid["points"] < last_partner_bid["points"]
+            )
+            new_bid = _support_ceiling(
+                hand,
+                last_partner_bid["trump"],
+                last_partner_bid["points"],
+                has_opponents_bid_before,
+            )
+            if new_bid is not None:
+                if new_bid >= rules.BID_MAX:
+                    new_bid = rules.CAPOT
+                return {"action": "bid", "trump": last_partner_bid["trump"], "points": new_bid}
+    if last_partner_bid and last_partner_bid["points"] >= 100:
+        return {"action": "pass"}
+    # we cant support the partner, so we can try to open a new suit if we have a good hand
+    maximum_for_hand = opening_ceilings[best_trump]
+    if maximum_for_hand is not None:
+        legal_for_suit = [] if maximum_for_hand is None else _legal_bids_up_to(options, best_trump, maximum_for_hand)
+        if legal_for_suit:
+            choice = legal_for_suit[-1]
+            return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
+    if current is None:
+        fallback_trump = _forced_opener_trump(hand)
+        if fallback_trump is not None:
+            legal_for_suit = _legal_bids_up_to(options, fallback_trump, rules.BID_MIN + rules.BID_STEP)
+            if legal_for_suit:
+                choice = legal_for_suit[-1]
+                return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
 
     bid_state = game.bid_state
     if current is None and bid_state is not None and bid_state.pass_streak == 3:
         forced = next(action for action in options["legal_actions"] if action["trump"] == best_trump)
         return {"action": "bid", "trump": forced["trump"], "points": forced["points"]}
+
     return {"action": "pass"}
 
 

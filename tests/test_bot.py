@@ -79,23 +79,25 @@ def test_partner_allowance_lifts_a_controlled_ace_hand_toward_a_pair_contract() 
 
 
 def test_bot_supports_partner_eighty_with_the_missing_jack() -> None:
+    # V completes the partner's 80 signal: partner_looking_for_34 jumps 2 steps.
     game = Game()
     assert game.round_state is not None
     game.round_state.hands[Seat.E] = _cards("V♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣", "D♣")
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)
     game.submit_bid(Seat.S, "pass")
 
-    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 90}
+    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 100}
 
 
 def test_bot_supports_partner_eighty_with_the_missing_nine() -> None:
+    # 9 completes the partner's 80 signal: partner_looking_for_34 jumps 2 steps.
     game = Game()
     assert game.round_state is not None
     game.round_state.hands[Seat.E] = _cards("9♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣", "D♣")
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)
     game.submit_bid(Seat.S, "pass")
 
-    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 90}
+    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 100}
 
 
 def test_bot_does_not_open_with_a_single_trump_master() -> None:
@@ -107,13 +109,14 @@ def test_bot_does_not_open_with_a_single_trump_master() -> None:
 
 
 def test_bot_supports_partner_by_one_trick_not_two() -> None:
+    # V+9 give partner_looking_for_34: jump 2 steps (80→100), not just 1.
     game = Game()
     assert game.round_state is not None
     game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "A♠", "7♥", "8♥", "7♦", "8♦", "7♣")
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)
     game.submit_bid(Seat.S, "pass")
 
-    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 90}
+    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 100}
 
 
 def test_bot_passes_when_an_opponent_has_already_reached_its_safe_ceiling() -> None:
@@ -132,6 +135,49 @@ def test_bot_passes_with_a_weak_hand() -> None:
     game.round_state.hands[Seat.W] = _cards("7♠", "8♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣")
 
     assert choose_bid(game, Seat.W) == {"action": "pass"}
+
+
+def test_bot_opens_eighty_with_valet_two_trumps_and_side_ace() -> None:
+    # V + 2 other low trumps + 1 side Ace: normal algo passes (opening_ceiling
+    # is None) but the fallback recognises the hand as worth an 80/90 attempt.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "8♠", "A♥", "8♥", "7♦", "8♦", "7♣")
+
+    action = choose_bid(game, Seat.W)
+
+    assert action == {"action": "bid", "trump": "♠", "points": 90}
+
+
+def test_bot_passes_with_valet_two_trumps_but_no_side_ace() -> None:
+    # V + 2 other low trumps but no side Ace: too weak to open.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "8♠", "10♥", "8♥", "7♦", "8♦", "7♣")
+
+    assert choose_bid(game, Seat.W) == {"action": "pass"}
+
+
+def test_bot_passes_with_valet_one_trump_and_side_ace() -> None:
+    # V + only 1 other trump + side Ace: not enough trumps to open.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "A♥", "A♦", "8♥", "7♦", "8♦", "7♣")
+
+    assert choose_bid(game, Seat.W) == {"action": "pass"}
+
+
+def test_bot_does_not_fallback_when_someone_already_bid() -> None:
+    # Someone already bid — the fallback only triggers when current is None.
+    # E holds a fallback-eligible hand (V+2 trumps+side Ace) but the fallback
+    # must not fire because the normal support path takes precedence.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "7♠", "8♠", "A♥", "8♥", "7♦", "8♦", "7♣")
+    game.submit_bid(Seat.W, "bid", trump="♥", points=80)
+    game.submit_bid(Seat.S, "pass")
+
+    assert choose_bid(game, Seat.E) == {"action": "pass"}
 
 
 def test_fourth_bot_opens_at_eighty_instead_of_forcing_endless_redeals() -> None:
@@ -993,3 +1039,96 @@ def test_team_auction_true_when_both_allies_bid_trump_regardless_of_points() -> 
     ]
     assert _team_auction_supports_trump(game, Seat.N, "♠") is True
     assert _team_auction_supports_trump(game, Seat.S, "♠") is True
+
+
+# ---------------------------------------------------------------------------
+# last_partner_bid support logic
+# ---------------------------------------------------------------------------
+
+
+def test_bot_supports_partner_after_opponent_overbid() -> None:
+    # Dealer=N → bidding order: W, S, E, N.
+    # W (EW) bids 80♠, S (NS) bids 90♥ (opponent).
+    # Now E's turn. last_partner_bid = W's 80♠.
+    # has_opponents_bid_before: S bid 90♥, 90 < 80? No → False.
+    # partner_looking_for_34: 80==80 → True. V → jump 2 steps: 80+20=100.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "7♠", "A♥", "8♥", "7♦", "8♦", "7♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "bid", trump="♥", points=90)
+
+    action = choose_bid(game, Seat.E)
+    assert action == {"action": "bid", "trump": "♠", "points": 100}
+
+
+def test_bot_skips_support_when_already_supported_partner() -> None:
+    # W bid 80♠, S passed, E bid 90♠ (support), N passed.
+    # Now W's turn: self_already_supported_partner is True (W bid ♠ before).
+    # W can't re-support; opening ceiling is 80 which is below current 90,
+    # and fallback only triggers when current is None. So W passes.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "A♥", "8♥", "7♦", "8♦", "7♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "bid", trump="♠", points=90)
+    game.submit_bid(Seat.N, "pass")
+
+    action = choose_bid(game, Seat.W)
+    # W already bid ♠ → self_already_supported_partner is True.
+    # Opening ceiling is 80, below current 90 → can't open. Passes.
+    assert action == {"action": "pass"}
+
+
+def test_bot_passes_when_partner_bid_capot() -> None:
+    # Partner bid capot → bot passes immediately.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "A♠", "A♥", "A♦", "7♣", "8♣", "D♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points="capot")
+    game.submit_bid(Seat.S, "pass")
+
+    assert choose_bid(game, Seat.E) == {"action": "pass"}
+
+
+def test_bot_passes_when_partner_already_bid_100_or_more() -> None:
+    # Partner bid 100 → bot passes (>= 100 check).
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "A♠", "A♥", "A♦", "7♣", "8♣", "D♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=100)
+    game.submit_bid(Seat.S, "pass")
+
+    assert choose_bid(game, Seat.E) == {"action": "pass"}
+
+
+def test_bot_support_ceiling_scales_with_side_aces_and_trumps() -> None:
+    # At current_points=90 (not partner_looking_for_34), the else branch
+    # scales with side aces, trump count, V/9, belote.
+    from coinche.bot import _support_ceiling
+
+    strong_hand = _cards("V♠", "9♠", "A♠", "A♥", "A♦", "8♥", "7♦", "7♣")
+    weak_hand = _cards("V♠", "9♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣")
+
+    strong_ceiling = _support_ceiling(strong_hand, "♠", 90, False)
+    weak_ceiling = _support_ceiling(weak_hand, "♠", 90, False)
+
+    assert strong_ceiling is not None
+    assert weak_ceiling is not None
+    assert strong_ceiling > weak_ceiling
+
+
+def test_bot_support_partner_looking_for_34_after_opponent_bid() -> None:
+    # Dealer=N → bidding order: W, S, E, N.
+    # W (EW) bid 80♠, S (NS) bid 90♥. Now E's turn.
+    # last_partner_bid = W's 80♠. has_opponents_bid_before: S bid 90♥, 90 < 80? No.
+    # partner_looking_for_34: 80 == 80 → True. V → jump 2 steps: 80+20=100.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣", "D♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "bid", trump="♥", points=90)
+
+    action = choose_bid(game, Seat.E)
+    assert action == {"action": "bid", "trump": "♠", "points": 100}

@@ -41,7 +41,7 @@ NONTRUMP_ORDER: tuple[str, ...] = ("7", "8", "9", "V", "D", "R", "10", "A")
 # --- Ruleset constants (A5-A13) ----------------------------------------------
 
 BID_MIN = 80
-BID_MAX = 180
+BID_MAX = 160
 BID_STEP = 10
 CAPOT = "capot"
 ALLOWED_TRUMPS: tuple[str, ...] = SUITS

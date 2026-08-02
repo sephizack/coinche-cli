@@ -141,6 +141,7 @@ class Game:
                 "legal_actions": [],
                 "can_coinche": False,
                 "can_surcoinche": False,
+                "bid_history": list(bid.history),
             }
         current = bid.current_highest_bid
         can_coinche = current is not None and bid.coinche_level == 1 and TEAM_OF[seat] != current["team"]
@@ -155,6 +156,7 @@ class Game:
             "legal_actions": legal_actions,
             "can_coinche": can_coinche,
             "can_surcoinche": can_surcoinche,
+            "bid_history": list(bid.history),
         }
 
     def submit_bid(
