@@ -283,7 +283,7 @@ def choose_bid(game: Game, seat: Seat) -> dict:
                 if new_bid >= rules.BID_MAX:
                     new_bid = rules.CAPOT
                 return {"action": "bid", "trump": last_partner_bid["trump"], "points": new_bid}
-    if last_partner_bid and last_partner_bid["points"] >= 100:
+    if last_partner_bid and last_partner_bid["points"] >= 100 and last_partner_bid["trump"] != best_trump:
         return {"action": "pass"}
     # we cant support the partner, so we can try to open a new suit if we have a good hand
     maximum_for_hand = opening_ceilings[best_trump]
