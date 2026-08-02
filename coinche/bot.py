@@ -288,6 +288,18 @@ def choose_bid(game: Game, seat: Seat) -> dict:
     # we cant support the partner, so we can try to open a new suit if we have a good hand
     maximum_for_hand = opening_ceilings[best_trump]
     if maximum_for_hand is not None:
+        trump_ranks = {card.rank for card in hand if card.suit == best_trump}
+        if "V" not in trump_ranks or "9" not in trump_ranks:
+            if options["current_highest_bid"] is None:
+                maximum_for_hand = rules.BID_MIN
+            elif (
+                options["current_highest_bid"]["points"] == rules.BID_MIN
+                and options["current_highest_bid"]["trump"] != best_trump
+                and options["current_highest_bid"]["team"] != TEAM_OF[seat]
+            ):
+                maximum_for_hand = rules.BID_MIN + rules.BID_STEP
+            else:
+                return {"action": "pass"}
         legal_for_suit = [] if maximum_for_hand is None else _legal_bids_up_to(options, best_trump, maximum_for_hand)
         if legal_for_suit:
             choice = legal_for_suit[-1]
