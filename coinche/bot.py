@@ -303,7 +303,7 @@ def choose_bid(game: Game, seat: Seat) -> dict:
             if has_partner_bid_on_trump:
                 # consider we have the missing card, so we can bid higher
                 if maximum_for_hand != rules.CAPOT:
-                    maximum_for_hand = int(maximum_for_hand) + rules.BID_STEP*2
+                    maximum_for_hand = int(maximum_for_hand) + rules.BID_STEP * 2
                     if maximum_for_hand >= rules.BID_MAX:
                         maximum_for_hand = rules.CAPOT
             else:
