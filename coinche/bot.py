@@ -126,7 +126,13 @@ def _opening_ceiling(hand: list[Card], trump: str) -> int | str | None:
     return min(rules.BID_MAX, ceiling)
 
 
-def _support_ceiling(hand: list[Card], trump: str, current_points: int, has_opponents_bid_before: bool) -> int | None:
+def _support_ceiling(
+    hand: list[Card],
+    trump: str,
+    current_points: int,
+    has_opponents_bid_before: bool,
+    current_highest_bid: dict | None = None,
+) -> int | None:
     """Return the highest safe support bid from the partner's announced strength.
 
     An opening of 80 promises a playable trump suit. A bot holding the Valet
@@ -143,7 +149,12 @@ def _support_ceiling(hand: list[Card], trump: str, current_points: int, has_oppo
     )
     if partner_looking_for_34:
         if "V" in trump_ranks or "9" in trump_ranks:
-            return current_points + rules.BID_STEP
+            minimum_bid = current_points + rules.BID_STEP
+            if current_highest_bid is not None:
+                if current_highest_bid["points"] == rules.CAPOT or current_highest_bid["points"] >= 120:
+                    return None
+                minimum_bid = max(minimum_bid, current_highest_bid["points"] + rules.BID_STEP)
+            return minimum_bid
     else:
         additional_steps = _side_aces(hand, trump)
         if trump_count >= 3:
@@ -248,7 +259,7 @@ def choose_bid(game: Game, seat: Seat) -> dict:
         and current is not None
         and current["points"] != rules.CAPOT
         and current["points"] <= 100
-        and strengths[current["trump"]] >= 72
+        and strengths[current["trump"]] >= 76
     ):
         return {"action": "coinche"}
 
@@ -284,6 +295,7 @@ def choose_bid(game: Game, seat: Seat) -> dict:
                 last_partner_bid["trump"],
                 last_partner_bid["points"],
                 has_opponents_bid_before,
+                options["current_highest_bid"],
             )
             if new_bid is not None:
                 if new_bid >= rules.BID_MAX:

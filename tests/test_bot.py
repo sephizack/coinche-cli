@@ -1060,7 +1060,7 @@ def test_bot_supports_partner_after_opponent_overbid() -> None:
     game.submit_bid(Seat.S, "bid", trump="♥", points=90)
 
     action = choose_bid(game, Seat.E)
-    assert action == {"action": "bid", "trump": "♠", "points": 90}
+    assert action == {"action": "bid", "trump": "♠", "points": 100}
 
 
 def test_bot_skips_support_when_already_supported_partner() -> None:
@@ -1130,7 +1130,7 @@ def test_bot_support_partner_looking_for_34_after_opponent_bid() -> None:
     game.submit_bid(Seat.S, "bid", trump="♥", points=90)
 
     action = choose_bid(game, Seat.E)
-    assert action == {"action": "bid", "trump": "♠", "points": 90}
+    assert action == {"action": "bid", "trump": "♠", "points": 100}
 
 
 # ---------------------------------------------------------------------------
@@ -1207,7 +1207,7 @@ def test_bot_supports_partner_90_with_9_after_opponent_bid() -> None:
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)
     game.submit_bid(Seat.S, "bid", trump="♥", points=90)
 
-    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 90}
+    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 100}
 
 
 def test_bot_passes_when_partner_80_but_no_v_nor_9() -> None:
