@@ -181,9 +181,14 @@ def test_full_round_join_deal_bid_trick_score_flow():
                 if round_score["team_NS"]["contract_result"] in {"failed", "capot_failed"}
                 else "Contrat réussi"
             )
+
+            def card_score(team: str) -> str:
+                score = round_score[f"team_{team}"]
+                belote = f" (+{score['belote_bonus']} Belote/Rebelote)" if score["belote_bonus"] else ""
+                return f"{team} {score['card_points']}{belote}"
+
             expected_recap = (
-                f"Fin de manche : NS {round_score['team_NS']['total']} - EW {round_score['team_EW']['total']}. "
-                f"{contract_status}."
+                f"Fin de manche - points de cartes : {card_score('NS')} - {card_score('EW')}. {contract_status}."
             )
             assert recap == {
                 "seat": None,
@@ -243,7 +248,7 @@ def test_one_player_can_fill_the_table_with_bots():
             recap = await _read_until(reader, protocol.CHAT)
             assert recap["seat"] is None
             assert recap["name"] == "Système"
-            assert recap["text"].startswith("Fin de manche : NS ")
+            assert recap["text"].startswith("Fin de manche - points de cartes : NS ")
             assert recap["text"].endswith(("Contrat réussi.", "Contrat chuté."))
             bot_seats = {player["seat"] for player in bots}
             revealed_hands: dict[str, list[str]] = {}

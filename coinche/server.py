@@ -159,7 +159,13 @@ def _round_recap_chat_text(round_score: dict[str, dict]) -> str:
     """Build the system chat recap displayed once a round has been scored."""
     contract_result = round_score["NS"]["contract_result"]
     contract_status = "Contrat chuté" if contract_result in {"failed", "capot_failed"} else "Contrat réussi"
-    return f"Fin de manche : NS {round_score['NS']['total']} - EW {round_score['EW']['total']}. {contract_status}."
+
+    def card_score(team: str) -> str:
+        belote_bonus = round_score[team]["belote_bonus"]
+        belote = f" (+{belote_bonus} Belote/Rebelote)" if belote_bonus else ""
+        return f"{team} {round_score[team]['card_points']}{belote}"
+
+    return f"Fin de manche - points de cartes : {card_score('NS')} - {card_score('EW')}. {contract_status}."
 
 
 def _positive_int(value: str) -> int:
