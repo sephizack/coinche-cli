@@ -70,7 +70,7 @@ def _post_discord_table_created(webhook_url: str, table_key: str, player_name: s
         "allowed_mentions": {"parse": []},
         "embeds": [
             {
-                "title": "Nouvelle table Coinche",
+                "title": "Nouvelle table !",
                 "color": _DISCORD_TABLE_CREATED_COLOR,
                 "description": description,
             }

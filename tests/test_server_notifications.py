@@ -46,7 +46,7 @@ def test_discord_table_notification_posts_expected_embed(monkeypatch) -> None:
     assert body["allowed_mentions"] == {"parse": []}
     assert body["embeds"] == [
         {
-            "title": "Nouvelle table Coinche",
+            "title": "Nouvelle table !",
             "color": server._DISCORD_TABLE_CREATED_COLOR,
             "description": (
                 "La table **coinche1** vient d'etre creee par **Alice**.\n\n"
