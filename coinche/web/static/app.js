@@ -523,6 +523,7 @@ const App = {
     // mono-session overlay it's absent, so everything falls back to the
     // original behaviour (root `/ws`, empty name).
     const META = window.__META__ || {};
+    const PENDING_JOIN_KEY = "coinche.pendingJoin";
 
     // Session recovery (méta-client only): persist this session's id so the
     // landing page can bring the player straight back here after a refresh or
@@ -562,10 +563,36 @@ const App = {
     // players/status only — so the lobby is a join form driven by that state).
     const lobby = reactive({ name: META.name || readLastName(), table: META.tableKey || "table1", team: "" });
 
+    function readPendingJoin() {
+      try {
+        const pending = JSON.parse(window.localStorage.getItem(PENDING_JOIN_KEY) || "null");
+        if (pending && /^[A-Za-z0-9]{4,20}$/.test(pending.tableKey || "")) {
+          return {
+            tableKey: pending.tableKey,
+            preferredSeat: /^[NESW]$/.test(pending.preferredSeat || "") ? pending.preferredSeat : null,
+          };
+        }
+      } catch (e) {
+        /* localStorage unavailable or malformed — use the URL fallback */
+      }
+      if (/^[A-Za-z0-9]{4,20}$/.test(META.tableKey || "")) {
+        return { tableKey: META.tableKey, preferredSeat: META.preferredSeat || null };
+      }
+      return null;
+    }
+
+    function clearPendingJoin() {
+      try {
+        window.localStorage.removeItem(PENDING_JOIN_KEY);
+      } catch (e) {
+        /* localStorage unavailable — nothing to clear */
+      }
+    }
+
     let ws = null;
     let backoff = 500;
     let toastId = 0;
-    let deepLinkJoinSent = false;
+    let pendingJoinSent = false;
     let bidEffectTimer = null;
     let beloteEffectTimer = null;
     let joinEffectTimer = null;
@@ -651,12 +678,6 @@ const App = {
         reconnecting.value = false; // socket is live again — drop the overlay
         // Ask U2 to start streaming lobby updates so the join screen is live.
         sendAction("lobby", {});
-        if (META.tableKey && lobby.name.trim() && !deepLinkJoinSent) {
-          deepLinkJoinSent = true;
-          const payload = { table_key: META.tableKey, player_name: lobby.name.trim() };
-          if (META.preferredSeat) payload.seat = META.preferredSeat;
-          sendAction("join", payload);
-        }
       });
       ws.addEventListener("message", (event) => {
         let frame;
@@ -703,6 +724,24 @@ const App = {
     function sendAction(action, payload) {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify({ action, ...(payload || {}) }));
+    }
+
+    function tryPendingJoin(snap) {
+      if (!snap || !snap.flags) return;
+      if (snap.flags.joined_once) {
+        clearPendingJoin();
+        return;
+      }
+      if (pendingJoinSent) return;
+      const pending = readPendingJoin();
+      const name = lobby.name.trim();
+      if (!pending || !name) return;
+
+      pendingJoinSent = true;
+      clearPendingJoin();
+      const payload = { table_key: pending.tableKey, player_name: name };
+      if (pending.preferredSeat) payload.seat = pending.preferredSeat;
+      sendAction("join", payload);
     }
 
     // -------- snapshot ingestion + animation triggers --------
@@ -860,6 +899,7 @@ const App = {
       }
 
       snapshot.value = snap; // full replace
+      tryPendingJoin(snap);
     }
 
     function spawnConfetti() {

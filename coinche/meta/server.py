@@ -30,6 +30,7 @@ import mimetypes
 import re
 import secrets
 import time
+from pathlib import Path
 from urllib.parse import parse_qs, quote, urlsplit
 
 from coinche import protocol
@@ -57,126 +58,8 @@ _TABLE_KEY_PATTERN = re.compile(rf"^[A-Za-z0-9]{{{protocol.TABLE_KEY_MIN_LENGTH}
 # a returning player resumes their session instead of being reaped.
 IDLE_TIMEOUT_SECONDS = 15 * 60.0
 REAP_INTERVAL_SECONDS = 15.0
-
-_LANDING_PAGE = """<!doctype html>
-<html lang="fr">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <title>Coinche — Casino</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <div class="lobby">
-      <div class="lobby__card" id="landing-card" hidden>
-        <h1 class="lobby__title">Coinche — Casino</h1>
-        <img src="coinche-cli.png" alt="Coinche" class="lobby__logo" />
-        <form id="landing-form" class="lobby__field" action="/new" method="get" autocomplete="off">
-          <label for="name">Votre nom</label>
-          <input id="name" name="name" type="text" maxlength="24" required placeholder="Alice" />
-          <button class="rematch-btn" style="width:100%;margin-top:1rem" type="submit">Jouer</button>
-        </form>
-      </div>
-      <div class="lobby__card" id="resume-card" hidden>
-        <span class="lobby__spinner" aria-hidden="true"></span>
-        <p style="margin-top:1rem">Reprise de votre partie…</p>
-      </div>
-    </div>
-    <script>
-      // Session recovery: the SPA stores its méta-session id in localStorage.
-      // On the landing page we probe whether that session is still live and, if
-      // so, jump straight back into it — so a refresh or an accidental tab
-      // close returns the player to their seat instead of spawning a new,
-      // orphaned session. A stale/expired id falls back to the name form.
-      (function () {
-        var KEY = "coinche.metaSessionId";
-        var table = new URLSearchParams(window.location.search).get("table");
-        var seat = new URLSearchParams(window.location.search).get("seat");
-        if (!/^[A-Za-z0-9]{4,20}$/.test(table || "")) table = null;
-        if (!/^[NESW]$/.test(seat || "")) seat = null;
-        // Last name typed here, so a fresh landing (dead/expired session, or a
-        // player who explicitly went back home) pre-fills instead of showing an
-        // empty field. Kept separate from the session id: it survives even when
-        // the session doesn't.
-        var NAME_KEY = "coinche.lastName";
-        var landing = document.getElementById("landing-card");
-        var resume = document.getElementById("resume-card");
-        // Persist the chosen name on submit so the next landing pre-fills it.
-        var form = document.getElementById("landing-form");
-                if (form && table) {
-                    var tableInput = document.createElement("input");
-                    tableInput.type = "hidden";
-                    tableInput.name = "table";
-                    tableInput.value = table;
-                    form.appendChild(tableInput);
-                }
-                if (form && seat) {
-                    var seatInput = document.createElement("input");
-                    seatInput.type = "hidden";
-                    seatInput.name = "seat";
-                    seatInput.value = seat;
-                    form.appendChild(seatInput);
-                }
-        if (form) {
-          form.addEventListener("submit", function () {
-            try {
-              var input = document.getElementById("name");
-              var value = input && input.value.trim();
-              if (value) window.localStorage.setItem(NAME_KEY, value);
-            } catch (e) {
-              /* localStorage unavailable (private mode) — just don't persist */
-            }
-          });
-        }
-        function showForm() {
-          resume.hidden = true;
-          landing.hidden = false;
-          var input = document.getElementById("name");
-          if (input) {
-            try {
-              var last = window.localStorage.getItem(NAME_KEY);
-              if (last && !input.value) input.value = last;
-            } catch (e) {
-              /* localStorage unavailable (private mode) — start empty */
-            }
-            input.focus();
-            input.select();
-          }
-        }
-        var id = null;
-        try {
-          id = window.localStorage.getItem(KEY);
-        } catch (e) {
-          /* localStorage unavailable (private mode) — just show the form */
-        }
-        if (!id) {
-          showForm();
-          return;
-        }
-        resume.hidden = false;
-        fetch("/api/session?id=" + encodeURIComponent(id))
-          .then(function (r) {
-            return r.ok ? r.json() : { alive: false };
-          })
-          .then(function (data) {
-            if (data && data.alive) {
-              window.location.replace("/s/" + encodeURIComponent(id));
-            } else {
-              try {
-                window.localStorage.removeItem(KEY);
-              } catch (e) {
-                /* ignore */
-              }
-              showForm();
-            }
-          })
-          .catch(showForm);
-      })();
-    </script>
-  </body>
-</html>
-"""
+META_STATIC_DIR = Path(__file__).resolve().parent / "static"
+LANDING_PAGE_PATH = META_STATIC_DIR / "landing.html"
 
 
 class MetaClientServer:
@@ -321,7 +204,15 @@ class MetaClientServer:
             return
 
         if route == "/":
-            await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", _LANDING_PAGE.encode("utf-8"))
+            try:
+                landing_page = LANDING_PAGE_PATH.read_bytes()
+            except OSError:
+                logger.exception("Méta-client : template de page d'accueil introuvable")
+                await WebOverlayServer._write_http(
+                    writer, 500, "text/plain; charset=utf-8", b"Landing page unavailable"
+                )
+            else:
+                await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", landing_page)
             _safe_close(writer)
             return
 

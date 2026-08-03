@@ -16,7 +16,7 @@ import os
 import struct
 
 from coinche import protocol
-from coinche.meta.server import MetaClientServer
+from coinche.meta.server import LANDING_PAGE_PATH, MetaClientServer
 
 HOST = "127.0.0.1"
 AUTH = base64.b64encode(b"coinche:secret").decode("ascii")
@@ -508,6 +508,38 @@ def test_session_status_probe() -> None:
     asyncio.run(scenario())
 
 
+def test_landing_page_stores_deep_link_before_resuming_session() -> None:
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            _, headers, _ = await http_get(port, "/new?name=Alice")
+            session_id = headers["location"][len("/s/") :]
+
+            status, _, body = await http_get(port, "/?table=CosmoCanyon&seat=S")
+            assert status == 200
+            text = body.decode("utf-8")
+            assert 'var PENDING_JOIN_KEY = "coinche.pendingJoin"' in text
+            assert "JSON.stringify({ tableKey: table, preferredSeat: seat })" in text
+            assert 'window.location.replace("/s/" + encodeURIComponent(id))' in text
+
+            status, _, body = await http_get(port, f"/api/session?id={session_id}")
+            assert status == 200
+            assert json.loads(body) == {"alive": True, "name": "Alice"}
+
+            status, _, body = await http_get(port, "/app.js")
+            assert status == 200
+            script = body.decode("utf-8")
+            assert "function tryPendingJoin(snap)" in script
+            assert "tryPendingJoin(snap);" in script
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
 def test_game_page_carries_session_id() -> None:
     """The SPA shell exposes the session id so app.js can persist it to
     localStorage for recovery."""
@@ -541,6 +573,7 @@ def test_landing_page_probes_stored_session() -> None:
         server, task, port = await _start_meta(game.port)
         try:
             _, _, body = await http_get(port, "/")
+            assert body == LANDING_PAGE_PATH.read_bytes()
             text = body.decode("utf-8")
             assert "coinche.metaSessionId" in text
             assert "/api/session?id=" in text
