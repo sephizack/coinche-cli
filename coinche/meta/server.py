@@ -27,10 +27,12 @@ import hmac
 import json
 import logging
 import mimetypes
+import re
 import secrets
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
+from coinche import protocol
 from coinche.meta.session import MetaSession
 from coinche.web.server import (
     _WS_MAGIC,
@@ -46,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_NAME_LEN = 24
 _REALM = "Coinche"
+_TABLE_KEY_PATTERN = re.compile(rf"^[A-Za-z0-9]{{{protocol.TABLE_KEY_MIN_LENGTH},{protocol.TABLE_KEY_MAX_LENGTH}}}$")
 
 # Idle-session reaper defaults. A session with no browser attached and no
 # activity for `IDLE_TIMEOUT_SECONDS` is kicked: it LEAVEs its table (freeing
@@ -88,6 +91,10 @@ _LANDING_PAGE = """<!doctype html>
       // orphaned session. A stale/expired id falls back to the name form.
       (function () {
         var KEY = "coinche.metaSessionId";
+        var table = new URLSearchParams(window.location.search).get("table");
+        var seat = new URLSearchParams(window.location.search).get("seat");
+        if (!/^[A-Za-z0-9]{4,20}$/.test(table || "")) table = null;
+        if (!/^[NESW]$/.test(seat || "")) seat = null;
         // Last name typed here, so a fresh landing (dead/expired session, or a
         // player who explicitly went back home) pre-fills instead of showing an
         // empty field. Kept separate from the session id: it survives even when
@@ -97,6 +104,20 @@ _LANDING_PAGE = """<!doctype html>
         var resume = document.getElementById("resume-card");
         // Persist the chosen name on submit so the next landing pre-fills it.
         var form = document.getElementById("landing-form");
+                if (form && table) {
+                    var tableInput = document.createElement("input");
+                    tableInput.type = "hidden";
+                    tableInput.name = "table";
+                    tableInput.value = table;
+                    form.appendChild(tableInput);
+                }
+                if (form && seat) {
+                    var seatInput = document.createElement("input");
+                    seatInput.type = "hidden";
+                    seatInput.name = "seat";
+                    seatInput.value = seat;
+                    form.appendChild(seatInput);
+                }
         if (form) {
           form.addEventListener("submit", function () {
             try {
@@ -322,7 +343,14 @@ class MetaClientServer:
             if session is None:
                 await self._redirect(writer, "/")
                 return
-            await self._serve_game_page(session, writer)
+            table_key = (parse_qs(split.query).get("table", [""])[0] or "").strip()
+            preferred_seat = (parse_qs(split.query).get("seat", [""])[0] or "").strip().upper()
+            await self._serve_game_page(
+                session,
+                writer,
+                table_key if _TABLE_KEY_PATTERN.fullmatch(table_key) else None,
+                preferred_seat if preferred_seat in {"N", "E", "S", "W"} else None,
+            )
             return
 
         # Anything else is a static asset (app.js, styles.css, vendor/…),
@@ -347,7 +375,12 @@ class MetaClientServer:
         self.sessions[session_id] = session
         session.start()
         logger.info("Nouvelle session %s pour « %s »", session_id, name)
-        await self._redirect(writer, f"/s/{session_id}")
+        table_key = (params.get("table", [""])[0] or "").strip()
+        preferred_seat = (params.get("seat", [""])[0] or "").strip().upper()
+        suffix = f"?table={quote(table_key, safe='')}" if _TABLE_KEY_PATTERN.fullmatch(table_key) else ""
+        if suffix and preferred_seat in {"N", "E", "S", "W"}:
+            suffix += f"&seat={preferred_seat}"
+        await self._redirect(writer, f"/s/{session_id}{suffix}")
 
     async def _session_status(self, query: str, writer: asyncio.StreamWriter) -> None:
         """Report whether a stored session id is still live (JSON).
@@ -366,7 +399,13 @@ class MetaClientServer:
         await WebOverlayServer._write_http(writer, 200, "application/json; charset=utf-8", body.encode("utf-8"))
         _safe_close(writer)
 
-    async def _serve_game_page(self, session: MetaSession, writer: asyncio.StreamWriter) -> None:
+    async def _serve_game_page(
+        self,
+        session: MetaSession,
+        writer: asyncio.StreamWriter,
+        table_key: str | None = None,
+        preferred_seat: str | None = None,
+    ) -> None:
         """Serve the vendored SPA shell with a per-session `window.__META__`."""
         try:
             html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -379,6 +418,8 @@ class MetaClientServer:
                 "wsPath": f"/s/{session.session_id}/ws",
                 "name": session.player_name,
                 "sessionId": session.session_id,
+                "tableKey": table_key,
+                "preferredSeat": preferred_seat,
             }
         ).replace("<", "\\u003c")
         inject = f'\n    <base href="/" />\n    <script>window.__META__ = {meta};</script>'

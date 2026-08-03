@@ -271,6 +271,31 @@ def test_new_session_redirects_and_connects_to_game() -> None:
     asyncio.run(scenario())
 
 
+def test_table_deep_link_reaches_session_page() -> None:
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            table_key = "CosmoCanyonLongNameX"
+            status, headers, _ = await http_get(port, f"/new?name=Alice&table={table_key}&seat=S")
+            assert status == 302
+            location = headers["location"]
+            assert location.startswith("/s/")
+            assert location.endswith(f"?table={table_key}&seat=S")
+
+            status, _, body = await http_get(port, location)
+            assert status == 200
+            text = body.decode("utf-8")
+            assert f'"tableKey": "{table_key}"' in text
+            assert '"preferredSeat": "S"' in text
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
 def test_new_without_name_bounces_to_landing() -> None:
     async def scenario() -> None:
         game = FakeGameServer()

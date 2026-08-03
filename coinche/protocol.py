@@ -10,6 +10,9 @@ import json
 
 from coinche.rules import ALLOWED_TRUMPS
 
+TABLE_KEY_MIN_LENGTH = 4
+TABLE_KEY_MAX_LENGTH = 20
+
 # --- Client -> Server message types -------------------------------------------
 
 JOIN = "join"

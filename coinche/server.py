@@ -14,6 +14,7 @@ import re
 import socket
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from coinche import __version__, protocol, rules
@@ -33,7 +34,7 @@ from coinche.table import (
     tables_listing,
 )
 
-TABLE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9]{4,12}$")
+TABLE_KEY_PATTERN = re.compile(rf"^[A-Za-z0-9]{{{protocol.TABLE_KEY_MIN_LENGTH},{protocol.TABLE_KEY_MAX_LENGTH}}}$")
 
 # Dedicated "game log" logger (per user request): records who bid/played what
 # and which team took each trick/round/game, so results can be double-checked
@@ -42,12 +43,28 @@ TABLE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9]{4,12}$")
 logger = logging.getLogger("coinche.server")
 
 DISCORD_NOTIF_CHANNEL_POST_URL = os.environ.get("DISCORD_NOTIF_CHANNEL_POST_URL")
+COINCHE_PUBLIC_URL = os.environ.get("COINCHE_PUBLIC_URL", "").rstrip("/")
 _DISCORD_WEBHOOK_TIMEOUT_SECONDS = 5.0
 _DISCORD_TABLE_CREATED_COLOR = 0x57F287
 
 
-def _post_discord_table_created(webhook_url: str, table_key: str, player_name: str) -> None:
+def _table_join_url(table_key: str, preferred_seat: Seat) -> str | None:
+    """Return a public meta-client deep link that requests a specific seat."""
+    if not COINCHE_PUBLIC_URL:
+        return None
+    query = urllib.parse.urlencode({"table": table_key, "seat": preferred_seat.value})
+    return f"{COINCHE_PUBLIC_URL}/?{query}"
+
+
+def _post_discord_table_created(webhook_url: str, table_key: str, player_name: str, creator_seat: Seat) -> None:
     """Post a best-effort Discord notification without exposing the webhook URL."""
+    description = f"La table **{table_key}** vient d'etre creee par **{player_name}**."
+    teammate_url = _table_join_url(table_key, PARTNER_OF[creator_seat])
+    opponent_url = _table_join_url(table_key, creator_seat.next())
+    if teammate_url and opponent_url:
+        description += (
+            f"\n\n[Rejoindre avec {player_name}]({teammate_url})\n[Rejoindre contre {player_name}]({opponent_url})"
+        )
     body = {
         "username": "Coinche",
         "allowed_mentions": {"parse": []},
@@ -55,7 +72,7 @@ def _post_discord_table_created(webhook_url: str, table_key: str, player_name: s
             {
                 "title": "Nouvelle table Coinche",
                 "color": _DISCORD_TABLE_CREATED_COLOR,
-                "description": f"La table **{table_key}** vient d'etre creee par **{player_name}**.",
+                "description": description,
             }
         ],
     }
@@ -73,10 +90,10 @@ def _post_discord_table_created(webhook_url: str, table_key: str, player_name: s
         logger.warning("[%s] Echec de la notification Discord: %s", table_key, exc)
 
 
-async def _notify_discord_table_created(webhook_url: str, table_key: str, player_name: str) -> None:
+async def _notify_discord_table_created(webhook_url: str, table_key: str, player_name: str, creator_seat: Seat) -> None:
     """Run the blocking webhook call away from the game server's event loop."""
     try:
-        await asyncio.to_thread(_post_discord_table_created, webhook_url, table_key, player_name)
+        await asyncio.to_thread(_post_discord_table_created, webhook_url, table_key, player_name, creator_seat)
     except Exception:  # noqa: BLE001 - a webhook failure must never affect a game session
         logger.exception("[%s] Echec inattendu de la notification Discord", table_key)
 
@@ -852,7 +869,7 @@ async def _resolve_join_inner(
 
         break
 
-    table_key = str(payload["table_key"]).lower()
+    requested_table_key = str(payload["table_key"]).strip()
     player_name = str(payload["player_name"]).strip()
     team_name = str(payload["team_name"]).strip() if payload.get("team_name") else None
     spectate = bool(payload.get("spectate"))
@@ -865,13 +882,24 @@ async def _resolve_join_inner(
             await _send_error(writer, protocol.MALFORMED_MESSAGE, "seat must be one of N/E/S/W")
             return None
 
-    if not TABLE_KEY_PATTERN.match(table_key):
-        await _send_error(writer, protocol.MALFORMED_MESSAGE, "table_key must be 4-12 alphanumeric characters")
+    if not TABLE_KEY_PATTERN.fullmatch(requested_table_key):
+        await _send_error(
+            writer,
+            protocol.MALFORMED_MESSAGE,
+            (
+                f"table_key must be {protocol.TABLE_KEY_MIN_LENGTH}-"
+                f"{protocol.TABLE_KEY_MAX_LENGTH} alphanumeric characters"
+            ),
+        )
         return None
     if not player_name:
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "player_name must not be empty")
         return None
 
+    table_key = next(
+        (existing_key for existing_key in TABLES if existing_key.lower() == requested_table_key.lower()),
+        requested_table_key,
+    )
     table_was_created = table_key not in TABLES
     table = get_or_create_table(
         table_key,
@@ -880,8 +908,6 @@ async def _resolve_join_inner(
         round_pause_seconds=round_pause_seconds,
         bot_think_seconds=bot_think_seconds,
     )
-    if table_was_created and DISCORD_NOTIF_CHANNEL_POST_URL:
-        asyncio.create_task(_notify_discord_table_created(DISCORD_NOTIF_CHANNEL_POST_URL, table_key, player_name))
 
     async with table.lock:
         if spectate:
@@ -976,6 +1002,10 @@ async def _resolve_join_inner(
             await _send_error(writer, protocol.TABLE_FULL, "Table is full")
             return None
 
+        if table_was_created and DISCORD_NOTIF_CHANNEL_POST_URL:
+            asyncio.create_task(
+                _notify_discord_table_created(DISCORD_NOTIF_CHANNEL_POST_URL, table_key, player_name, seat)
+            )
         logger.info(
             "[%s] CONNEXION %s (%s)%s",
             table_key,

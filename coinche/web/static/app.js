@@ -60,6 +60,23 @@ const REDUCED_MOTION = window.matchMedia(
   "(prefers-reduced-motion: reduce)",
 ).matches;
 
+// Server table keys are ASCII alphanumeric and capped at 20 characters. This
+// catalogue mirrors `coinche.table.TABLE_NAMES`; collisions get a suffix.
+const TABLE_KEY_MAX_LENGTH = 20;
+const TABLE_NAMES = [
+  "Midgar", "Nibelheim", "CosmoCanyon", "GoldSaucer", "BalambGarden",
+  "Zanarkand", "Alexandria", "Lindblum", "Spira", "Besaid", "Cornelia",
+  "Pravoka", "Mysidia", "Figaro", "Vector", "Zozo", "Wutai", "Junon",
+  "Kalm", "Gongaga", "Corel", "RocketTown", "CostaDelSol", "Bevelle",
+  "Kilika", "Guadosalam", "Macalania", "Insomnia", "Altissia", "Lestallum",
+  "Tenebrae", "Eorzea", "Gridania", "Uldah", "Ishgard", "Sharlayan",
+  "Rabanastre", "Dalmasca", "Bhujerba", "Archades", "Treno", "Burmecia",
+  "Cocoon", "Academia",
+  "ShadowMoses", "OuterHeaven", "MotherBase", "CampOmega", "Zanzibar",
+  "BigShell", "GrouzniGrad", "Tselinoyarsk",
+  "Lumiere", "Monolith", "FlyingWaters", "StoneWave", "OldLumiere", "EsquiesNest",
+];
+
 // =========================================================================
 // Card (SVG) — vector face, crisp at any size, accessible name.
 // Renders visual only; interactivity (click/keyboard) is layered by HandFan.
@@ -543,11 +560,12 @@ const App = {
 
     // Lobby form (there is no table-list in the snapshot contract; U2 pushes
     // players/status only — so the lobby is a join form driven by that state).
-    const lobby = reactive({ name: META.name || readLastName(), table: "table1", team: "" });
+    const lobby = reactive({ name: META.name || readLastName(), table: META.tableKey || "table1", team: "" });
 
     let ws = null;
     let backoff = 500;
     let toastId = 0;
+    let deepLinkJoinSent = false;
     let bidEffectTimer = null;
     let beloteEffectTimer = null;
     let joinEffectTimer = null;
@@ -633,6 +651,12 @@ const App = {
         reconnecting.value = false; // socket is live again — drop the overlay
         // Ask U2 to start streaming lobby updates so the join screen is live.
         sendAction("lobby", {});
+        if (META.tableKey && lobby.name.trim() && !deepLinkJoinSent) {
+          deepLinkJoinSent = true;
+          const payload = { table_key: META.tableKey, player_name: lobby.name.trim() };
+          if (META.preferredSeat) payload.seat = META.preferredSeat;
+          sendAction("join", payload);
+        }
       });
       ws.addEventListener("message", (event) => {
         let frame;
@@ -1272,14 +1296,18 @@ const App = {
     // in. `snapshot` is null before the first {type:"state"} frame.
     const lobbyLoaded = computed(() => snapshot.value !== null);
 
-    // Next free "tableN" key not already present, for the create card.
+    // Random venue key not already present, for the create card.
     const nextTableKey = computed(() => {
       const keys = new Set(lobbyTables.value.map((t) => t.key.toLowerCase()));
-      for (let n = 1; n < 1000; n++) {
-        const k = "table" + n;
-        if (!keys.has(k)) return k;
+      const base = TABLE_NAMES[Math.floor(Math.random() * TABLE_NAMES.length)];
+      let key = base;
+      let suffix = 2;
+      while (keys.has(key.toLowerCase())) {
+        const suffixText = String(suffix);
+        key = base.slice(0, TABLE_KEY_MAX_LENGTH - suffixText.length) + suffixText;
+        suffix += 1;
       }
-      return "table" + (keys.size + 1);
+      return key;
     });
 
     function joinSpecificTable(tableKey, teamLabelText, seat) {

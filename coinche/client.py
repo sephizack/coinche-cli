@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import random
 import select
 import signal
 import sys
@@ -28,6 +29,7 @@ from rich.text import Text
 
 from coinche import __version__, protocol, ui
 from coinche.session_state import ClientState, _build_last_round_contract, apply_message
+from coinche.table import TABLE_NAMES
 from coinche.web import WebOverlayServer
 
 DEFAULT_HOST = "127.0.0.1"
@@ -673,17 +675,16 @@ def _prompt_host_port(args: argparse.Namespace) -> tuple[str, int]:
 
 
 def _auto_generate_table_key(existing_tables: list[dict]) -> str:
-    """Generate the next available 'Table N' key (displayed as 'Table N',
-    stored as lowercase alphanumeric 'tableN' for the server)."""
+    """Generate a random venue key, adding digits until it is available."""
     existing_keys = {t["table_key"].lower() for t in existing_tables}
-    for n in range(1, 10**7):
-        key = f"table{n}"
-        if len(key) > 12:
-            break
-        if key not in existing_keys:
-            return key
-    # Fallback: all 'tableN' keys (N up to the limit) are taken.
-    return f"table{len(existing_keys) + 1}"
+    base = random.choice(TABLE_NAMES)
+    key = base
+    suffix = 2
+    while key.lower() in existing_keys:
+        suffix_text = str(suffix)
+        key = f"{base[: protocol.TABLE_KEY_MAX_LENGTH - len(suffix_text)]}{suffix_text}"
+        suffix += 1
+    return key
 
 
 def _reconnectable_seat(table_entry: dict, player_name: str) -> dict | None:

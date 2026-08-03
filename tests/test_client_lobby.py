@@ -8,7 +8,9 @@ the pure predicate behind that behaviour.
 
 from __future__ import annotations
 
-from coinche.client import _reconnectable_seat, _replaceable_bot_seats
+from coinche import protocol
+from coinche.client import _auto_generate_table_key, _reconnectable_seat, _replaceable_bot_seats
+from coinche.table import TABLE_NAMES
 
 
 def _table(players):
@@ -98,3 +100,32 @@ def test_replaceable_bot_seats_empty_for_all_human_running_table():
         ]
     )
     assert _replaceable_bot_seats(entry) == []
+
+
+def test_generated_table_key_uses_random_venue_name(monkeypatch):
+    monkeypatch.setattr("coinche.client.random.choice", lambda names: "Midgar")
+
+    key = _auto_generate_table_key([])
+
+    assert key == "Midgar"
+    assert key in TABLE_NAMES
+
+
+def test_generated_table_key_adds_numeric_suffix_on_collision(monkeypatch):
+    monkeypatch.setattr("coinche.client.random.choice", lambda names: "BalambGarden")
+    existing_tables = [{"table_key": "BalambGarden"}, {"table_key": "BalambGarden2"}]
+
+    key = _auto_generate_table_key(existing_tables)
+
+    assert key == "BalambGarden3"
+    assert key.isalnum()
+    assert len(key) <= protocol.TABLE_KEY_MAX_LENGTH
+
+
+def test_table_venue_names_match_server_key_constraints():
+    assert all(
+        name.isascii()
+        and name.isalnum()
+        and protocol.TABLE_KEY_MIN_LENGTH <= len(name) <= protocol.TABLE_KEY_MAX_LENGTH
+        for name in TABLE_NAMES
+    )
