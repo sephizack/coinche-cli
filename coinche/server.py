@@ -20,7 +20,7 @@ import urllib.request
 from coinche import __version__, protocol, rules
 from coinche.bot import choose_bid, choose_card, configure_samples
 from coinche.cards import Card, Seat
-from coinche.game import PARTNER_OF, TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
+from coinche.game import PARTNER_OF, TEAM_OF, Game, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
     LOBBY_SUBSCRIBERS,
     TABLES,
@@ -497,11 +497,29 @@ async def _handle_play_result(table: Table, result: dict) -> None:
         },
     )
 
-    # Pause here (per user request) so every player has time to see the last
-    # card played before the table moves on (next play_request, or the next
-    # round's deal) -- otherwise the trick's four cards could be cleared from
-    # the table almost instantly.
-    await asyncio.sleep(table.trick_pause_seconds)
+    game = table.game
+    assert game is not None
+    table.trick_pause_task = asyncio.create_task(_finish_trick_pause(table, game, result))
+
+
+async def _finish_trick_pause(table: Table, game: Game, result: dict) -> None:
+    """Complete a trick's visual pause without retaining the table lock."""
+    try:
+        await asyncio.sleep(table.trick_pause_seconds)
+        async with table.lock:
+            # The table can be abandoned while the pause is visible.
+            if table.game is not game or not table.has_humans():
+                return
+            await _continue_after_trick_pause(table, result)
+    finally:
+        if table.trick_pause_task is asyncio.current_task():
+            table.trick_pause_task = None
+        if table.round_pause_task is None and table.game is game and table.has_humans():
+            _schedule_bot_turns(table)
+
+
+async def _continue_after_trick_pause(table: Table, result: dict) -> None:
+    """Advance after a completed-trick pause. Caller must hold `table.lock`."""
 
     # Tell every player the trick is over now, not just whoever acts next
     # (per user request): `_send_play_request` below only targets the single
@@ -516,6 +534,17 @@ async def _handle_play_result(table: Table, result: dict) -> None:
         await _send_play_request(table, result["next_to_act"])
         return
 
+    await _handle_round_completion(table, result)
+
+
+async def _handle_round_completion(table: Table, result: dict) -> None:
+    """Publish a completed round and start its optional visual pause.
+
+    Caller must hold `table.lock`. The delay before the next deal runs in its
+    own task so CHAT and LEAVE messages remain responsive.
+    """
+    game = table.game
+    assert game is not None
     next_dealer_seat = result["next_dealer_seat"]
     logger.info(
         "[%s] R%d FIN DE MANCHE score_manche NS=%d EW=%d cumul NS=%d EW=%d",
@@ -554,13 +583,23 @@ async def _handle_play_result(table: Table, result: dict) -> None:
             {"final_scores": result["cumulative_scores"], "winning_team": result["winning_team"]},
         )
     else:
-        # Pause here (per user request) so every player has time to read the
-        # just-finished round's recap (contract result + cumulative score,
-        # shown by the client as an end-of-round screen) before the table
-        # moves on to the next deal -- otherwise it flashes by unseen.
+        table.round_pause_task = asyncio.create_task(_finish_round_pause(table, game))
+
+
+async def _finish_round_pause(table: Table, game: Game) -> None:
+    """Deal the next round after its recap delay without holding `table.lock`."""
+    try:
         await asyncio.sleep(table.round_pause_seconds)
-        await _broadcast_deal(table)
-        await _send_bid_request(table, game.next_to_act)
+        async with table.lock:
+            if table.game is not game or not table.has_humans():
+                return
+            await _broadcast_deal(table)
+            await _send_bid_request(table, game.next_to_act)
+    finally:
+        if table.round_pause_task is asyncio.current_task():
+            table.round_pause_task = None
+        if table.game is game and table.has_humans():
+            _schedule_bot_turns(table)
 
 
 def _sort_hand_for_display(hand: list[Card], trump: str | None) -> list[Card]:
@@ -599,6 +638,8 @@ async def _run_bot_turns(table: Table) -> None:
             async with table.lock:
                 game = table.game
                 if game is None or game.game_over:
+                    return
+                if table.trick_pause_task is not None or table.round_pause_task is not None:
                     return
                 seat = game.next_to_act
                 session = table.seats.get(seat)
@@ -697,6 +738,13 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
     game = table.game
     if game is None:
         return  # ignore game-phase messages while still in the lobby
+
+    # A completed trick/round is being displayed. There is no legitimate move
+    # request during that interval, so do not let a stale or malicious action
+    # skip the visual pause; CHAT and LEAVE were handled before this point.
+    if table.trick_pause_task is not None or table.round_pause_task is not None:
+        if msg_type in {protocol.BID, protocol.PLAY_CARD}:
+            return
 
     if msg_type == protocol.BID:
         try:

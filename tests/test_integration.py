@@ -898,6 +898,46 @@ def test_trick_completion_pauses_before_next_play_request():
     asyncio.run(scenario())
 
 
+def test_chat_is_delivered_during_trick_pause():
+    """The post-trick visual pause must not retain the table lock."""
+
+    async def scenario() -> None:
+        async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            await server.handle_connection(reader, writer, 1000, trick_pause_seconds=0.3, round_pause_seconds=0)
+
+        srv = await asyncio.start_server(_handler, HOST, 0)
+        port = srv.sockets[0].getsockname()[1]
+        conns: dict = {}
+        try:
+            conns = await _join_all(port, "pausechat")
+            observer_reader = conns["N"][0]
+            await _read_until(conns["W"][0], protocol.DEAL)
+            await _bid_min_and_finalize_contract(conns, observer_reader)
+
+            current_actor = "W"
+            for _ in range(4):
+                req = await _read_until(conns[current_actor][0], protocol.PLAY_REQUEST)
+                await _send(conns[current_actor][1], protocol.PLAY_CARD, {"card": req["legal_cards"][0]})
+                await _read_until(observer_reader, protocol.CARD_PLAYED)
+                current_actor = ROTATION_NEXT[current_actor]
+
+            await _read_until(observer_reader, protocol.TRICK_RESULT)
+            await _send(conns["N"][1], protocol.CHAT, {"text": "pendant le pli"})
+            chat = await asyncio.wait_for(_read_until(observer_reader, protocol.CHAT), timeout=0.15)
+            assert chat["text"] == "pendant le pli"
+
+            await _send(conns["N"][1], protocol.LEAVE, {})
+            msg_type, _ = await asyncio.wait_for(_recv(observer_reader), timeout=0.15)
+            assert msg_type == protocol.LEFT
+        finally:
+            for _reader, writer in conns.values():
+                writer.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
 def test_round_completion_pauses_before_next_deal():
     """Per user request: after a round (manche) completes without ending the
     game, the server must wait `round_pause_seconds` after broadcasting

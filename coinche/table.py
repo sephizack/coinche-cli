@@ -204,6 +204,12 @@ class Table:
         self.bot_think_seconds = bot_think_seconds
         self.lock = asyncio.Lock()
         self.bot_task: asyncio.Task[None] | None = None
+        # Visual pauses intentionally do not retain `lock`: chat and leaving
+        # remain available while the completed trick / round recap is visible.
+        # These tasks mark the game transition as pending so bot runners cannot
+        # advance play before the corresponding pause has elapsed.
+        self.trick_pause_task: asyncio.Task[None] | None = None
+        self.round_pause_task: asyncio.Task[None] | None = None
         self.seats: dict[Seat, ClientSession | None] = {seat: None for seat in SEAT_ORDER}
         # Seatless watchers keyed by their (case-insensitive) chat name so a
         # spectator's own writer can be found for removal and duplicate names are

@@ -737,6 +737,16 @@ def test_chat_appends_message_with_team():
     assert system is False
 
 
+def test_chat_history_is_not_pruned():
+    state = ClientState()
+    _join(state)
+    for index in range(25):
+        apply_message(state, protocol.CHAT, {"seat": "N", "text": f"message {index}"})
+
+    assert len(state.chat_messages) == 25
+    assert state.chat_messages[0][1] == "message 0"
+
+
 def test_bid_announcements_are_added_to_chat_and_trigger_coinche_effect():
     state = ClientState()
     _join(state)

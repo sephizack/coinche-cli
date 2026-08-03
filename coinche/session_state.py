@@ -176,7 +176,9 @@ class ClientState:
     tables: list[dict] = field(default_factory=list)
     # Chat: split-pane state.
     active_pane: str = "game"  # "game" or "chat"
-    chat_messages: deque[tuple[str, str, str | None, float, bool]] = field(default_factory=lambda: deque(maxlen=20))
+    # The web overlay keeps the complete local session history so a browser
+    # can scroll back through it; messages are intentionally never pruned.
+    chat_messages: deque[tuple[str, str, str | None, float, bool]] = field(default_factory=deque)
     chat_buffer: str = ""
     chat_error: bool = False
     chat_cursor: int = 0

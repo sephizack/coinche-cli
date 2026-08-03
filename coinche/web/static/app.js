@@ -417,10 +417,11 @@ const ChatPanel = {
   props: {
     messages: Array,
     localTeam: String, // NS | EW
+    draft: { type: String, default: "" },
   },
-  emits: ["send", "close"],
+  emits: ["send", "close", "update:draft"],
   data() {
-    return { draft: "" };
+    return { wasAtBottom: true };
   },
   computed: {
     view() {
@@ -437,7 +438,7 @@ const ChatPanel = {
       const text = this.draft.trim().slice(0, 256); // UX cap only; server is authoritative
       if (!text) return;
       this.$emit("send", text);
-      this.draft = "";
+      this.$emit("update:draft", "");
     },
   },
   mounted() {
@@ -449,7 +450,11 @@ const ChatPanel = {
   },
   updated() {
     const log = this.$el.querySelector(".chat-log");
-    if (log) log.scrollTop = log.scrollHeight;
+    if (log && this.wasAtBottom) log.scrollTop = log.scrollHeight;
+  },
+  beforeUpdate() {
+    const log = this.$el.querySelector(".chat-log");
+    this.wasAtBottom = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 16;
   },
   template: `
     <aside class="chat-panel" role="region" aria-label="Discussion">
@@ -470,7 +475,8 @@ const ChatPanel = {
         </div>
       </div>
       <form class="chat-compose" @submit.prevent="submit">
-        <input class="chat-input" type="text" maxlength="256" v-model="draft"
+         <input class="chat-input" type="text" maxlength="256" :value="draft"
+           @input="$emit('update:draft', $event.target.value)"
                placeholder="Message…" aria-label="Votre message" />
         <button class="chat-send" type="submit" data-testid="chat-send">Envoyer</button>
       </form>
@@ -488,6 +494,9 @@ const App = {
     const snapshot = ref(null); // latest full snapshot (source of truth)
     const toasts = ref([]); // transient messages
     const chatOpen = ref(window.innerWidth >= 1024); // docked open on desktop
+    // This belongs to App, not ChatPanel: the round recap temporarily unmounts
+    // the panel, but must never discard a message currently being composed.
+    const chatDraft = ref("");
     const unread = ref(0);
     const bidSending = ref(false);
     const fillingBots = ref(false);
@@ -1423,6 +1432,7 @@ const App = {
       snapshot,
       toasts,
       chatOpen,
+      chatDraft,
       unread,
       bidSending,
       fillingBots,
@@ -1802,7 +1812,9 @@ const App = {
           v-if="chatOpen"
           :messages="snapshot.chat_messages"
           :local-team="localTeam"
+          :draft="chatDraft"
           @send="sendChat"
+          @update:draft="chatDraft = $event"
           @close="toggleChat"
         ></chat-panel>
       </div>
