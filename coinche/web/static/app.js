@@ -1,5 +1,5 @@
 // =========================================================================
-// Coinche — Casino web overlay (U3)
+// Coinche CLI Online web overlay (U3)
 //
 // A Vue 3 single-file (no build step) front-end that renders entirely from the
 // state snapshots pushed by U2 over the WebSocket and sends action frames back.
@@ -1571,7 +1571,7 @@ const App = {
     <div v-if="!joined" class="lobby">
       <div class="lobby__inner">
         <header class="lobby__header">
-          <h1 class="lobby__title"><img src="favicon.ico" alt="" class="lobby__favicon" /> Coinche — Casino</h1>
+          <h1 class="lobby__title"><img src="favicon.ico" alt="" class="lobby__favicon" /> Coinche CLI Online</h1>
           <div class="lobby__namefield">
             <label for="lobby-name">Votre nom</label>
             <input id="lobby-name" type="text" v-model="lobby.name" maxlength="24"
