@@ -356,6 +356,7 @@ _COINCHE_CAPOT_STRENGTH = 30
 _SURCOINCHE_THRESHOLDS: list[tuple[int, int]] = [(100, 105), (120, 120), (140, 130), (rules.BID_MAX, 145)]
 _SURCOINCHE_CAPOT_STRENGTH = 145
 
+
 def _should_counter(
     action: str,
     current: dict,
