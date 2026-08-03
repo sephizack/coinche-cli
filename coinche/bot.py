@@ -369,16 +369,39 @@ def choose_bid(game: Game, seat: Seat) -> dict:
         best_trump = last_self_bid["trump"]
     current = options["current_highest_bid"]
 
-    if options["can_surcoinche"] and current is not None and strengths[current["trump"]] >= 98:
-        return {"action": "surcoinche"}
-    if (
-        options["can_coinche"]
-        and current is not None
-        and current["points"] != rules.CAPOT
-        and current["points"] <= 100
-        and strengths[current["trump"]] >= 76
-    ):
-        return {"action": "coinche"}
+    if options["can_coinche"] and current is not None:
+        # check if we can bid Capot first
+        own_rebid = _try_open_suit(hand, best_trump, opening_ceilings, options, seat)
+        if own_rebid is not None and own_rebid.get("points") == rules.CAPOT:
+            return own_rebid
+        # Check if we coinche the opponents' bid
+        if current["points"] == rules.CAPOT and strengths[current["trump"]] >= 30:
+            return {"action": "coinche"}
+        if current["points"] != rules.CAPOT:
+            if current["points"] <= 100:
+                required_strength = 80
+            elif current["points"] <= 120:
+                required_strength = 65
+            elif current["points"] <= 140:
+                required_strength = 50
+            else:
+                required_strength = 40
+            if strengths[current["trump"]] >= required_strength:
+                return {"action": "coinche"}
+    if options["can_surcoinche"] and current is not None:
+        if current["points"] == rules.CAPOT and strengths[current["trump"]] >= 140:
+            return {"action": "surcoinche"}
+        if current["points"] != rules.CAPOT:
+            if current["points"] <= 100:
+                required_strength = 105
+            elif current["points"] <= 120:
+                required_strength = 120
+            elif current["points"] <= 140:
+                required_strength = 130
+            else:
+                required_strength = 145
+            if strengths[current["trump"]] >= required_strength:
+                return {"action": "surcoinche"}
 
     last_partner_bid = next(
         (bid for bid in reversed(options["bid_history"]) if bid.get("action") == "bid" and _is_partner_bid(bid, seat)),

@@ -138,6 +138,63 @@ def test_bot_passes_with_a_weak_hand() -> None:
     assert choose_bid(game, Seat.W) == {"action": "pass"}
 
 
+@pytest.mark.parametrize(
+    ("points", "hand", "expected"),
+    [
+        (100, _cards("7♠", "8♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣"), {"action": "pass"}),
+        (100, _cards("V♠", "9♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣"), {"action": "pass"}),
+        (100, _cards("V♠", "9♠", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "coinche"}),
+        (120, _cards("V♠", "9♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣"), {"action": "pass"}),
+        (120, _cards("V♠", "9♠", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "coinche"}),
+        (140, _cards("V♠", "9♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣"), {"action": "coinche"}),
+        (140, _cards("V♠", "9♦", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "coinche"}),
+        (160, _cards("V♠", "9♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣"), {"action": "coinche"}),
+        ("capot", _cards("V♠", "9♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣"), {"action": "coinche"}),
+        ("capot", _cards("V♠", "9♥", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣"), {"action": "coinche"}),
+    ],
+)
+def test_bot_coinche_threshold_drops_as_opponent_contract_rises(
+    points: int | str, hand: list[Card], expected: dict
+) -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.S] = hand
+    game.submit_bid(Seat.W, "bid", trump="♠", points=points)
+
+    assert choose_bid(game, Seat.S) == expected
+
+
+@pytest.mark.parametrize(
+    ("points", "hand", "expected"),
+    [
+        (100, _cards("V♠", "9♠", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "pass"}),
+        (100, _cards("V♠", "9♠", "A♠", "10♠", "R♠", "A♥", "7♥", "8♦"), {"action": "surcoinche"}),
+        (120, _cards("V♠", "9♠", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "pass"}),
+        (120, _cards("V♠", "9♠", "A♠", "10♠", "A♥", "7♥", "8♦", "7♣"), {"action": "pass"}),
+        (120, _cards("V♠", "9♠", "A♠", "10♠", "A♥", "7♥", "A♦", "7♣"), {"action": "surcoinche"}),
+        (140, _cards("V♠", "9♠", "A♠", "10♠", "A♥", "7♥", "8♦", "7♣"), {"action": "pass"}),
+        (140, _cards("V♠", "9♠", "A♠", "10♠", "R♠", "A♥", "7♥", "8♦"), {"action": "pass"}),
+        (140, _cards("V♠", "9♠", "A♠", "10♠", "R♠", "A♥", "7♥", "A♦"), {"action": "surcoinche"}),
+        (160, _cards("V♠", "9♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣"), {"action": "pass"}),
+        (160, _cards("V♠", "9♠", "A♠", "10♠", "R♠", "A♥", "7♥", "8♦"), {"action": "pass"}),
+        (160, _cards("V♠", "9♠", "A♠", "10♠", "R♠", "A♥", "10♥", "A♦"), {"action": "surcoinche"}),
+        ("capot", _cards("V♠", "9♠", "A♠", "10♠", "R♠", "A♥", "10♥", "A♦"), {"action": "surcoinche"}),
+    ],
+)
+def test_bot_surcoinche_threshold_rises_with_contract_value(
+    points: int | str, hand: list[Card], expected: dict
+) -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = hand
+    game.submit_bid(Seat.W, "bid", trump="♠", points=points)
+    game.submit_bid(Seat.S, "coinche")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+
+    assert choose_bid(game, Seat.W) == expected
+
+
 def test_bot_opens_eighty_with_valet_two_trumps_and_side_ace() -> None:
     # V + 2 other low trumps + 1 side Ace: normal algo passes (opening_ceiling
     # is None) but the fallback recognises the hand as worth an 80/90 attempt.
@@ -1356,9 +1413,8 @@ def test_opener_bids_higher_with_nine_instead_of_v() -> None:
     assert action["points"] > 110
 
 
-def test_opener_reaches_capot_with_partner_bonus() -> None:
-    # Very strong hand: bonus +20 pushes the ceiling to CAPOT.
-    # V + 3 other trumps + 3 side aces → high opening ceiling, +20 reaches 160.
+def test_bot_rebids_capot_before_coinching() -> None:
+    # Capot is the sole rebid that takes priority over a qualifying coinche.
     game = Game()
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("V♠", "A♠", "10♠", "R♠", "A♥", "A♦", "A♣", "7♣")
