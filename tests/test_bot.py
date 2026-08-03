@@ -1485,6 +1485,7 @@ def test_opener_passes_when_partner_last_bid_is_different_trump_and_high() -> No
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)
     game.submit_bid(Seat.S, "pass")
     game.submit_bid(Seat.E, "bid", trump="♥", points=110)
+    game.submit_bid(Seat.N, "pass")
 
     # W has A♥ → supports partner's ♥ bid (support branch fires before guard).
     action = choose_bid(game, Seat.W)

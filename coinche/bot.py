@@ -129,7 +129,7 @@ def _opening_ceiling(hand: list[Card], trump: str) -> int | str | None:
 def _support_ceiling(
     hand: list[Card],
     trump: str,
-    current_points: int,
+    current_partner_bid_point: int,
     has_opponents_bid_before: bool,
     current_highest_bid: dict | None = None,
 ) -> int | None:
@@ -140,16 +140,19 @@ def _support_ceiling(
     master and can promise one additional trick, even with fewer than three
     trumps itself.
     """
+
+    if current_highest_bid is not None and current_highest_bid["points"] == rules.CAPOT:
+        return None
     trump_cards = [card for card in hand if card.suit == trump]
     trump_ranks = {card.rank for card in trump_cards}
     trump_count = len(trump_cards)
 
-    partner_looking_for_34 = current_points == rules.BID_MIN or (
-        current_points == rules.BID_MIN + rules.BID_STEP and has_opponents_bid_before
+    partner_looking_for_34 = current_partner_bid_point == rules.BID_MIN or (
+        current_partner_bid_point == rules.BID_MIN + rules.BID_STEP and has_opponents_bid_before
     )
     if partner_looking_for_34:
         if "V" in trump_ranks or "9" in trump_ranks:
-            minimum_bid = current_points + rules.BID_STEP
+            minimum_bid = current_partner_bid_point + rules.BID_STEP
             if current_highest_bid is not None:
                 if current_highest_bid["points"] == rules.CAPOT or current_highest_bid["points"] >= 120:
                     return None
@@ -163,7 +166,14 @@ def _support_ceiling(
             additional_steps += 1
         additional_steps += _side_aces(hand, trump)
         if additional_steps > 0:
-            return current_points + additional_steps * rules.BID_STEP
+            new_bid = current_partner_bid_point + additional_steps * rules.BID_STEP
+            # Check if new bid is legal
+            if current_highest_bid is not None:
+                if new_bid == current_highest_bid["points"]:
+                    # When this condition is true, it means the current highest bid is necessarily from the opponents.
+                    # If we miss only 10 point to support, allow to increase by 10 more, if more we will pass
+                    new_bid += rules.BID_STEP
+            return new_bid
     return None
 
 
@@ -280,7 +290,10 @@ def _try_partner_support(
         if new_bid is not None:
             if new_bid >= rules.BID_MAX:
                 new_bid = rules.CAPOT
-            return {"action": "bid", "trump": last_partner_bid["trump"], "points": new_bid}
+            legal_for_suit = _legal_bids_up_to(options, last_partner_bid["trump"], new_bid)
+            if not legal_for_suit:
+                return {"action": "pass"}
+            return legal_for_suit[-1] if legal_for_suit else {"action": "pass"}
 
     if last_partner_bid["points"] >= 100 and last_partner_bid["trump"] != best_trump:
         return {"action": "pass"}

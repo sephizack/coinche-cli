@@ -117,11 +117,11 @@ def legal_bid_actions(current_highest_bid: dict | None) -> list[dict]:
     points = start
     while points <= BID_MAX:
         for trump in trumps:
-            actions.append({"trump": trump, "points": points})
+            actions.append({"action": "bid", "trump": trump, "points": points})
         points += BID_STEP
 
     for trump in trumps:
-        actions.append({"trump": trump, "points": CAPOT})
+        actions.append({"action": "bid", "trump": trump, "points": CAPOT})
 
     return actions
 
