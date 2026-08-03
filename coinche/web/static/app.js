@@ -206,6 +206,7 @@ const SeatPanel = {
     <div :class="seatClasses">
       <div class="seat__nameplate">
         <span class="seat__name">{{ name }}</span>
+        <span v-if="isBot && isTurn" class="seat__turn-spinner" role="status" aria-label="Le bot joue"></span>
         <span v-if="isBot" class="seat__tag">bot</span>
         <span v-if="isDealer" class="seat__badge">(D)</span>
       </div>
