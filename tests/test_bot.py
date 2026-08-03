@@ -1133,6 +1133,28 @@ def test_bot_support_partner_looking_for_34_after_opponent_bid() -> None:
     assert action == {"action": "bid", "trump": "♠", "points": 100}
 
 
+def test_bot_has_34_in_trump_need_to_avoid_minimum() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "8♠", "A♥", "7♦", "10♣", "R♣", "D♣")
+    game.submit_bid(Seat.W, "pass")
+    game.submit_bid(Seat.S, "bid", trump="♥", points=80)
+
+    action = choose_bid(game, Seat.E)
+    assert action == {"action": "bid", "trump": "♠", "points": 100}
+
+
+def test_bot_has_34_in_trump_need_to_avoid_minimum_and_all_passed() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "8♠", "A♥", "7♦", "10♣", "R♣", "D♣")
+    game.submit_bid(Seat.W, "pass")
+    game.submit_bid(Seat.S, "pass")
+
+    action = choose_bid(game, Seat.E)
+    assert action == {"action": "bid", "trump": "♠", "points": 90}
+
+
 # ---------------------------------------------------------------------------
 # _support_ceiling unit tests
 # ---------------------------------------------------------------------------

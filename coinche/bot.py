@@ -342,8 +342,11 @@ def choose_bid(game: Game, seat: Seat) -> dict:
             minimum_for_hand = rules.BID_MIN + rules.BID_STEP
             if options["current_highest_bid"] and options["current_highest_bid"]["points"] == rules.BID_MIN:
                 minimum_for_hand = rules.BID_MIN + rules.BID_STEP*2
-            if maximum_for_hand != rules.CAPOT and minimum_for_hand > int(maximum_for_hand):
-                return {"action": "pass"}
+            if maximum_for_hand != rules.CAPOT:
+                if minimum_for_hand == int(maximum_for_hand) + rules.BID_STEP:
+                    maximum_for_hand = int(maximum_for_hand) + rules.BID_STEP
+                if minimum_for_hand > int(maximum_for_hand):
+                    return {"action": "pass"}
         legal_for_suit = [] if maximum_for_hand is None else _legal_bids_up_to(options, best_trump, maximum_for_hand)
         if minimum_for_hand > rules.BID_MIN:
             legal_for_suit = [bid for bid in legal_for_suit if bid["points"] >= minimum_for_hand]
