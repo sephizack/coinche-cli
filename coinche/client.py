@@ -281,6 +281,7 @@ async def run_session(
                 error=state.chat_error,
                 local_team=local_team,
                 cursor=state.chat_cursor,
+                system_messages=state.system_messages,
             )
             live.update(ui.build_split_view(left_panel, chat, state.active_pane, height=live.console.size.height))
         live.refresh()

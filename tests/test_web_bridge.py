@@ -646,7 +646,20 @@ def test_web_client_shows_final_round_recap_before_game_over() -> None:
     assert 'v-if="chatOpen && (flags.round_over_screen || flags.game_over)"' in app
     assert ".chat-panel.chat-panel--overlay" in styles
     assert "scrollToNewest()" in app
-    assert "messages(messages, previousMessages)" in app
+    assert "humanMessages(messages, previousMessages)" in app
+
+
+def test_web_client_separates_system_announcements_from_human_chat() -> None:
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert ':system-messages="snapshot.system_messages"' in app
+    assert "Annonces système" in app
+    assert "new Date(m.ts * 1000).toLocaleTimeString" in app
+    assert "snap.chat_messages.length > (prev.chat_messages || []).length" in app
+    assert "snap.system_messages.length" not in app
+    assert ".chat-section--announcements" in styles
 
 
 def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:

@@ -179,6 +179,7 @@ class ClientState:
     # The web overlay keeps the complete local session history so a browser
     # can scroll back through it; messages are intentionally never pruned.
     chat_messages: deque[tuple[str, str, str | None, float, bool]] = field(default_factory=deque)
+    system_messages: deque[tuple[str, str, str | None, float, bool]] = field(default_factory=deque)
     chat_buffer: str = ""
     chat_error: bool = False
     chat_cursor: int = 0
@@ -308,7 +309,7 @@ def _bid_mark_label(entry: dict) -> str:
 
 
 def _append_bid_announcement(state: ClientState, seat: Seat, payload: dict) -> None:
-    """Add a non-pass auction declaration to the shared client-side chat."""
+    """Add a non-pass auction declaration to the system-announcement feed."""
     action = payload["action"]
     if action == "pass":
         return
@@ -322,19 +323,19 @@ def _append_bid_announcement(state: ClientState, seat: Seat, payload: dict) -> N
         text = "Surcoinche ! ×4"
 
     who = state.players.get(seat, seat.value)
-    state.chat_messages.append((who, text, state.team_of.get(seat), time.time(), False))
+    state.system_messages.append((who, text, state.team_of.get(seat), time.time(), True))
 
 
 def _append_belote_announcement(state: ClientState, seat: Seat, announcement: str) -> None:
-    """Add a Belote/Rebelote declaration to the shared client-side chat."""
+    """Add a Belote/Rebelote declaration to the system-announcement feed."""
     text = "Belote !" if announcement == "belote" else "Rebelote !"
     who = state.players.get(seat, seat.value)
-    state.chat_messages.append((who, text, state.team_of.get(seat), time.time(), False))
+    state.system_messages.append((who, text, state.team_of.get(seat), time.time(), True))
 
 
 def _append_round_separator(state: ClientState, round_number: int) -> None:
-    """Add a local chat marker before the auction of a newly dealt round."""
-    state.chat_messages.append((SYSTEM_CHAT_NAME, f"── Manche {round_number} ──", None, time.time(), True))
+    """Add a local marker before the auction of a newly dealt round."""
+    state.system_messages.append((SYSTEM_CHAT_NAME, f"── Manche {round_number} ──", None, time.time(), True))
 
 
 def _build_last_round_contract(state: ClientState) -> dict | None:
@@ -819,14 +820,20 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         # chat still resolves through `players`/`team_of` from its seat, with the
         # server-sent `name` as a fallback.
         seat_str = payload.get("seat")
-        if seat_str is None:
+        if payload.get("system"):
+            who = payload.get("name") or SYSTEM_CHAT_NAME
+            team = None
+            target = state.system_messages
+        elif seat_str is None:
             who = payload.get("name") or "?"
             team = None
+            target = state.chat_messages
         else:
             seat = Seat(seat_str)
             who = state.players.get(seat, payload.get("name") or seat.value)
             team = state.team_of.get(seat)
-        state.chat_messages.append((who, payload["text"], team, time.time(), False))
+            target = state.chat_messages
+        target.append((who, payload["text"], team, time.time(), payload.get("system", False)))
 
     elif msg_type == protocol.ERROR:
         text = payload.get("message") or payload.get("code") or "Erreur inconnue"
@@ -901,6 +908,16 @@ def snapshot_to_dict(state: ClientState) -> dict:
                 "system": system,
             }
             for name, text, team, ts, system in state.chat_messages
+        ],
+        "system_messages": [
+            {
+                "name": name,
+                "text": text,
+                "team": team,
+                "ts": ts,
+                "system": system,
+            }
+            for name, text, team, ts, system in state.system_messages
         ],
         "flags": {
             "game_over": state.game_over,

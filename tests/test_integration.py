@@ -194,6 +194,7 @@ def test_full_round_join_deal_bid_trick_score_flow():
                 "seat": None,
                 "name": "Système",
                 "text": expected_recap,
+                "system": True,
             }
         finally:
             for _reader, writer in conns.values():
@@ -248,6 +249,7 @@ def test_one_player_can_fill_the_table_with_bots():
             recap = await _read_until(reader, protocol.CHAT)
             assert recap["seat"] is None
             assert recap["name"] == "Système"
+            assert recap["system"] is True
             assert recap["text"].startswith("Fin de manche - points de cartes : NS ")
             assert recap["text"].endswith(("Contrat réussi.", "Contrat chuté."))
             bot_seats = {player["seat"] for player in bots}

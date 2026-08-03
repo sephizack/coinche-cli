@@ -742,13 +742,14 @@ def build_chat_panel(
     error: bool = False,
     local_team: str | None = None,
     cursor: int | None = None,
+    system_messages: deque[tuple[str, str, str | None, float, bool]] | None = None,
 ) -> Panel:
     """Right-side chat panel: message list + inline input buffer.
 
     Each message is ``(name, text, team_id, ts, system)`` where *team_id* is
     ``"NS"``/``"EW"`` or ``None`` and *ts* is a client-side receive timestamp
-    (``time.time()``). *system* marks a local, non-player separator. When
-    *local_team* is given, the sender's name is
+    (``time.time()``). *system_messages* is displayed in a distinct announcement
+    section. When *local_team* is given, the sender's name is
     coloured with the matching ``TEAM_COLORS`` (``"nous"`` for same-team,
     ``"eux"`` for opposite-team).
 
@@ -758,14 +759,28 @@ def build_chat_panel(
     All player-supplied strings are wrapped via plain ``Text(value)`` to
     prevent rich-markup injection (see module docstring).
     """
+    if system_messages is None:
+        system_messages = deque(message for message in messages if message[4])
+        messages = deque(message for message in messages if not message[4])
     if cursor is None:
         cursor = len(buffer)
     _NAME_WIDTH = 10
     lines: list[RenderableType] = []
-    for name, text, team, ts, system in messages:
-        if system:
-            lines.append(Align.center(Text(text, style="dim cyan")))
-            continue
+    if system_messages:
+        lines.append(Text("Annonces système", style="bold cyan"))
+    for name, text, _team, ts, _system in system_messages or ():
+        line = Text(style="dim cyan")
+        line.append(time.strftime("%H:%M", time.localtime(ts)), style="dim")
+        line.append(" ")
+        if name != "Système":
+            line.append(name.ljust(_NAME_WIDTH), style="bold cyan")
+            line.append(" ")
+        line.append(text)
+        lines.append(line)
+    if system_messages:
+        lines.append(Text(""))
+    lines.append(Text("Discussion", style="bold cyan"))
+    for name, text, team, ts, _system in messages:
         if team is not None and local_team is not None:
             camp = "nous" if team == local_team else "eux"
             name_style = f"bold {TEAM_COLORS[camp]}"
@@ -778,7 +793,8 @@ def build_chat_panel(
         line.append(" ")
         line.append(text)
         lines.append(line)
-    if not lines:
+    if not messages and not system_messages:
+        lines = []
         lines.append(Text("  (aucun message)", style="italic grey50"))
     # Echo the typed buffer at the bottom
     prompt = Text("> ", style="bold green" if active else "grey50")

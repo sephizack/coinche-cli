@@ -416,17 +416,26 @@ const BidPanel = {
 const ChatPanel = {
   props: {
     messages: Array,
+    systemMessages: Array,
     localTeam: String, // NS | EW
     draft: { type: String, default: "" },
   },
   emits: ["send", "close", "update:draft"],
   computed: {
-    view() {
+    humanMessages() {
       return (this.messages || []).map((m) => ({
         name: m.name,
         text: m.text,
         cls: m.team === this.localTeam ? "nous" : "eux",
-        system: !!m.system,
+        time: new Date(m.ts * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      }));
+    },
+    announcements() {
+      return (this.systemMessages || []).map((m) => ({
+        name: m.name,
+        text: m.text,
+        cls: m.team === this.localTeam ? "nous" : "eux",
+        time: new Date(m.ts * 1000).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
       }));
     },
   },
@@ -452,7 +461,12 @@ const ChatPanel = {
     });
   },
   watch: {
-    messages(messages, previousMessages) {
+    humanMessages(messages, previousMessages) {
+      if (messages.length > (previousMessages?.length || 0)) {
+        nextTick(() => this.scrollToNewest());
+      }
+    },
+    announcements(messages, previousMessages) {
       if (messages.length > (previousMessages?.length || 0)) {
         nextTick(() => this.scrollToNewest());
       }
@@ -465,16 +479,24 @@ const ChatPanel = {
         <button class="chat-panel__close" aria-label="Fermer la discussion" @click="$emit('close')">×</button>
       </div>
       <div class="chat-log" aria-live="polite">
-        <p v-if="!view.length" class="chat-empty">Aucun message.</p>
-        <div v-for="(m, i) in view" :key="i" class="chat-msg" :class="{ 'chat-msg--system': m.system }">
-          <template v-if="m.system">
-            <span class="chat-msg__separator">{{ m.text }}</span>
-          </template>
-          <template v-else>
+        <section class="chat-section chat-section--announcements">
+          <h3 class="chat-section__title">Annonces système</h3>
+          <p v-if="!announcements.length" class="chat-empty">Aucune annonce.</p>
+          <div v-for="(m, i) in announcements" :key="'system-' + i" class="chat-msg chat-msg--system">
+            <time class="chat-msg__time">{{ m.time }}</time>
+            <span v-if="m.name !== 'Système'" class="chat-msg__name" :class="'chat-msg__name--' + m.cls">{{ m.name }}</span>
+            <span class="chat-msg__text">{{ m.text }}</span>
+          </div>
+        </section>
+        <section class="chat-section">
+          <h3 class="chat-section__title">Messages</h3>
+          <p v-if="!humanMessages.length" class="chat-empty">Aucun message.</p>
+          <div v-for="(m, i) in humanMessages" :key="'chat-' + i" class="chat-msg">
+            <time class="chat-msg__time">{{ m.time }}</time>
             <span class="chat-msg__name" :class="'chat-msg__name--' + m.cls">{{ m.name }}</span>
             <span class="chat-msg__text">{{ m.text }}</span>
-          </template>
-        </div>
+          </div>
+        </section>
       </div>
       <form class="chat-compose" @submit.prevent="submit">
          <input class="chat-input" type="text" maxlength="256" :value="draft"
@@ -1819,6 +1841,7 @@ const App = {
         <chat-panel
           v-if="chatOpen"
           :messages="snapshot.chat_messages"
+          :system-messages="snapshot.system_messages"
           :local-team="localTeam"
           :draft="chatDraft"
           @send="sendChat"
@@ -1842,6 +1865,7 @@ const App = {
       v-if="chatOpen && (flags.round_over_screen || flags.game_over)"
       class="chat-panel--overlay"
       :messages="snapshot.chat_messages"
+      :system-messages="snapshot.system_messages"
       :local-team="localTeam"
       :draft="chatDraft"
       @send="sendChat"

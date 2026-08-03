@@ -572,7 +572,7 @@ async def _handle_round_completion(table: Table, result: dict) -> None:
     )
     await table.broadcast(
         protocol.CHAT,
-        {"seat": None, "name": "Système", "text": _round_recap_chat_text(result["round_score"])},
+        {"seat": None, "name": "Système", "text": _round_recap_chat_text(result["round_score"]), "system": True},
     )
     await _announce_bot_starting_hands(table, result["completed_round_hands"], result.get("contract_trump"))
 

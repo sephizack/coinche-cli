@@ -159,7 +159,7 @@ def test_deal_resets_round_state_and_sorts_hand():
     assert state.whose_turn == Seat.N
     assert state.dealer_seat == Seat.W
     assert state.last_action == "Nouvelle donne #3 (donneur W)"
-    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
+    assert [(name, text, team) for name, text, team, _ts, _system in state.system_messages] == [
         (SYSTEM_CHAT_NAME, "── Manche 3 ──", None),
     ]
     assert state.round_over_screen is True  # preserved deliberately
@@ -353,7 +353,7 @@ def test_card_played_removes_own_card_and_updates_trick():
     assert state.whose_turn == Seat.W
 
 
-def test_card_played_belote_and_rebelote_announced_in_chat():
+def test_card_played_belote_and_rebelote_announced_in_system_messages():
     state = ClientState()
     _join(state)
     state.hand = ["R♥", "D♥"]
@@ -379,7 +379,7 @@ def test_card_played_belote_and_rebelote_announced_in_chat():
             "belote_announcement": "rebelote",
         },
     )
-    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
+    assert [(name, text, team) for name, text, team, _ts, _system in state.system_messages] == [
         ("Moi", "Belote !", "NS"),
         ("Moi", "Rebelote !", "NS"),
     ]
@@ -737,6 +737,18 @@ def test_chat_appends_message_with_team():
     assert system is False
 
 
+def test_system_chat_is_kept_out_of_human_messages():
+    state = ClientState()
+    _join(state)
+    apply_message(state, protocol.CHAT, {"seat": None, "name": "Système", "text": "Fin de manche", "system": True})
+
+    assert len(state.chat_messages) == 0
+    name, text, team, ts, system = state.system_messages[0]
+    assert (name, text, team, system) == (SYSTEM_CHAT_NAME, "Fin de manche", None, True)
+    assert isinstance(ts, float)
+    assert snapshot_to_dict(state)["system_messages"][0]["text"] == "Fin de manche"
+
+
 def test_chat_history_is_not_pruned():
     state = ClientState()
     _join(state)
@@ -747,7 +759,7 @@ def test_chat_history_is_not_pruned():
     assert state.chat_messages[0][1] == "message 0"
 
 
-def test_bid_announcements_are_added_to_chat_and_trigger_coinche_effect():
+def test_bid_announcements_are_added_to_system_messages_and_trigger_coinche_effect():
     state = ClientState()
     _join(state)
     apply_message(
@@ -757,7 +769,7 @@ def test_bid_announcements_are_added_to_chat_and_trigger_coinche_effect():
     )
     apply_message(state, protocol.BID_UPDATE, {"seat": "E", "action": "coinche", "next_to_act": "S"})
 
-    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
+    assert [(name, text, team) for name, text, team, _ts, _system in state.system_messages] == [
         ("Nord", "Annonce : 90 ♥", "NS"),
         ("Est", "Coinche ! ×2", "EW"),
     ]
@@ -779,14 +791,14 @@ def test_deal_adds_a_system_separator_after_prior_announcements():
         {"hand": ["7♥"], "first_bidder_seat": "S", "dealer_seat": "N", "round_number": 2},
     )
 
-    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
+    assert [(name, text, team) for name, text, team, _ts, _system in state.system_messages] == [
         ("Nord", "Annonce : 90 ♥", "NS"),
         (SYSTEM_CHAT_NAME, "── Manche 2 ──", None),
     ]
-    assert snapshot_to_dict(state)["chat_messages"][-1]["system"] is True
+    assert snapshot_to_dict(state)["system_messages"][-1]["system"] is True
 
 
-def test_surcoinche_result_is_added_to_chat_and_triggers_effect():
+def test_surcoinche_result_is_added_to_system_messages_and_triggers_effect():
     state = ClientState()
     _join(state)
     apply_message(
@@ -804,7 +816,7 @@ def test_surcoinche_result_is_added_to_chat_and_triggers_effect():
         },
     )
 
-    assert [(name, text, team) for name, text, team, _ts, _system in state.chat_messages] == [
+    assert [(name, text, team) for name, text, team, _ts, _system in state.system_messages] == [
         ("Moi", "Surcoinche ! ×4", "NS"),
     ]
     assert state.bid_effect_level == 4
