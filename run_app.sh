@@ -38,7 +38,11 @@ BOT_SAMPLES="100"
 SERVER_LOG=""
 DO_PULL=1
 if [[ -f .env ]]; then
+    # `.env` assignments are otherwise shell-local: export them so the game
+    # server and meta-client child processes inherit their configuration.
+    set -a
     source .env
+    set +a
 fi
 
 while [[ $# -gt 0 ]]; do
