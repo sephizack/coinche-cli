@@ -635,10 +635,16 @@ def test_overlay_startup_url_uses_an_osc8_terminal_hyperlink() -> None:
 
 def test_web_client_shows_final_round_recap_before_game_over() -> None:
     """The final round remains reviewable before the player sees the game result."""
-    app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
 
     assert app.index('v-else-if="flags.round_over_screen"') < app.index('v-else-if="flags.game_over"')
     assert "{{ flags.game_over ? 'Voir le résultat de la partie' : 'Manche suivante' }}" in app
+    assert 'data-testid="round-recap-chat-toggle"' in app
+    assert 'data-testid="game-over-chat-toggle"' in app
+    assert 'v-if="chatOpen && (flags.round_over_screen || flags.game_over)"' in app
+    assert ".chat-panel.chat-panel--overlay" in styles
 
 
 def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:

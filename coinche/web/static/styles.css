@@ -1666,6 +1666,11 @@ body > .lobby {
   z-index: 70;
   padding: var(--sp-6);
 }
+.recap__chat-toggle {
+  position: absolute;
+  top: var(--sp-4);
+  right: var(--sp-4);
+}
 .recap__card {
   width: min(520px, 100%);
   background: var(--panel-bg-solid);
@@ -1762,6 +1767,17 @@ body > .lobby {
   color: var(--felt-green-dark);
   font-size: 1.1rem;
   font-weight: 800;
+}
+
+/* The regular table lays its chat out as a stage sibling. Result screens
+   replace that stage, so their chat becomes a viewport overlay instead. */
+.chat-panel.chat-panel--overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 100%);
+  z-index: 80;
 }
 
 /* Confetti pieces */
@@ -2082,6 +2098,9 @@ body > .lobby {
   .chat-panel {
     flex-basis: 100%;
     border-left: none;
+  }
+  .chat-panel.chat-panel--overlay {
+    width: 100%;
   }
   /* Bid panel becomes a bottom sheet. */
   .scrim {

@@ -1634,6 +1634,11 @@ const App = {
 
     <!-- ================= ROUND RECAP ================= -->
     <div v-else-if="flags.round_over_screen" class="recap">
+      <button class="chat-toggle recap__chat-toggle" data-testid="round-recap-chat-toggle" @click="toggleChat"
+              :aria-label="'Discussion' + (unread ? ', ' + unread + ' non lus' : '')">
+        Chat
+        <span v-if="unread && !chatOpen" class="chat-toggle__badge">{{ unread }}</span>
+      </button>
       <div class="recap__card" role="dialog" aria-labelledby="rr-title">
         <h2 class="recap__title" id="rr-title">Fin de la manche</h2>
         <p class="recap__scores-title">Points faits</p>
@@ -1680,6 +1685,11 @@ const App = {
         <span v-for="(c, i) in confetti" :key="i" class="confetti__piece"
               :style="{ left: c.left + '%', background: c.color, animationDelay: c.delay + 's', animationDuration: c.dur + 's', transform: 'rotate(' + c.rot + 'deg)' }"></span>
       </div>
+                  <button class="chat-toggle recap__chat-toggle" data-testid="game-over-chat-toggle" @click="toggleChat"
+                    :aria-label="'Discussion' + (unread ? ', ' + unread + ' non lus' : '')">
+              Chat
+              <span v-if="unread && !chatOpen" class="chat-toggle__badge">{{ unread }}</span>
+                  </button>
       <div class="recap__card" role="dialog" aria-labelledby="go-title">
         <h2 class="recap__title" id="go-title">Partie terminée</h2>
         <div class="recap__winner">🏆 {{ winnerLabel }} l'emporte</div>
@@ -1827,6 +1837,19 @@ const App = {
         @bid="submitBid"
       ></bid-panel>
     </template>
+
+    <!-- Result screens replace the table subtree, but discussion remains a
+         live table action: keep the same component available above them. -->
+    <chat-panel
+      v-if="chatOpen && (flags.round_over_screen || flags.game_over)"
+      class="chat-panel--overlay"
+      :messages="snapshot.chat_messages"
+      :local-team="localTeam"
+      :draft="chatDraft"
+      @send="sendChat"
+      @update:draft="chatDraft = $event"
+      @close="toggleChat"
+    ></chat-panel>
   `,
 };
 
