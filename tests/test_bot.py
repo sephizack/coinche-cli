@@ -42,6 +42,28 @@ def test_bot_bids_a_strong_trump_hand() -> None:
     assert action == {"action": "bid", "trump": "♠", "points": 130}
 
 
+def test_bid_choice_does_not_depend_on_real_hidden_hands() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "A♠", "10♠", "A♥", "A♦", "7♣", "8♣")
+
+    altered = copy.deepcopy(game)
+    assert altered.round_state is not None
+    hidden_seats = [Seat.N, Seat.E, Seat.S]
+    hidden_hands = [list(game.round_state.hands[seat]) for seat in hidden_seats]
+    hidden_dealt_hands = [list(game.round_state.dealt_hands[seat]) for seat in hidden_seats]
+    for target, hand, dealt_hand in zip(
+        hidden_seats,
+        hidden_hands[1:] + hidden_hands[:1],
+        hidden_dealt_hands[1:] + hidden_dealt_hands[:1],
+        strict=True,
+    ):
+        altered.round_state.hands[target] = hand
+        altered.round_state.dealt_hands[target] = dealt_hand
+
+    assert choose_bid(game, Seat.W) == choose_bid(altered, Seat.W)
+
+
 def test_bot_values_side_aces_behind_a_jack_nine_even_with_only_three_trumps() -> None:
     # V♠+9♠ give firm trump control, so the three outside aces are cashable and
     # count toward the bid -- and, controlled like this, promise the partner will
@@ -293,7 +315,7 @@ def test_bot_cashes_the_requested_suit_ace_when_no_trump_is_in_the_trick() -> No
     assert choose_card(game, Seat.W) == Card("A", "♥")
 
 
-def test_card_choice_does_not_depend_on_real_hidden_hands() -> None:
+def test_card_choice_does_not_depend_on_any_real_hidden_hand() -> None:
     game = Game()
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)
     game.submit_bid(Seat.S, "pass")
@@ -303,10 +325,17 @@ def test_card_choice_does_not_depend_on_real_hidden_hands() -> None:
 
     altered = copy.deepcopy(game)
     assert altered.round_state is not None
-    altered.round_state.hands[Seat.N], altered.round_state.hands[Seat.E] = (
-        altered.round_state.hands[Seat.E],
-        altered.round_state.hands[Seat.N],
-    )
+    hidden_seats = [Seat.N, Seat.E, Seat.S]
+    hidden_hands = [list(game.round_state.hands[seat]) for seat in hidden_seats]
+    hidden_dealt_hands = [list(game.round_state.dealt_hands[seat]) for seat in hidden_seats]
+    for target, hand, dealt_hand in zip(
+        hidden_seats,
+        hidden_hands[1:] + hidden_hands[:1],
+        hidden_dealt_hands[1:] + hidden_dealt_hands[:1],
+        strict=True,
+    ):
+        altered.round_state.hands[target] = hand
+        altered.round_state.dealt_hands[target] = dealt_hand
 
     assert choose_card(game, Seat.W) == choose_card(altered, Seat.W)
 
