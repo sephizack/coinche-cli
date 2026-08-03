@@ -39,7 +39,7 @@ def test_discord_table_notification_posts_expected_embed(monkeypatch) -> None:
     request = captured["request"]
     assert isinstance(request, server.urllib.request.Request)
     assert request.get_method() == "POST"
-    assert request.full_url == "https://discord.example/webhook"
+    assert request.full_url == "https://discord.example/webhook?with_components=true"
     assert captured["timeout"] == server._DISCORD_WEBHOOK_TIMEOUT_SECONDS
     body = json.loads(request.data)
     assert body["username"] == "Coinche"

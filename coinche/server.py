@@ -64,6 +64,18 @@ def _table_spectate_url(table_key: str) -> str | None:
     return f"{COINCHE_PUBLIC_URL}/?{query}"
 
 
+def _webhook_url_with_components(webhook_url: str) -> str:
+    """Enable non-interactive components on a standard Discord webhook."""
+    parsed = urllib.parse.urlsplit(webhook_url)
+    query = [
+        (key, value)
+        for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        if key != "with_components"
+    ]
+    query.append(("with_components", "true"))
+    return urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query)))
+
+
 def _post_discord_table_created(webhook_url: str, table_key: str, player_name: str, creator_seat: Seat) -> None:
     """Post a best-effort Discord notification without exposing the webhook URL."""
     description = f"La table **{table_key}** vient d'etre creee par **{player_name}**."
@@ -111,7 +123,7 @@ def _post_discord_table_created(webhook_url: str, table_key: str, player_name: s
             }
         ]
     request = urllib.request.Request(
-        webhook_url,
+        _webhook_url_with_components(webhook_url),
         data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json", "User-Agent": "coinche-cli"},
         method="POST",
