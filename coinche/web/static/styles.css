@@ -1477,18 +1477,6 @@ body > .lobby {
   justify-content: space-between;
   gap: var(--sp-2);
 }
-.minitable__teams {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 0.7rem;
-}
-.minitable__team--nous {
-  color: var(--team-nous);
-}
-.minitable__team--eux {
-  color: var(--team-eux);
-}
 .minitable__join {
   padding: var(--sp-2) var(--sp-4);
   border-radius: var(--radius-card);

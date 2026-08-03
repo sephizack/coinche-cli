@@ -645,6 +645,8 @@ def test_web_client_shows_final_round_recap_before_game_over() -> None:
     assert 'data-testid="game-over-chat-toggle"' in app
     assert 'v-if="chatOpen && (flags.round_over_screen || flags.game_over)"' in app
     assert ".chat-panel.chat-panel--overlay" in styles
+    assert "scrollToNewest()" in app
+    assert "messages(messages, previousMessages)" in app
 
 
 def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:

@@ -420,9 +420,6 @@ const ChatPanel = {
     draft: { type: String, default: "" },
   },
   emits: ["send", "close", "update:draft"],
-  data() {
-    return { wasAtBottom: true };
-  },
   computed: {
     view() {
       return (this.messages || []).map((m) => ({
@@ -434,6 +431,10 @@ const ChatPanel = {
     },
   },
   methods: {
+    scrollToNewest() {
+      const log = this.$el.querySelector(".chat-log");
+      if (log) log.scrollTop = log.scrollHeight;
+    },
     submit() {
       const text = this.draft.trim().slice(0, 256); // UX cap only; server is authoritative
       if (!text) return;
@@ -442,19 +443,20 @@ const ChatPanel = {
     },
   },
   mounted() {
-    // Opening the chat moves focus into it (a11y).
+    // Opening the chat starts at the newest exchange, including from a round
+    // recap or game-over screen.
     nextTick(() => {
+      this.scrollToNewest();
       const input = this.$el.querySelector(".chat-input");
       if (input) input.focus();
     });
   },
-  updated() {
-    const log = this.$el.querySelector(".chat-log");
-    if (log && this.wasAtBottom) log.scrollTop = log.scrollHeight;
-  },
-  beforeUpdate() {
-    const log = this.$el.querySelector(".chat-log");
-    this.wasAtBottom = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 16;
+  watch: {
+    messages(messages, previousMessages) {
+      if (messages.length > (previousMessages?.length || 0)) {
+        nextTick(() => this.scrollToNewest());
+      }
+    },
   },
   template: `
     <aside class="chat-panel" role="region" aria-label="Discussion">
@@ -1611,10 +1613,6 @@ const App = {
             </div>
 
             <div class="minitable__foot">
-              <div class="minitable__teams">
-                <span class="minitable__team minitable__team--nous">{{ lobbyTeams.nsLabel }}</span>
-                <span class="minitable__team minitable__team--eux">{{ lobbyTeams.ewLabel }}</span>
-              </div>
               <button v-if="t.joinable" class="minitable__join" :data-testid="'join-' + t.key"
                       @click="t.hasBots ? showToast('Choisissez votre place', 'info', 3500) : joinSpecificTable(t.key, '')">{{ t.hasBots ? '🤖 Remplacer un bot' : 'Rejoindre' }}</button>
               <button v-if="t.hasBots || !t.joinable" class="minitable__spectate" :data-testid="'spectate-' + t.key"
