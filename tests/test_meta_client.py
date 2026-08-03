@@ -296,6 +296,31 @@ def test_table_deep_link_reaches_session_page() -> None:
     asyncio.run(scenario())
 
 
+def test_spectator_deep_link_reaches_session_page() -> None:
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            table_key = "CosmoCanyonLongNameX"
+            status, headers, _ = await http_get(port, f"/new?name=Alice&table={table_key}&spectate=true")
+            assert status == 302
+            location = headers["location"]
+            assert location.startswith("/s/")
+            assert location.endswith(f"?table={table_key}&spectate=true")
+
+            status, _, body = await http_get(port, location)
+            assert status == 200
+            text = body.decode("utf-8")
+            assert f'"tableKey": "{table_key}"' in text
+            assert '"spectate": true' in text
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
 def test_new_without_name_bounces_to_landing() -> None:
     async def scenario() -> None:
         game = FakeGameServer()
@@ -521,7 +546,7 @@ def test_landing_page_stores_deep_link_before_resuming_session() -> None:
             assert status == 200
             text = body.decode("utf-8")
             assert 'var PENDING_JOIN_KEY = "coinche.pendingJoin"' in text
-            assert "JSON.stringify({ tableKey: table, preferredSeat: seat })" in text
+            assert "JSON.stringify({ tableKey: table, preferredSeat: seat, spectate: spectate })" in text
             assert 'window.location.replace("/s/" + encodeURIComponent(id))' in text
 
             status, _, body = await http_get(port, f"/api/session?id={session_id}")

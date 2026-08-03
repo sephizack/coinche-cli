@@ -234,13 +234,16 @@ class MetaClientServer:
             if session is None:
                 await self._redirect(writer, "/")
                 return
-            table_key = (parse_qs(split.query).get("table", [""])[0] or "").strip()
-            preferred_seat = (parse_qs(split.query).get("seat", [""])[0] or "").strip().upper()
+            params = parse_qs(split.query)
+            table_key = (params.get("table", [""])[0] or "").strip()
+            preferred_seat = (params.get("seat", [""])[0] or "").strip().upper()
+            spectate = (params.get("spectate", [""])[0] or "").lower() == "true"
             await self._serve_game_page(
                 session,
                 writer,
                 table_key if _TABLE_KEY_PATTERN.fullmatch(table_key) else None,
                 preferred_seat if preferred_seat in {"N", "E", "S", "W"} else None,
+                spectate,
             )
             return
 
@@ -268,9 +271,12 @@ class MetaClientServer:
         logger.info("Nouvelle session %s pour « %s »", session_id, name)
         table_key = (params.get("table", [""])[0] or "").strip()
         preferred_seat = (params.get("seat", [""])[0] or "").strip().upper()
+        spectate = (params.get("spectate", [""])[0] or "").lower() == "true"
         suffix = f"?table={quote(table_key, safe='')}" if _TABLE_KEY_PATTERN.fullmatch(table_key) else ""
         if suffix and preferred_seat in {"N", "E", "S", "W"}:
             suffix += f"&seat={preferred_seat}"
+        if suffix and spectate:
+            suffix += "&spectate=true"
         await self._redirect(writer, f"/s/{session_id}{suffix}")
 
     async def _session_status(self, query: str, writer: asyncio.StreamWriter) -> None:
@@ -296,6 +302,7 @@ class MetaClientServer:
         writer: asyncio.StreamWriter,
         table_key: str | None = None,
         preferred_seat: str | None = None,
+        spectate: bool = False,
     ) -> None:
         """Serve the vendored SPA shell with a per-session `window.__META__`."""
         try:
@@ -311,6 +318,7 @@ class MetaClientServer:
                 "sessionId": session.session_id,
                 "tableKey": table_key,
                 "preferredSeat": preferred_seat,
+                "spectate": spectate,
             }
         ).replace("<", "\\u003c")
         inject = f'\n    <base href="/" />\n    <script>window.__META__ = {meta};</script>'

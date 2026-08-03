@@ -56,15 +56,20 @@ def _table_join_url(table_key: str, preferred_seat: Seat) -> str | None:
     return f"{COINCHE_PUBLIC_URL}/?{query}"
 
 
+def _table_spectate_url(table_key: str) -> str | None:
+    """Return a public meta-client deep link that joins as a spectator."""
+    if not COINCHE_PUBLIC_URL:
+        return None
+    query = urllib.parse.urlencode({"table": table_key, "spectate": "true"})
+    return f"{COINCHE_PUBLIC_URL}/?{query}"
+
+
 def _post_discord_table_created(webhook_url: str, table_key: str, player_name: str, creator_seat: Seat) -> None:
     """Post a best-effort Discord notification without exposing the webhook URL."""
     description = f"La table **{table_key}** vient d'etre creee par **{player_name}**."
     teammate_url = _table_join_url(table_key, PARTNER_OF[creator_seat])
     opponent_url = _table_join_url(table_key, creator_seat.next())
-    if teammate_url and opponent_url:
-        description += (
-            f"\n\n[Rejoindre avec {player_name}]({teammate_url})\n[Rejoindre contre {player_name}]({opponent_url})"
-        )
+    spectator_url = _table_spectate_url(table_key)
     body = {
         "username": "Coinche",
         "allowed_mentions": {"parse": []},
@@ -76,6 +81,35 @@ def _post_discord_table_created(webhook_url: str, table_key: str, player_name: s
             }
         ],
     }
+    if teammate_url and opponent_url and spectator_url:
+        body["components"] = [
+            {
+                "type": 1,
+                "components": [
+                    {
+                        "type": 2,
+                        "style": 5,
+                        "label": f"Avec {player_name}",
+                        "emoji": {"name": "🤝"},
+                        "url": teammate_url,
+                    },
+                    {
+                        "type": 2,
+                        "style": 5,
+                        "label": f"Contre {player_name}",
+                        "emoji": {"name": "⚔️"},
+                        "url": opponent_url,
+                    },
+                    {
+                        "type": 2,
+                        "style": 5,
+                        "label": "Regarder la partie",
+                        "emoji": {"name": "👁️"},
+                        "url": spectator_url,
+                    },
+                ],
+            }
+        ]
     request = urllib.request.Request(
         webhook_url,
         data=json.dumps(body).encode("utf-8"),

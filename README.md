@@ -39,10 +39,10 @@ To notify Discord when a table is created, set
 export DISCORD_NOTIF_CHANNEL_POST_URL='https://discord.com/api/webhooks/...'
 ```
 
-Set `COINCHE_PUBLIC_URL` as well to include a clickable **Rejoindre la table**
-link pair (**Rejoindre avec** / **Rejoindre contre** the table creator) in
-each notification. It must be the public URL of the méta-client, for example
-`https://coinche.example.org`.
+Set `COINCHE_PUBLIC_URL` as well to include three Discord link buttons in each
+notification: **Avec** the table creator, **Contre** the table creator, or
+**Regarder la partie** as a spectator. It must be the public URL of the
+méta-client, for example `https://coinche.example.org`.
 
 Example:
 

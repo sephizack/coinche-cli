@@ -570,13 +570,18 @@ const App = {
           return {
             tableKey: pending.tableKey,
             preferredSeat: /^[NESW]$/.test(pending.preferredSeat || "") ? pending.preferredSeat : null,
+            spectate: pending.spectate === true,
           };
         }
       } catch (e) {
         /* localStorage unavailable or malformed — use the URL fallback */
       }
       if (/^[A-Za-z0-9]{4,20}$/.test(META.tableKey || "")) {
-        return { tableKey: META.tableKey, preferredSeat: META.preferredSeat || null };
+        return {
+          tableKey: META.tableKey,
+          preferredSeat: META.preferredSeat || null,
+          spectate: META.spectate === true,
+        };
       }
       return null;
     }
@@ -741,6 +746,7 @@ const App = {
       clearPendingJoin();
       const payload = { table_key: pending.tableKey, player_name: name };
       if (pending.preferredSeat) payload.seat = pending.preferredSeat;
+      if (pending.spectate) payload.spectate = true;
       sendAction("join", payload);
     }
 

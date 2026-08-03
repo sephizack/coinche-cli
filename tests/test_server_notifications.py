@@ -48,11 +48,35 @@ def test_discord_table_notification_posts_expected_embed(monkeypatch) -> None:
         {
             "title": "Nouvelle table !",
             "color": server._DISCORD_TABLE_CREATED_COLOR,
-            "description": (
-                "La table **coinche1** vient d'etre creee par **Alice**.\n\n"
-                "[Rejoindre avec Alice](https://coinche.example.org/?table=coinche1&seat=S)\n"
-                "[Rejoindre contre Alice](https://coinche.example.org/?table=coinche1&seat=W)"
-            ),
+            "description": "La table **coinche1** vient d'etre creee par **Alice**.",
+        }
+    ]
+    assert body["components"] == [
+        {
+            "type": 1,
+            "components": [
+                {
+                    "type": 2,
+                    "style": 5,
+                    "label": "Avec Alice",
+                    "emoji": {"name": "🤝"},
+                    "url": "https://coinche.example.org/?table=coinche1&seat=S",
+                },
+                {
+                    "type": 2,
+                    "style": 5,
+                    "label": "Contre Alice",
+                    "emoji": {"name": "⚔️"},
+                    "url": "https://coinche.example.org/?table=coinche1&seat=W",
+                },
+                {
+                    "type": 2,
+                    "style": 5,
+                    "label": "Regarder la partie",
+                    "emoji": {"name": "👁️"},
+                    "url": "https://coinche.example.org/?table=coinche1&spectate=true",
+                },
+            ],
         }
     ]
 

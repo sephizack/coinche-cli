@@ -34,13 +34,14 @@
         var PENDING_JOIN_KEY = "coinche.pendingJoin";
         var table = new URLSearchParams(window.location.search).get("table");
         var seat = new URLSearchParams(window.location.search).get("seat");
+        var spectate = new URLSearchParams(window.location.search).get("spectate") === "true";
         if (!/^[A-Za-z0-9]{4,20}$/.test(table || "")) table = null;
         if (!/^[NESW]$/.test(seat || "")) seat = null;
         if (table) {
           try {
             window.localStorage.setItem(
               PENDING_JOIN_KEY,
-              JSON.stringify({ tableKey: table, preferredSeat: seat })
+              JSON.stringify({ tableKey: table, preferredSeat: seat, spectate: spectate })
             );
           } catch (e) {
             /* localStorage unavailable (private mode) — URL parameters remain the fallback */
@@ -68,6 +69,13 @@
           seatInput.name = "seat";
           seatInput.value = seat;
           form.appendChild(seatInput);
+        }
+        if (form && spectate) {
+          var spectateInput = document.createElement("input");
+          spectateInput.type = "hidden";
+          spectateInput.name = "spectate";
+          spectateInput.value = "true";
+          form.appendChild(spectateInput);
         }
         if (form) {
           form.addEventListener("submit", function () {
