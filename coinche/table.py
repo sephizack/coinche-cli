@@ -203,6 +203,7 @@ class Table:
         # random delay makes consecutive bot turns feel less mechanical.
         self.bot_think_seconds = bot_think_seconds
         self.lock = asyncio.Lock()
+        self.bot_task: asyncio.Task[None] | None = None
         self.seats: dict[Seat, ClientSession | None] = {seat: None for seat in SEAT_ORDER}
         # Seatless watchers keyed by their (case-insensitive) chat name so a
         # spectator's own writer can be found for removal and duplicate names are
@@ -526,7 +527,9 @@ def get_or_create_table(
 
 def remove_table(table_key: str) -> None:
     """Drop a table from the registry (abandoned: no humans left)."""
-    TABLES.pop(table_key, None)
+    table = TABLES.pop(table_key, None)
+    if table is not None and table.bot_task is not None:
+        table.bot_task.cancel()
 
 
 LOBBY_SUBSCRIBERS: set[asyncio.StreamWriter] = set()

@@ -536,52 +536,68 @@ async def _announce_bot_starting_hands(table: Table, hands: dict[Seat, list[Card
 
 
 async def _run_bot_turns(table: Table) -> None:
-    """Advance consecutive bot turns through the same validated Game methods as humans."""
-    while table.game is not None and not table.game.game_over:
-        game = table.game
-        seat = game.next_to_act
-        session = table.seats.get(seat)
-        if session is None or not session.is_bot:
-            return
+    """Advance bot turns without retaining the table lock while a bot thinks."""
+    try:
+        while True:
+            async with table.lock:
+                game = table.game
+                if game is None or game.game_over:
+                    return
+                seat = game.next_to_act
+                session = table.seats.get(seat)
+                if session is None or not session.is_bot:
+                    return
+                phase = game.phase
+                target = table.bot_think_delay()
 
-        # The bot's real computation (Monte Carlo rollouts) already takes time
-        # and reads as "thinking". Time it, and only top up to the human-like
-        # target if the decision came back faster; a slow decision waits not at
-        # all. `bot_think_delay()` is the total target, not an added pause.
-        target = table.bot_think_delay()
-        started = time.monotonic()
+            # The Monte-Carlo decision is CPU-bound, so put it in a worker
+            # thread. Crucially, neither the calculation nor its visual delay
+            # retains `table.lock`: CHAT and LEAVE can be handled meanwhile.
+            started = time.monotonic()
+            loop = asyncio.get_running_loop()
+            if phase == "bidding":
+                bid_action = await loop.run_in_executor(None, choose_bid, game, seat)
+            elif phase == "trick_play":
+                card = await loop.run_in_executor(None, choose_card, game, seat)
+            else:
+                return
 
-        loop = asyncio.get_running_loop()
-
-        if game.phase == "bidding":
-            # Run the Monte-Carlo decision in a worker thread: it's CPU-bound and
-            # otherwise blocks this single event loop, stalling every other table
-            # and the lobby's SUBSCRIBE_LOBBY reply until the bot finishes
-            # "thinking". Safe to offload — `choose_*` only *read* `game` (the
-            # rollouts deepcopy it), and it stays the bot's turn throughout, so no
-            # coroutine mutates `game` concurrently (out-of-turn plays are
-            # rejected before mutating; mid-game LEAVE only swaps the seat).
-            action = await loop.run_in_executor(None, choose_bid, game, seat)
             elapsed = time.monotonic() - started
             if elapsed < target:
                 await asyncio.sleep(target - elapsed)
-            result = game.submit_bid(
-                seat,
-                action["action"],
-                trump=action.get("trump"),
-                points=action.get("points"),
-            )
-            await _handle_bid_result(table, seat, result)
-        elif game.phase == "trick_play":
-            # See the bidding branch: offloaded to keep the event loop responsive.
-            card = await loop.run_in_executor(None, choose_card, game, seat)
-            elapsed = time.monotonic() - started
-            if elapsed < target:
-                await asyncio.sleep(target - elapsed)
-            result = game.submit_card(seat, card)
-            await _handle_play_result(table, result)
-        else:
-            return
+
+            async with table.lock:
+                # A player may have taken over this bot chair while it was
+                # thinking. Never apply a stale bot decision in that case.
+                if table.game is not game or game.next_to_act != seat:
+                    continue
+                session = table.seats.get(seat)
+                if session is None or not session.is_bot:
+                    continue
+                if phase == "bidding":
+                    result = game.submit_bid(
+                        seat,
+                        bid_action["action"],
+                        trump=bid_action.get("trump"),
+                        points=bid_action.get("points"),
+                    )
+                    await _handle_bid_result(table, seat, result)
+                else:
+                    result = game.submit_card(seat, card)
+                    await _handle_play_result(table, result)
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001 -- a bot fault must not kill the server task
+        logger.exception("[%s] erreur pendant le tour d'un bot", table.table_key)
+    finally:
+        if table.bot_task is asyncio.current_task():
+            table.bot_task = None
+
+
+def _schedule_bot_turns(table: Table) -> None:
+    """Ensure this table has at most one background bot-turn runner."""
+    if table.bot_task is None or table.bot_task.done():
+        table.bot_task = asyncio.create_task(_run_bot_turns(table))
 
 
 async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> None:
@@ -618,7 +634,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         await _broadcast_deal(table)
         assert table.game is not None
         await _send_bid_request(table, table.game.next_to_act)
-        await _run_bot_turns(table)
+        _schedule_bot_turns(table)
         return
 
     game = table.game
@@ -637,7 +653,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
             await table.send_to(seat, protocol.ERROR, {"code": protocol.ILLEGAL_BID, "message": str(exc)})
             return
         await _handle_bid_result(table, seat, result)
-        await _run_bot_turns(table)
+        _schedule_bot_turns(table)
 
     elif msg_type == protocol.PLAY_CARD:
         card_str = payload["card"]
@@ -656,7 +672,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
             await table.send_to(seat, protocol.ERROR, {"code": protocol.ILLEGAL_CARD, "message": str(exc)})
             return
         await _handle_play_result(table, result)
-        await _run_bot_turns(table)
+        _schedule_bot_turns(table)
 
     elif msg_type == protocol.REMATCH:
         # Only meaningful once the previous game has actually ended; a stray/
@@ -671,7 +687,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         await _broadcast_deal(table)
         assert table.game is not None
         await _send_bid_request(table, table.game.next_to_act)
-        await _run_bot_turns(table)
+        _schedule_bot_turns(table)
 
 
 async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) -> bool:
@@ -742,7 +758,7 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
     # (and any following bot turns) so play resumes without waiting for a human.
     # A removed (abandoned) table has no one left to play for, so leave it idle.
     if not removed and table.game is not None:
-        await _run_bot_turns(table)
+        _schedule_bot_turns(table)
     return True
 
 

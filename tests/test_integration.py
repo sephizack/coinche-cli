@@ -503,6 +503,33 @@ def test_bot_waits_before_its_first_bid():
     asyncio.run(scenario())
 
 
+def test_chat_is_delivered_while_a_bot_is_thinking():
+    """Bot thinking must not retain the table lock and delay chat delivery."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server(bot_think_seconds=0.5)
+        writer = None
+        try:
+            reader, writer = await _connect(port)
+            await _send(writer, protocol.JOIN, {"table_key": "botchat1", "player_name": "Alice"})
+            await _read_until(reader, protocol.JOINED)
+            await _send(writer, protocol.FILL_BOTS, {})
+
+            await _read_until(reader, protocol.LOBBY_UPDATE)
+            await _read_until(reader, protocol.DEAL)
+            await _send(writer, protocol.CHAT, {"text": "hello while thinking"})
+            chat = await asyncio.wait_for(_read_until(reader, protocol.CHAT), timeout=0.2)
+
+            assert chat["text"] == "hello while thinking"
+        finally:
+            if writer is not None:
+                writer.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
 def test_disconnect_and_reconnect_mid_round():
     async def scenario() -> None:
         srv, port = await _start_server(target_score=1000)
