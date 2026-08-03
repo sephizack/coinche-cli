@@ -645,7 +645,7 @@ def test_web_client_shows_final_round_recap_before_game_over() -> None:
     assert 'data-testid="game-over-chat-toggle"' in app
     assert 'v-if="chatOpen && (flags.round_over_screen || flags.game_over)"' in app
     assert ".chat-panel.chat-panel--overlay" in styles
-    assert "scrollToNewest()" in app
+    assert "scrollToNewest(sectionClass)" in app
     assert "humanMessages(messages, previousMessages)" in app
 
 
@@ -660,6 +660,17 @@ def test_web_client_separates_system_announcements_from_human_chat() -> None:
     assert "snap.chat_messages.length > (prev.chat_messages || []).length" in app
     assert "snap.system_messages.length" not in app
     assert ".chat-section--announcements" in styles
+
+
+def test_web_client_scrolls_each_message_feed_independently() -> None:
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert 'scrollToNewest(".chat-section--messages")' in app
+    assert 'scrollToNewest(".chat-section--announcements")' in app
+    assert ".chat-section--messages" in app
+    assert ".chat-section {\n  flex: 1 1 0;\n  min-height: 0;\n  overflow-y: auto;" in styles
 
 
 def test_web_client_renders_animated_coinche_and_surcoinche_effect() -> None:

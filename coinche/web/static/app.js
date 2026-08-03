@@ -440,8 +440,8 @@ const ChatPanel = {
     },
   },
   methods: {
-    scrollToNewest() {
-      const log = this.$el.querySelector(".chat-log");
+    scrollToNewest(sectionClass) {
+      const log = this.$el.querySelector(sectionClass);
       if (log) log.scrollTop = log.scrollHeight;
     },
     submit() {
@@ -455,7 +455,8 @@ const ChatPanel = {
     // Opening the chat starts at the newest exchange, including from a round
     // recap or game-over screen.
     nextTick(() => {
-      this.scrollToNewest();
+      this.scrollToNewest(".chat-section--announcements");
+      this.scrollToNewest(".chat-section--messages");
       const input = this.$el.querySelector(".chat-input");
       if (input) input.focus();
     });
@@ -463,12 +464,12 @@ const ChatPanel = {
   watch: {
     humanMessages(messages, previousMessages) {
       if (messages.length > (previousMessages?.length || 0)) {
-        nextTick(() => this.scrollToNewest());
+        nextTick(() => this.scrollToNewest(".chat-section--messages"));
       }
     },
     announcements(messages, previousMessages) {
       if (messages.length > (previousMessages?.length || 0)) {
-        nextTick(() => this.scrollToNewest());
+        nextTick(() => this.scrollToNewest(".chat-section--announcements"));
       }
     },
   },
@@ -488,7 +489,7 @@ const ChatPanel = {
             <span class="chat-msg__text">{{ m.text }}</span>
           </div>
         </section>
-        <section class="chat-section">
+        <section class="chat-section chat-section--messages">
           <h3 class="chat-section__title">Messages</h3>
           <p v-if="!humanMessages.length" class="chat-empty">Aucun message.</p>
           <div v-for="(m, i) in humanMessages" :key="'chat-' + i" class="chat-msg">
