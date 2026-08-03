@@ -175,6 +175,21 @@ def test_full_round_join_deal_bid_trick_score_flow():
             assert set(round_score["team_EW"]) >= {"card_points", "contract_result", "total"}
             assert round_score["cumulative"]["NS"] == round_score["team_NS"]["total"]
             assert round_score["cumulative"]["EW"] == round_score["team_EW"]["total"]
+            recap = await _read_until(observer_reader, protocol.CHAT)
+            contract_status = (
+                "Contrat chuté"
+                if round_score["team_NS"]["contract_result"] in {"failed", "capot_failed"}
+                else "Contrat réussi"
+            )
+            expected_recap = (
+                f"Fin de manche : NS {round_score['team_NS']['total']} - EW {round_score['team_EW']['total']}. "
+                f"{contract_status}."
+            )
+            assert recap == {
+                "seat": None,
+                "name": "Système",
+                "text": expected_recap,
+            }
         finally:
             for _reader, writer in conns.values():
                 writer.close()
@@ -225,6 +240,11 @@ def test_one_player_can_fill_the_table_with_bots():
             else:
                 raise AssertionError("the human-plus-bots table did not complete a round")
             assert bot_played
+            recap = await _read_until(reader, protocol.CHAT)
+            assert recap["seat"] is None
+            assert recap["name"] == "Système"
+            assert recap["text"].startswith("Fin de manche : NS ")
+            assert recap["text"].endswith(("Contrat réussi.", "Contrat chuté."))
             bot_seats = {player["seat"] for player in bots}
             revealed_hands: dict[str, list[str]] = {}
             for _ in bots:

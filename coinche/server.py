@@ -155,6 +155,13 @@ def _player_label(table: Table, seat: Seat) -> str:
     return f"{name} ({_seat_to_str(seat)}/{TEAM_OF[seat]})"
 
 
+def _round_recap_chat_text(round_score: dict[str, dict]) -> str:
+    """Build the system chat recap displayed once a round has been scored."""
+    contract_result = round_score["NS"]["contract_result"]
+    contract_status = "Contrat chuté" if contract_result in {"failed", "capot_failed"} else "Contrat réussi"
+    return f"Fin de manche : NS {round_score['NS']['total']} - EW {round_score['EW']['total']}. {contract_status}."
+
+
 def _positive_int(value: str) -> int:
     """Parse a strictly positive command-line integer."""
     try:
@@ -527,6 +534,10 @@ async def _handle_play_result(table: Table, result: dict) -> None:
             "cumulative": result["cumulative_scores"],
             "next_dealer_seat": _seat_to_str(next_dealer_seat) if next_dealer_seat is not None else None,
         },
+    )
+    await table.broadcast(
+        protocol.CHAT,
+        {"seat": None, "name": "Système", "text": _round_recap_chat_text(result["round_score"])},
     )
     await _announce_bot_starting_hands(table, result["completed_round_hands"], result.get("contract_trump"))
 
