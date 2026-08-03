@@ -232,9 +232,124 @@ def _hand_strength(hand: list[Card], trump: str) -> int:
             score += 2
     return score
 
+
 def _is_partner_bid(bid: dict, seat: Seat) -> bool:
     """Whether a bid was made by the acting seat's partner."""
     return TEAM_OF[bid["seat"]] == TEAM_OF[seat] and bid["seat"] != seat
+
+
+def _try_partner_support(
+    hand: list[Card],
+    last_partner_bid: dict,
+    options: dict,
+    seat: Seat,
+    best_trump: str,
+) -> dict | None:
+    """Attempt to support or respect the partner's last bid.
+
+    Returns a bid/pass action dict, or None when the partner's bid does not
+    apply (no partner bid, already supported, or partner bid is too high to
+    interfere with).
+    """
+    if last_partner_bid["points"] == rules.CAPOT:
+        return {"action": "pass"}
+
+    self_already_supported_partner = any(
+        bid
+        for bid in options["bid_history"]
+        if bid.get("action") == "bid"
+        and TEAM_OF[bid["seat"]] == TEAM_OF[seat]
+        and bid["seat"] == seat
+        and bid["trump"] == last_partner_bid["trump"]
+    )
+    if not self_already_supported_partner:
+        has_opponents_bid_before = any(
+            bid
+            for bid in options["bid_history"]
+            if bid.get("action") == "bid"
+            and TEAM_OF[bid["seat"]] != TEAM_OF[seat]
+            and bid["points"] < last_partner_bid["points"]
+        )
+        new_bid = _support_ceiling(
+            hand,
+            last_partner_bid["trump"],
+            last_partner_bid["points"],
+            has_opponents_bid_before,
+            options["current_highest_bid"],
+        )
+        if new_bid is not None:
+            if new_bid >= rules.BID_MAX:
+                new_bid = rules.CAPOT
+            return {"action": "bid", "trump": last_partner_bid["trump"], "points": new_bid}
+
+    if last_partner_bid["points"] >= 100 and last_partner_bid["trump"] != best_trump:
+        return {"action": "pass"}
+
+    return None
+
+
+def _try_open_suit(
+    hand: list[Card],
+    best_trump: str,
+    opening_ceilings: dict[str, int | str | None],
+    options: dict,
+    seat: Seat,
+) -> dict | None:
+    """Try to open a new suit when we have a good hand.
+
+    Returns a bid/pass action dict, or None when the hand is not strong
+    enough to open.
+    """
+    maximum_for_hand = opening_ceilings[best_trump]
+    if maximum_for_hand is None:
+        return None
+
+    trump_ranks = {card.rank for card in hand if card.suit == best_trump}
+    if "V" not in trump_ranks and "9" not in trump_ranks:
+        return {"action": "pass"}
+    if "V" not in trump_ranks or "9" not in trump_ranks:
+        has_partner_bid_on_trump = any(
+            bid
+            for bid in options["bid_history"]
+            if bid.get("action") == "bid" and _is_partner_bid(bid, seat) and bid["trump"] == best_trump
+        )
+        if has_partner_bid_on_trump:
+            if maximum_for_hand != rules.CAPOT:
+                maximum_for_hand = int(maximum_for_hand) + rules.BID_STEP * 2
+                if maximum_for_hand >= rules.BID_MAX:
+                    maximum_for_hand = rules.CAPOT
+        else:
+            if options["current_highest_bid"] is None:
+                maximum_for_hand = rules.BID_MIN
+            elif (
+                options["current_highest_bid"]["points"] == rules.BID_MIN
+                and options["current_highest_bid"]["trump"] != best_trump
+                and options["current_highest_bid"]["team"] != TEAM_OF[seat]
+            ):
+                maximum_for_hand = rules.BID_MIN + rules.BID_STEP
+            else:
+                return {"action": "pass"}
+
+    minimum_for_hand = rules.BID_MIN
+    if "V" in trump_ranks and "9" in trump_ranks:
+        minimum_for_hand = rules.BID_MIN + rules.BID_STEP
+        if options["current_highest_bid"] and options["current_highest_bid"]["points"] == rules.BID_MIN:
+            minimum_for_hand = rules.BID_MIN + rules.BID_STEP * 2
+        if maximum_for_hand != rules.CAPOT:
+            if minimum_for_hand == int(maximum_for_hand) + rules.BID_STEP:
+                maximum_for_hand = int(maximum_for_hand) + rules.BID_STEP
+            if minimum_for_hand > int(maximum_for_hand):
+                return {"action": "pass"}
+
+    legal_for_suit = [] if maximum_for_hand is None else _legal_bids_up_to(options, best_trump, maximum_for_hand)
+    if minimum_for_hand > rules.BID_MIN:
+        legal_for_suit = [bid for bid in legal_for_suit if bid["points"] >= minimum_for_hand]
+    if legal_for_suit:
+        choice = legal_for_suit[-1]
+        return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
+
+    return None
+
 
 def choose_bid(game: Game, seat: Seat) -> dict:
     """Choose a legal, conservative auction action from the bot's own hand."""
@@ -266,93 +381,16 @@ def choose_bid(game: Game, seat: Seat) -> dict:
         return {"action": "coinche"}
 
     last_partner_bid = next(
-        (
-            bid
-            for bid in reversed(options["bid_history"])
-            if bid.get("action") == "bid" and _is_partner_bid(bid, seat)
-        ),
+        (bid for bid in reversed(options["bid_history"]) if bid.get("action") == "bid" and _is_partner_bid(bid, seat)),
         None,
     )
     if last_partner_bid:
-        if last_partner_bid["points"] == rules.CAPOT:
-            return {"action": "pass"}
-        self_already_supported_partner = any(
-            bid
-            for bid in options["bid_history"]
-            if bid.get("action") == "bid"
-            and TEAM_OF[bid["seat"]] == TEAM_OF[seat]
-            and bid["seat"] == seat
-            and bid["trump"] == last_partner_bid["trump"]
-        )
-        if not self_already_supported_partner:
-            has_opponents_bid_before = any(
-                bid
-                for bid in options["bid_history"]
-                if bid.get("action") == "bid"
-                and TEAM_OF[bid["seat"]] != TEAM_OF[seat]
-                and bid["points"] < last_partner_bid["points"]
-            )
-            new_bid = _support_ceiling(
-                hand,
-                last_partner_bid["trump"],
-                last_partner_bid["points"],
-                has_opponents_bid_before,
-                options["current_highest_bid"],
-            )
-            if new_bid is not None:
-                if new_bid >= rules.BID_MAX:
-                    new_bid = rules.CAPOT
-                return {"action": "bid", "trump": last_partner_bid["trump"], "points": new_bid}
-    if last_partner_bid and last_partner_bid["points"] >= 100 and last_partner_bid["trump"] != best_trump:
-        return {"action": "pass"}
-    # we cant support the partner, so we can try to open a new suit if we have a good hand
-    maximum_for_hand = opening_ceilings[best_trump]
-    if maximum_for_hand is not None:
-        trump_ranks = {card.rank for card in hand if card.suit == best_trump}
-        if "V" not in trump_ranks and "9" not in trump_ranks:
-            return {"action": "pass"}
-        if "V" not in trump_ranks or "9" not in trump_ranks:
-            has_partner_bid_on_trump = any(
-                bid
-                for bid in options["bid_history"]
-                if bid.get("action") == "bid"
-                and _is_partner_bid(bid, seat)
-                and bid["trump"] == best_trump
-            )
-            if has_partner_bid_on_trump:
-                # consider we have the missing card, so we can bid higher
-                if maximum_for_hand != rules.CAPOT:
-                    maximum_for_hand = int(maximum_for_hand) + rules.BID_STEP * 2
-                    if maximum_for_hand >= rules.BID_MAX:
-                        maximum_for_hand = rules.CAPOT
-            else:
-                if options["current_highest_bid"] is None:
-                    maximum_for_hand = rules.BID_MIN
-                elif (
-                    options["current_highest_bid"]["points"] == rules.BID_MIN
-                    and options["current_highest_bid"]["trump"] != best_trump
-                    and options["current_highest_bid"]["team"] != TEAM_OF[seat]
-                ):
-                    maximum_for_hand = rules.BID_MIN + rules.BID_STEP
-                else:
-                    return {"action": "pass"}
-        minimum_for_hand = rules.BID_MIN
-        if "V" in trump_ranks and "9" in trump_ranks:
-            # Not allowed to bid the minimum to not confuse partner thinking we look for 34
-            minimum_for_hand = rules.BID_MIN + rules.BID_STEP
-            if options["current_highest_bid"] and options["current_highest_bid"]["points"] == rules.BID_MIN:
-                minimum_for_hand = rules.BID_MIN + rules.BID_STEP*2
-            if maximum_for_hand != rules.CAPOT:
-                if minimum_for_hand == int(maximum_for_hand) + rules.BID_STEP:
-                    maximum_for_hand = int(maximum_for_hand) + rules.BID_STEP
-                if minimum_for_hand > int(maximum_for_hand):
-                    return {"action": "pass"}
-        legal_for_suit = [] if maximum_for_hand is None else _legal_bids_up_to(options, best_trump, maximum_for_hand)
-        if minimum_for_hand > rules.BID_MIN:
-            legal_for_suit = [bid for bid in legal_for_suit if bid["points"] >= minimum_for_hand]
-        if legal_for_suit:
-            choice = legal_for_suit[-1]
-            return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
+        partner_action = _try_partner_support(hand, last_partner_bid, options, seat, best_trump)
+        if partner_action is not None:
+            return partner_action
+    own_action = _try_open_suit(hand, best_trump, opening_ceilings, options, seat)
+    if own_action is not None:
+        return own_action
     if current is None:
         fallback_trump = _forced_opener_trump(hand)
         if fallback_trump is not None:
