@@ -351,57 +351,54 @@ def _try_open_suit(
     return None
 
 
+_COINCHE_THRESHOLDS: list[tuple[int, int]] = [(100, 80), (120, 65), (140, 50), (rules.BID_MAX, 40)]
+_COINCHE_CAPOT_STRENGTH = 30
+_SURCOINCHE_THRESHOLDS: list[tuple[int, int]] = [(100, 105), (120, 120), (140, 130), (rules.BID_MAX, 145)]
+_SURCOINCHE_CAPOT_STRENGTH = 145
+
+def _should_counter(
+    action: str,
+    current: dict,
+    strengths: dict[str, int],
+) -> bool:
+    """Return True if the bot should coinche or surcoinche the standing bid."""
+    if current["points"] == rules.CAPOT:
+        capot_strength = _COINCHE_CAPOT_STRENGTH if action == "coinche" else _SURCOINCHE_CAPOT_STRENGTH
+        return strengths[current["trump"]] >= capot_strength
+    thresholds = _COINCHE_THRESHOLDS if action == "coinche" else _SURCOINCHE_THRESHOLDS
+    required = next(r for max_pts, r in thresholds if current["points"] <= max_pts)
+    return strengths[current["trump"]] >= required
+
+
 def choose_bid(game: Game, seat: Seat) -> dict:
     """Choose a legal, conservative auction action from the bot's own hand."""
     options = game.bid_options_for(seat)
     hand = game.get_hand(seat)
     strengths = {trump: _hand_strength(hand, trump) for trump in rules.ALLOWED_TRUMPS}
     opening_ceilings = {trump: _opening_ceiling(hand, trump) for trump in rules.ALLOWED_TRUMPS}
-    best_trump = max(
-        rules.ALLOWED_TRUMPS,
-        key=lambda trump: (_ceiling_value(opening_ceilings[trump]), strengths[trump]),
-    )
+    current = options["current_highest_bid"]
     last_self_bid = next(
         (bid for bid in reversed(options["bid_history"]) if bid.get("action") == "bid" and bid["seat"] == seat),
         None,
     )
+    best_trump = None
     if last_self_bid is not None:
         best_trump = last_self_bid["trump"]
-    current = options["current_highest_bid"]
+    else:
+        best_trump = max(
+            rules.ALLOWED_TRUMPS,
+            key=lambda trump: (_ceiling_value(opening_ceilings[trump]), strengths[trump]),
+        )
 
     if options["can_coinche"] and current is not None:
-        # check if we can bid Capot first
         own_rebid = _try_open_suit(hand, best_trump, opening_ceilings, options, seat)
         if own_rebid is not None and own_rebid.get("points") == rules.CAPOT:
             return own_rebid
-        # Check if we coinche the opponents' bid
-        if current["points"] == rules.CAPOT and strengths[current["trump"]] >= 30:
+        if _should_counter("coinche", current, strengths):
             return {"action": "coinche"}
-        if current["points"] != rules.CAPOT:
-            if current["points"] <= 100:
-                required_strength = 80
-            elif current["points"] <= 120:
-                required_strength = 65
-            elif current["points"] <= 140:
-                required_strength = 50
-            else:
-                required_strength = 40
-            if strengths[current["trump"]] >= required_strength:
-                return {"action": "coinche"}
     if options["can_surcoinche"] and current is not None:
-        if current["points"] == rules.CAPOT and strengths[current["trump"]] >= 140:
+        if _should_counter("surcoinche", current, strengths):
             return {"action": "surcoinche"}
-        if current["points"] != rules.CAPOT:
-            if current["points"] <= 100:
-                required_strength = 105
-            elif current["points"] <= 120:
-                required_strength = 120
-            elif current["points"] <= 140:
-                required_strength = 130
-            else:
-                required_strength = 145
-            if strengths[current["trump"]] >= required_strength:
-                return {"action": "surcoinche"}
 
     last_partner_bid = next(
         (bid for bid in reversed(options["bid_history"]) if bid.get("action") == "bid" and _is_partner_bid(bid, seat)),
