@@ -1101,7 +1101,7 @@ def test_bot_supports_partner_100_bid_with_strong_hand() -> None:
     game.submit_bid(Seat.W, "bid", trump="♠", points=100)
     game.submit_bid(Seat.S, "pass")
 
-    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 150}
+    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 140}
 
 
 def test_bot_support_ceiling_scales_with_side_aces_and_trumps() -> None:
@@ -1148,11 +1148,11 @@ def test_support_ceiling_none_without_v_or_9_for_34() -> None:
     assert _support_ceiling(hand, "♠", 80, False) is None
 
 
-def test_support_ceiling_includes_belote_bonus() -> None:
+def test_support_ceiling_with_belote() -> None:
     # R+D in trump -> belote bonus (+1 step).
     # 2 side aces + 3 trumps + no V/9 + belote = 4 steps.
     hand = _cards("R♠", "D♠", "7♠", "A♥", "A♦", "7♣", "8♣", "8♥")
-    assert _support_ceiling(hand, "♠", 90, False) == 130
+    assert _support_ceiling(hand, "♠", 90, False) == 120
 
 
 def test_support_ceiling_none_with_no_useful_cards() -> None:

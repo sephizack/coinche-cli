@@ -156,13 +156,12 @@ def _support_ceiling(
                 minimum_bid = max(minimum_bid, current_highest_bid["points"] + rules.BID_STEP)
             return minimum_bid
     else:
-        additional_steps = _side_aces(hand, trump)
-        if trump_count >= 3:
-            additional_steps += 1
+        additional_steps = 0
         if "V" in trump_ranks or "9" in trump_ranks:
             additional_steps += 2
-        if {"R", "D"}.issubset(trump_ranks):
+        elif trump_count >= 3:
             additional_steps += 1
+        additional_steps += _side_aces(hand, trump)
         if additional_steps > 0:
             return current_points + additional_steps * rules.BID_STEP
     return None
@@ -233,6 +232,9 @@ def _hand_strength(hand: list[Card], trump: str) -> int:
             score += 2
     return score
 
+def _is_partner_bid(bid: dict, seat: Seat) -> bool:
+    """Whether a bid was made by the acting seat's partner."""
+    return TEAM_OF[bid["seat"]] == TEAM_OF[seat] and bid["seat"] != seat
 
 def choose_bid(game: Game, seat: Seat) -> dict:
     """Choose a legal, conservative auction action from the bot's own hand."""
@@ -267,7 +269,7 @@ def choose_bid(game: Game, seat: Seat) -> dict:
         (
             bid
             for bid in reversed(options["bid_history"])
-            if bid.get("action") == "bid" and TEAM_OF[bid["seat"]] == TEAM_OF[seat] and bid["seat"] != seat
+            if bid.get("action") == "bid" and _is_partner_bid(bid, seat)
         ),
         None,
     )
@@ -314,9 +316,8 @@ def choose_bid(game: Game, seat: Seat) -> dict:
                 bid
                 for bid in options["bid_history"]
                 if bid.get("action") == "bid"
-                and TEAM_OF[bid["seat"]] == TEAM_OF[seat]
+                and _is_partner_bid(bid, seat)
                 and bid["trump"] == best_trump
-                and bid["seat"] != seat
             )
             if has_partner_bid_on_trump:
                 # consider we have the missing card, so we can bid higher
@@ -335,7 +336,17 @@ def choose_bid(game: Game, seat: Seat) -> dict:
                     maximum_for_hand = rules.BID_MIN + rules.BID_STEP
                 else:
                     return {"action": "pass"}
+        minimum_for_hand = rules.BID_MIN
+        if "V" in trump_ranks and "9" in trump_ranks:
+            # Not allowed to bid the minimum to not confuse partner thinking we look for 34
+            minimum_for_hand = rules.BID_MIN + rules.BID_STEP
+            if options["current_highest_bid"] and options["current_highest_bid"]["points"] == rules.BID_MIN:
+                minimum_for_hand = rules.BID_MIN + rules.BID_STEP*2
+            if maximum_for_hand != rules.CAPOT and minimum_for_hand > int(maximum_for_hand):
+                return {"action": "pass"}
         legal_for_suit = [] if maximum_for_hand is None else _legal_bids_up_to(options, best_trump, maximum_for_hand)
+        if minimum_for_hand > rules.BID_MIN:
+            legal_for_suit = [bid for bid in legal_for_suit if bid["points"] >= minimum_for_hand]
         if legal_for_suit:
             choice = legal_for_suit[-1]
             return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
