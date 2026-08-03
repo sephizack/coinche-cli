@@ -32,6 +32,13 @@ python -m coinche.server [--host HOST] [--port PORT] [--target-score N]
     each bot turn slower
   plus up to one random extra second (default: `1.0`, therefore 1–2 seconds)
 
+To notify Discord when a table is created, set
+`DISCORD_NOTIF_CHANNEL_POST_URL` before starting the server:
+
+```bash
+export DISCORD_NOTIF_CHANNEL_POST_URL='https://discord.com/api/webhooks/...'
+```
+
 Example:
 
 ```bash

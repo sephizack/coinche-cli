@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
+import os
 import re
 import socket
 import time
+import urllib.error
 import urllib.request
 
 from coinche import __version__, protocol, rules
@@ -19,6 +22,7 @@ from coinche.cards import Card, Seat
 from coinche.game import PARTNER_OF, TEAM_OF, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
     LOBBY_SUBSCRIBERS,
+    TABLES,
     GameInProgressError,
     NameTakenError,
     Table,
@@ -36,6 +40,45 @@ TABLE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9]{4,12}$")
 # after the fact. Configured (handler/level) in `main()`; kept separate from
 # ad-hoc `print()` startup messages.
 logger = logging.getLogger("coinche.server")
+
+DISCORD_NOTIF_CHANNEL_POST_URL = os.environ.get("DISCORD_NOTIF_CHANNEL_POST_URL")
+_DISCORD_WEBHOOK_TIMEOUT_SECONDS = 5.0
+_DISCORD_TABLE_CREATED_COLOR = 0x57F287
+
+
+def _post_discord_table_created(webhook_url: str, table_key: str, player_name: str) -> None:
+    """Post a best-effort Discord notification without exposing the webhook URL."""
+    body = {
+        "username": "Coinche",
+        "allowed_mentions": {"parse": []},
+        "embeds": [
+            {
+                "title": "Nouvelle table Coinche",
+                "color": _DISCORD_TABLE_CREATED_COLOR,
+                "description": f"La table **{table_key}** vient d'etre creee par **{player_name}**.",
+            }
+        ],
+    }
+    request = urllib.request.Request(
+        webhook_url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "coinche-cli"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=_DISCORD_WEBHOOK_TIMEOUT_SECONDS) as response:
+            if response.status != 204:
+                logger.warning("[%s] Notification Discord rejetee (HTTP %s)", table_key, response.status)
+    except (OSError, ValueError) as exc:
+        logger.warning("[%s] Echec de la notification Discord: %s", table_key, exc)
+
+
+async def _notify_discord_table_created(webhook_url: str, table_key: str, player_name: str) -> None:
+    """Run the blocking webhook call away from the game server's event loop."""
+    try:
+        await asyncio.to_thread(_post_discord_table_created, webhook_url, table_key, player_name)
+    except Exception:  # noqa: BLE001 - a webhook failure must never affect a game session
+        logger.exception("[%s] Echec inattendu de la notification Discord", table_key)
 
 
 def _seat_to_str(seat: Seat) -> str:
@@ -752,7 +795,12 @@ async def _resolve_join(
     """
     try:
         return await _resolve_join_inner(
-            reader, writer, target_score, trick_pause_seconds, round_pause_seconds, bot_think_seconds
+            reader,
+            writer,
+            target_score,
+            trick_pause_seconds,
+            round_pause_seconds,
+            bot_think_seconds,
         )
     finally:
         LOBBY_SUBSCRIBERS.discard(writer)
@@ -824,6 +872,7 @@ async def _resolve_join_inner(
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "player_name must not be empty")
         return None
 
+    table_was_created = table_key not in TABLES
     table = get_or_create_table(
         table_key,
         target_score=target_score,
@@ -831,6 +880,8 @@ async def _resolve_join_inner(
         round_pause_seconds=round_pause_seconds,
         bot_think_seconds=bot_think_seconds,
     )
+    if table_was_created and DISCORD_NOTIF_CHANNEL_POST_URL:
+        asyncio.create_task(_notify_discord_table_created(DISCORD_NOTIF_CHANNEL_POST_URL, table_key, player_name))
 
     async with table.lock:
         if spectate:
@@ -982,7 +1033,12 @@ async def handle_connection(
         # picker) and then pumps that table's messages until leave/drop.
         while True:
             joined = await _resolve_join(
-                reader, writer, target_score, trick_pause_seconds, round_pause_seconds, bot_think_seconds
+                reader,
+                writer,
+                target_score,
+                trick_pause_seconds,
+                round_pause_seconds,
+                bot_think_seconds,
             )
             if joined is None:
                 return
