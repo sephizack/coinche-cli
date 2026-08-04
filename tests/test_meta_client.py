@@ -590,7 +590,7 @@ def test_game_page_carries_session_id() -> None:
 
 def test_landing_page_probes_stored_session() -> None:
     """The landing page ships the recovery script that reads localStorage and
-    probes `/api/session` before falling back to the name form."""
+    probes `/api/session` before starting a new session or showing the name form."""
 
     async def scenario() -> None:
         game = FakeGameServer()
@@ -603,6 +603,9 @@ def test_landing_page_probes_stored_session() -> None:
             assert "coinche.metaSessionId" in text
             assert "/api/session?id=" in text
             assert "localStorage.removeItem" in text  # cleans a dead id
+            assert "function resumeOrStartNewSession()" in text
+            assert 'window.location.replace(url);' in text
+            assert 'var url = "/new?name=" + encodeURIComponent(name);' in text
         finally:
             await _stop(server, task)
             await game.stop()

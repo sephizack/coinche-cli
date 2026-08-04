@@ -778,3 +778,14 @@ def test_web_client_animates_each_new_trick_card() -> None:
     for position in ("south", "north", "west", "east"):
         assert f".trick-card--{position}.trick-card-enter-active" in styles
         assert f"@keyframes trick-card-enter-{position}" in styles
+
+
+def test_web_client_disconnect_clears_browser_storage() -> None:
+    """Disconnecting from the lobby forgets the current session and saved name."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+
+    assert "function disconnect()" in app
+    assert "window.localStorage.clear();" in app
+    assert 'window.location.replace("/");' in app
+    assert 'data-testid="lobby-disconnect"' in app

@@ -1287,6 +1287,14 @@ const App = {
       if (lobby.team.trim()) payload.team_name = lobby.team.trim();
       sendAction("join", payload);
     }
+    function disconnect() {
+      try {
+        window.localStorage.clear();
+      } catch (e) {
+        /* localStorage unavailable — navigation still returns to the landing page */
+      }
+      window.location.replace("/");
+    }
     function toggleChat() {
       chatOpen.value = !chatOpen.value;
       if (chatOpen.value) unread.value = 0;
@@ -1522,6 +1530,7 @@ const App = {
       fillBots,
       leaveTable,
       joinTable,
+      disconnect,
       toggleChat,
     };
   },
@@ -1550,8 +1559,8 @@ const App = {
     <!-- Belote / Rebelote declaration, mirroring the Coinche effect. -->
     <div v-if="beloteEffect" :key="'belote-' + beloteEffectKey" class="bid-effect bid-effect--belote"
          role="status" aria-live="assertive">
-      <span v-if="beloteEffect === 'rebelote'">👑 REBELOTE ! 👑</span>
-      <span v-else>💑 BELOTE ! 💑</span>
+      <span v-if="beloteEffect === 'rebelote'">👑 REBELOTE !</span>
+      <span v-else>💑 BELOTE !</span>
     </div>
     <!-- Join effect: a human player arrived at the table. -->
     <div v-if="joinEffect" :key="'join-' + joinEffectKey" class="bid-effect bid-effect--join"
@@ -1579,6 +1588,9 @@ const App = {
             <input id="lobby-name" type="text" v-model="lobby.name" maxlength="24"
                    data-testid="lobby-name" placeholder="Aline" />
           </div>
+          <button class="leave-btn" type="button" data-testid="lobby-disconnect" @click="disconnect">
+            Déconnexion
+          </button>
         </header>
 
         <!-- Before the first snapshot lands the table list is unknown; show a

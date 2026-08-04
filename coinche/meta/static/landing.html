@@ -103,6 +103,25 @@
             input.select();
           }
         }
+        function startNewSession(name) {
+          var url = "/new?name=" + encodeURIComponent(name);
+          if (table) url += "&table=" + encodeURIComponent(table);
+          if (seat) url += "&seat=" + encodeURIComponent(seat);
+          if (spectate) url += "&spectate=true";
+          window.location.replace(url);
+        }
+        function resumeOrStartNewSession() {
+          try {
+            var last = window.localStorage.getItem(NAME_KEY);
+            if (last && last.trim()) {
+              startNewSession(last.trim());
+              return;
+            }
+          } catch (e) {
+            /* localStorage unavailable (private mode) — show the form */
+          }
+          showForm();
+        }
         var id = null;
         try {
           id = window.localStorage.getItem(KEY);
@@ -127,10 +146,10 @@
               } catch (e) {
                 /* ignore */
               }
-              showForm();
+              resumeOrStartNewSession();
             }
           })
-          .catch(showForm);
+          .catch(resumeOrStartNewSession);
       })();
     </script>
   </body>
