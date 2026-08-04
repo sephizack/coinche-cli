@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 from dataclasses import dataclass
+from pathlib import Path
 
 from coinche import protocol, rules
 from coinche.game import PARTNER_OF, Game, Seat
@@ -53,73 +55,32 @@ BOT_NAMES: tuple[str, ...] = (
     "Monoko",
     "Renoir",
     "Esquie",
+    # Dragon Ball Z
+    "Goku",
+    "Vegeta",
+    "Gohan",
+    "Piccolo",
+    "Krillin",
+    "Bulma",
+    "Trunks",
+    "Frieza",
+    "Cell",
+    "Majin Buu",
+    "C 18",
+    "C 17",
+    "Beerus",
+    # The Legend of Zelda
+    "Link",
+    "Zelda",
+    "Ganondorf",
+    "Navi",
+    "Sheik"
 )
 
+TABLE_NAMES_PATH = Path(__file__).resolve().parent / "web" / "static" / "table_names.json"
 # Table keys must remain ASCII alphanumeric and fit the shared protocol limit.
-# A numeric suffix is added on collision.
-TABLE_NAMES: tuple[str, ...] = (
-    # Final Fantasy
-    "Midgar",
-    "Nibelheim",
-    "CosmoCanyon",
-    "GoldSaucer",
-    "BalambGarden",
-    "Zanarkand",
-    "Alexandria",
-    "Lindblum",
-    "Spira",
-    "Besaid",
-    "Cornelia",
-    "Pravoka",
-    "Mysidia",
-    "Figaro",
-    "Vector",
-    "Zozo",
-    "Wutai",
-    "Junon",
-    "Kalm",
-    "Gongaga",
-    "Corel",
-    "RocketTown",
-    "CostaDelSol",
-    "Bevelle",
-    "Kilika",
-    "Guadosalam",
-    "Macalania",
-    "Insomnia",
-    "Altissia",
-    "Lestallum",
-    "Tenebrae",
-    "Eorzea",
-    "Gridania",
-    "Uldah",
-    "Ishgard",
-    "Sharlayan",
-    "Rabanastre",
-    "Dalmasca",
-    "Bhujerba",
-    "Archades",
-    "Treno",
-    "Burmecia",
-    "Cocoon",
-    "Academia",
-    # Metal Gear
-    "ShadowMoses",
-    "OuterHeaven",
-    "MotherBase",
-    "CampOmega",
-    "Zanzibar",
-    "BigShell",
-    "GrouzniGrad",
-    "Tselinoyarsk",
-    # Clair Obscur
-    "Lumiere",
-    "Monolith",
-    "FlyingWaters",
-    "StoneWave",
-    "OldLumiere",
-    "EsquiesNest",
-)
+# The browser fetches this same static file; a numeric suffix is added on collision.
+TABLE_NAMES: tuple[str, ...] = tuple(json.loads(TABLE_NAMES_PATH.read_text(encoding="utf-8")))
 BOT_THINK_JITTER_SECONDS = 1.0
 
 

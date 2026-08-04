@@ -60,22 +60,22 @@ const REDUCED_MOTION = window.matchMedia(
   "(prefers-reduced-motion: reduce)",
 ).matches;
 
-// Server table keys are ASCII alphanumeric and capped at 20 characters. This
-// catalogue mirrors `coinche.table.TABLE_NAMES`; collisions get a suffix.
+// Server table keys are ASCII alphanumeric and capped at 20 characters.
+// The catalogue is shared with the Python server and terminal client.
 const TABLE_KEY_MAX_LENGTH = 20;
-const TABLE_NAMES = [
-  "Midgar", "Nibelheim", "CosmoCanyon", "GoldSaucer", "BalambGarden",
-  "Zanarkand", "Alexandria", "Lindblum", "Spira", "Besaid", "Cornelia",
-  "Pravoka", "Mysidia", "Figaro", "Vector", "Zozo", "Wutai", "Junon",
-  "Kalm", "Gongaga", "Corel", "RocketTown", "CostaDelSol", "Bevelle",
-  "Kilika", "Guadosalam", "Macalania", "Insomnia", "Altissia", "Lestallum",
-  "Tenebrae", "Eorzea", "Gridania", "Uldah", "Ishgard", "Sharlayan",
-  "Rabanastre", "Dalmasca", "Bhujerba", "Archades", "Treno", "Burmecia",
-  "Cocoon", "Academia",
-  "ShadowMoses", "OuterHeaven", "MotherBase", "CampOmega", "Zanzibar",
-  "BigShell", "GrouzniGrad", "Tselinoyarsk",
-  "Lumiere", "Monolith", "FlyingWaters", "StoneWave", "OldLumiere", "EsquiesNest",
-];
+let tableNames = [];
+
+async function loadTableNames() {
+  try {
+    const response = await fetch("/table_names.json");
+    const names = await response.json();
+    if (response.ok && Array.isArray(names) && names.every((name) => typeof name === "string")) {
+      tableNames = names;
+    }
+  } catch {
+    // The manual table-name field remains usable if the static asset is unavailable.
+  }
+}
 
 // =========================================================================
 // Card (SVG) — vector face, crisp at any size, accessible name.
@@ -1380,7 +1380,8 @@ const App = {
     // Random venue key not already present, for the create card.
     const nextTableKey = computed(() => {
       const keys = new Set(lobbyTables.value.map((t) => t.key.toLowerCase()));
-      const base = TABLE_NAMES[Math.floor(Math.random() * TABLE_NAMES.length)];
+      if (!tableNames.length) return "table1";
+      const base = tableNames[Math.floor(Math.random() * tableNames.length)];
       let key = base;
       let suffix = 2;
       while (keys.has(key.toLowerCase())) {
@@ -1876,4 +1877,5 @@ const App = {
   `,
 };
 
+await loadTableNames();
 createApp(App).mount("#app");

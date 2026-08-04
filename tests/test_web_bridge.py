@@ -595,6 +595,26 @@ def test_static_index_served() -> None:
     asyncio.run(scenario())
 
 
+def test_static_table_names_json_served() -> None:
+    async def scenario() -> None:
+        state = ClientState()
+        _server, task, port = await _start_overlay(state, FakeLink())
+        try:
+            reader, writer = await asyncio.open_connection(HOST, port)
+            writer.write(f"GET /table_names.json HTTP/1.1\r\nHost: {HOST}\r\n\r\n".encode())
+            await writer.drain()
+            status = await asyncio.wait_for(reader.readline(), timeout=5)
+            assert status.startswith(b"HTTP/1.1 200")
+            body = await asyncio.wait_for(reader.read(), timeout=5)
+            assert b"application/json" in body
+            assert b'"Midgar"' in body
+            writer.close()
+        finally:
+            await _stop(task)
+
+    asyncio.run(scenario())
+
+
 def test_round_recap_shows_captured_and_awarded_points() -> None:
     """The web recap must show points made by both teams, not only contract status."""
     app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()

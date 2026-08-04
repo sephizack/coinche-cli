@@ -21,6 +21,7 @@ include = ["coinche*"]
 
 [tool.setuptools.package-data]
 "coinche.meta" = ["static/*.html"]
+"coinche.web" = ["static/*.css", "static/*.html", "static/*.js", "static/*.json"]
 
 [tool.ruff]
 line-length = 120
