@@ -83,7 +83,7 @@ def _post_discord_table_created(webhook_url: str, table_key: str, player_name: s
     opponent_url = _table_join_url(table_key, creator_seat.next())
     spectator_url = _table_spectate_url(table_key)
     body = {
-        "username": "Coinche",
+        "username": "Coinche CLI",
         "allowed_mentions": {"parse": []},
         "embeds": [
             {

@@ -42,7 +42,7 @@ def test_discord_table_notification_posts_expected_embed(monkeypatch) -> None:
     assert request.full_url == "https://discord.example/webhook?with_components=true"
     assert captured["timeout"] == server._DISCORD_WEBHOOK_TIMEOUT_SECONDS
     body = json.loads(request.data)
-    assert body["username"] == "Coinche"
+    assert body["username"] == "Coinche CLI"
     assert body["allowed_mentions"] == {"parse": []}
     assert body["embeds"] == [
         {
