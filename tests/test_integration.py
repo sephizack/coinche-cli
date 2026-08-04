@@ -557,6 +557,39 @@ def test_chat_is_delivered_while_a_bot_is_thinking():
     asyncio.run(scenario())
 
 
+def test_last_disconnected_human_stops_the_bot_runner():
+    """A reconnectable table must not retain a sleeping bot task without observers."""
+
+    async def scenario() -> None:
+        srv, port = await _start_server(bot_think_seconds=60)
+        writer = None
+        try:
+            reader, writer = await _connect(port)
+            await _send(writer, protocol.JOIN, {"table_key": "botdrop1", "player_name": "Alice"})
+            await _read_until(reader, protocol.JOINED)
+            await _send(writer, protocol.FILL_BOTS, {})
+            await _read_until(reader, protocol.LOBBY_UPDATE)
+            await _read_until(reader, protocol.DEAL)
+
+            writer.close()
+            await writer.wait_closed()
+
+            table = table_module.TABLES["botdrop1"]
+            for _ in range(100):
+                if not table.has_connected_humans() and table.bot_task is None:
+                    break
+                await asyncio.sleep(0.01)
+
+            assert table.has_humans()  # the game remains reconnectable
+            assert table.has_connected_humans() is False
+            assert table.bot_task is None
+        finally:
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
 def test_disconnect_and_reconnect_mid_round():
     async def scenario() -> None:
         srv, port = await _start_server(target_score=1000)

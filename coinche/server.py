@@ -28,6 +28,7 @@ from coinche.table import (
     NameTakenError,
     Table,
     TableFullError,
+    cancel_background_tasks,
     get_or_create_table,
     notify_lobby_subscribers,
     remove_table,
@@ -520,7 +521,7 @@ async def _finish_trick_pause(table: Table, game: Game, result: dict) -> None:
     finally:
         if table.trick_pause_task is asyncio.current_task():
             table.trick_pause_task = None
-        if table.round_pause_task is None and table.game is game and table.has_humans():
+        if table.round_pause_task is None and table.game is game and table.has_connected_humans():
             _schedule_bot_turns(table)
 
 
@@ -604,7 +605,7 @@ async def _finish_round_pause(table: Table, game: Game) -> None:
     finally:
         if table.round_pause_task is asyncio.current_task():
             table.round_pause_task = None
-        if table.game is game and table.has_humans():
+        if table.game is game and table.has_connected_humans():
             _schedule_bot_turns(table)
 
 
@@ -644,6 +645,8 @@ async def _run_bot_turns(table: Table) -> None:
             async with table.lock:
                 game = table.game
                 if game is None or game.game_over:
+                    return
+                if not table.has_connected_humans():
                     return
                 if table.trick_pause_task is not None or table.round_pause_task is not None:
                     return
@@ -700,6 +703,8 @@ async def _run_bot_turns(table: Table) -> None:
 
 def _schedule_bot_turns(table: Table) -> None:
     """Ensure this table has at most one background bot-turn runner."""
+    if not table.has_connected_humans():
+        return
     if table.bot_task is None or table.bot_task.done():
         table.bot_task = asyncio.create_task(_run_bot_turns(table))
 
@@ -850,7 +855,7 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
     # audience of nobody.
     removed = not table.has_humans()
     if removed:
-        remove_table(table.table_key)
+        await remove_table(table.table_key)
         logger.info("[%s] table abandonnee (plus aucun joueur humain) -> supprimee", table.table_key)
 
     # Confirm the departure to the leaver and immediately start streaming lobby
@@ -912,7 +917,7 @@ async def _handle_spectator_leave(table: Table, spectator_name: str, writer: asy
     logger.info("[%s] DEPART SPECTATEUR %s", table.table_key, spectator_name)
 
     if not table.has_humans() and not table.spectators:
-        remove_table(table.table_key)
+        await remove_table(table.table_key)
         logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
 
     LOBBY_SUBSCRIBERS.add(writer)
@@ -1083,6 +1088,7 @@ async def _resolve_join_inner(
                     await _send_bid_request(table, seat)
                 elif table.game.phase == "trick_play":
                     await _send_play_request(table, seat)
+            _schedule_bot_turns(table)
             await notify_lobby_subscribers()
             return table, seat, None
 
@@ -1127,6 +1133,7 @@ async def _resolve_join_inner(
                         await _send_bid_request(table, target_seat)
                     elif table.game.phase == "trick_play":
                         await _send_play_request(table, target_seat)
+                _schedule_bot_turns(table)
                 await notify_lobby_subscribers()
                 return table, target_seat, None
 
@@ -1276,7 +1283,7 @@ async def handle_connection(
                 table.remove_spectator(spectator_name)
                 logger.info("[%s] DEPART SPECTATEUR %s", table.table_key, spectator_name)
                 if not table.has_humans() and not table.spectators:
-                    remove_table(table.table_key)
+                    await remove_table(table.table_key)
                     logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
                 await notify_lobby_subscribers()
         elif table is not None and seat is not None:
@@ -1289,7 +1296,7 @@ async def handle_connection(
                         {"players": players, "seats_filled": len(players), "waiting_for": 4 - len(players)},
                     )
                     if not table.has_humans() and not table.spectators:
-                        remove_table(table.table_key)
+                        await remove_table(table.table_key)
                         logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
                     await notify_lobby_subscribers()
                 else:
@@ -1299,6 +1306,8 @@ async def handle_connection(
                         protocol.CONNECTION_STATUS,
                         {"seat": _seat_to_str(seat), "name": name, "status": "disconnected"},
                     )
+                    if not table.has_connected_humans():
+                        await cancel_background_tasks(table)
                     # Refresh lobby subscribers so a returning player's picker sees
                     # this seat as disconnected (connected=False) and offers the
                     # reconnect path instead of showing the table as locked.

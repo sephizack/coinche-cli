@@ -140,6 +140,20 @@ def test_bot_think_delay_zero_disables_waiting(monkeypatch):
     assert table.bot_think_delay() == 0
 
 
+def test_remove_table_cancels_and_awaits_background_tasks():
+    async def scenario() -> None:
+        table = table_mod.get_or_create_table("cleanup")
+        bot_task = asyncio.create_task(asyncio.sleep(60))
+        table.bot_task = bot_task
+
+        await table_mod.remove_table("cleanup")
+
+        assert "cleanup" not in table_mod.TABLES
+        assert bot_task.cancelled()
+
+    asyncio.run(scenario())
+
+
 def test_add_player_rejects_fifth_join():
     table = Table("abcd")
     for name in ("Alice", "Bob", "Carol", "Dave"):

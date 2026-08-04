@@ -270,6 +270,10 @@ class Table:
         """
         return any(s is not None and not s.is_bot for s in self.seats.values())
 
+    def has_connected_humans(self) -> bool:
+        """True if a human is connected and can observe or act at this table."""
+        return any(s is not None and not s.is_bot and s.connected for s in self.seats.values())
+
     def find_disconnected_seat(self, name: str) -> Seat | None:
         """Case-insensitive lookup among disconnected seats, only when a game is live (A16)."""
         if self.game is None:
@@ -492,11 +496,25 @@ def get_or_create_table(
     return TABLES[table_key]
 
 
-def remove_table(table_key: str) -> None:
-    """Drop a table from the registry (abandoned: no humans left)."""
+async def cancel_background_tasks(table: Table) -> None:
+    """Cancel and join background work that no longer has connected players."""
+    current_task = asyncio.current_task()
+    tasks = tuple(
+        task
+        for task in (table.bot_task, table.trick_pause_task, table.round_pause_task)
+        if task is not None and task is not current_task
+    )
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def remove_table(table_key: str) -> None:
+    """Drop an abandoned table and finish its background tasks."""
     table = TABLES.pop(table_key, None)
-    if table is not None and table.bot_task is not None:
-        table.bot_task.cancel()
+    if table is not None:
+        await cancel_background_tasks(table)
 
 
 LOBBY_SUBSCRIBERS: set[asyncio.StreamWriter] = set()
