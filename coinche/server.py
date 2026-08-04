@@ -910,6 +910,11 @@ async def _handle_spectator_leave(table: Table, spectator_name: str, writer: asy
     writer so its table picker is live again on the same socket."""
     table.remove_spectator(spectator_name)
     logger.info("[%s] DEPART SPECTATEUR %s", table.table_key, spectator_name)
+
+    if not table.has_humans() and not table.spectators:
+        remove_table(table.table_key)
+        logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
+
     LOBBY_SUBSCRIBERS.add(writer)
     try:
         writer.write(protocol.encode(protocol.LEFT, {}))
@@ -1038,6 +1043,12 @@ async def _resolve_join_inner(
 
     async with table.lock:
         if spectate:
+            # Spectators cannot resurrect a table that was torn down because all
+            # players left. If the table no longer exists (or was never created)
+            # reject the join so the user is returned to the lobby.
+            if table_was_created:
+                await _send_error(writer, protocol.TABLE_FULL, "Table introuvable ou abandonnée")
+                return None
             # A spectator joins without a seat and is always accepted (full or
             # in-progress tables are exactly what one wants to watch). Send the
             # current public snapshot so the board is immediately in sync, then
@@ -1262,6 +1273,9 @@ async def handle_connection(
             async with table.lock:
                 table.remove_spectator(spectator_name)
                 logger.info("[%s] DEPART SPECTATEUR %s", table.table_key, spectator_name)
+                if not table.has_humans() and not table.spectators:
+                    remove_table(table.table_key)
+                    logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
                 await notify_lobby_subscribers()
         elif table is not None and seat is not None:
             async with table.lock:
@@ -1272,6 +1286,9 @@ async def handle_connection(
                         protocol.LOBBY_UPDATE,
                         {"players": players, "seats_filled": len(players), "waiting_for": 4 - len(players)},
                     )
+                    if not table.has_humans() and not table.spectators:
+                        remove_table(table.table_key)
+                        logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
                     await notify_lobby_subscribers()
                 else:
                     name = table.mark_disconnected(seat)
