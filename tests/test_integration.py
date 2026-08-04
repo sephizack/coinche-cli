@@ -259,6 +259,8 @@ def test_one_player_can_fill_the_table_with_bots():
                 assert msg_type == protocol.CHAT
                 assert payload["seat"] in bot_seats
                 assert payload["seat"] not in revealed_hands
+                assert payload["name"] in bot_names
+                assert payload["system"] is True
                 assert payload["text"].startswith("Ma main de départ était : ")
                 revealed_hands[payload["seat"]] = payload["text"].removeprefix("Ma main de départ était : ").split()
 

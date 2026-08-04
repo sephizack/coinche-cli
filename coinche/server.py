@@ -635,7 +635,15 @@ async def _announce_bot_starting_hands(table: Table, hands: dict[Seat, list[Card
             continue
         sorted_hand = _sort_hand_for_display(hands[seat], trump)
         cards = " ".join(_card_to_wire(card) for card in sorted_hand)
-        await table.broadcast(protocol.CHAT, {"seat": _seat_to_str(seat), "text": f"Ma main de départ était : {cards}"})
+        await table.broadcast(
+            protocol.CHAT,
+            {
+                "seat": _seat_to_str(seat),
+                "name": session.name,
+                "text": f"Ma main de départ était : {cards}",
+                "system": True,
+            },
+        )
 
 
 async def _run_bot_turns(table: Table) -> None:
