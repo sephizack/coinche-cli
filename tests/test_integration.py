@@ -187,9 +187,7 @@ def test_full_round_join_deal_bid_trick_score_flow():
                 belote = f" (+{score['belote_bonus']})" if score["belote_bonus"] else ""
                 return f"{score['card_points']}{belote}"
 
-            expected_recap = (
-                f"Fin de manche: {card_score('NS')} - {card_score('EW')}. {contract_status}."
-            )
+            expected_recap = f"Fin de manche: {card_score('NS')} - {card_score('EW')}. {contract_status}."
             assert recap == {
                 "seat": None,
                 "name": "Système",
