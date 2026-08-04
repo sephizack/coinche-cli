@@ -129,7 +129,7 @@
           /* localStorage unavailable (private mode) — just show the form */
         }
         if (!id) {
-          showForm();
+          resumeOrStartNewSession();
           return;
         }
         resume.hidden = false;

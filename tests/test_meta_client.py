@@ -606,6 +606,7 @@ def test_landing_page_probes_stored_session() -> None:
             assert "function resumeOrStartNewSession()" in text
             assert "window.location.replace(url);" in text
             assert 'var url = "/new?name=" + encodeURIComponent(name);' in text
+            assert "if (!id) {\n          resumeOrStartNewSession();" in text
         finally:
             await _stop(server, task)
             await game.stop()
