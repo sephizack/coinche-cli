@@ -604,7 +604,7 @@ def test_landing_page_probes_stored_session() -> None:
             assert "/api/session?id=" in text
             assert "localStorage.removeItem" in text  # cleans a dead id
             assert "function resumeOrStartNewSession()" in text
-            assert 'window.location.replace(url);' in text
+            assert "window.location.replace(url);" in text
             assert 'var url = "/new?name=" + encodeURIComponent(name);' in text
         finally:
             await _stop(server, task)

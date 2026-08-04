@@ -70,7 +70,6 @@ BOT_NAMES: tuple[str, ...] = (
     "Broly",
     "Tapion",
     "Goten",
-    
     # The Legend of Zelda
     "Link",
     "Zelda",

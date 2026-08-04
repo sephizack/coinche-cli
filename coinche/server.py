@@ -163,8 +163,8 @@ def _round_recap_chat_text(round_score: dict[str, dict]) -> str:
 
     def card_score(team: str) -> str:
         belote_bonus = round_score[team]["belote_bonus"]
-        belote = f" (+{belote_bonus} Belote/Rebelote)" if belote_bonus else ""
-        return f"{team} {round_score[team]['card_points']}{belote}"
+        belote = f" (+{belote_bonus})" if belote_bonus else ""
+        return f"{round_score[team]['card_points']}{belote}"
 
     return f"Fin de manche - points de cartes : {card_score('NS')} - {card_score('EW')}. {contract_status}."
 
