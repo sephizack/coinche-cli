@@ -248,6 +248,8 @@ class MetaSession:
                 except protocol.ProtocolError:
                     continue
                 apply_message(self.state, msg_type, payload)
+                if msg_type == protocol.ERROR:
+                    self.forget_join()
                 await self.bridge.broadcast_state(self.state)
         except (ConnectionError, OSError):
             pass

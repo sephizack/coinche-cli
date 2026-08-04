@@ -1032,23 +1032,15 @@ async def _resolve_join_inner(
         (existing_key for existing_key in TABLES if existing_key.lower() == requested_table_key.lower()),
         requested_table_key,
     )
-    table_was_created = table_key not in TABLES
-    table = get_or_create_table(
-        table_key,
-        target_score=target_score,
-        trick_pause_seconds=trick_pause_seconds,
-        round_pause_seconds=round_pause_seconds,
-        bot_think_seconds=bot_think_seconds,
-    )
 
-    async with table.lock:
-        if spectate:
-            # Spectators cannot resurrect a table that was torn down because all
-            # players left. If the table no longer exists (or was never created)
-            # reject the join so the user is returned to the lobby.
-            if table_was_created:
-                await _send_error(writer, protocol.TABLE_FULL, "Table introuvable ou abandonnée")
-                return None
+    if spectate:
+        # Spectators cannot resurrect a table that was torn down because all
+        # players left. Only look up existing tables — never create one.
+        if table_key not in TABLES:
+            await _send_error(writer, protocol.TABLE_FULL, "Table introuvable ou abandonnée")
+            return None
+        table = TABLES[table_key]
+        async with table.lock:
             # A spectator joins without a seat and is always accepted (full or
             # in-progress tables are exactly what one wants to watch). Send the
             # current public snapshot so the board is immediately in sync, then
@@ -1061,6 +1053,16 @@ async def _resolve_join_inner(
             await notify_lobby_subscribers()
             return table, None, unique_name
 
+    table_was_created = table_key not in TABLES
+    table = get_or_create_table(
+        table_key,
+        target_score=target_score,
+        trick_pause_seconds=trick_pause_seconds,
+        round_pause_seconds=round_pause_seconds,
+        bot_think_seconds=bot_think_seconds,
+    )
+
+    async with table.lock:
         reconnect_seat = table.find_disconnected_seat(player_name) if table.game is not None else None
 
         if reconnect_seat is not None:

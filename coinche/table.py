@@ -74,7 +74,7 @@ BOT_NAMES: tuple[str, ...] = (
     "Zelda",
     "Ganondorf",
     "Navi",
-    "Sheik"
+    "Sheik",
 )
 
 TABLE_NAMES_PATH = Path(__file__).resolve().parent / "web" / "static" / "table_names.json"
