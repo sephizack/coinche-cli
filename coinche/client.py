@@ -141,7 +141,8 @@ async def run_session(
 
     Returns "not_joined" if the session never completed a join/resync,
     "game_over" if the game concluded normally, or "disconnected" if the
-    connection dropped mid-session after having joined (worth retrying).
+    connection dropped mid-session after having joined (worth retrying). Returns
+    "turn_timeout" when the server replaced this player with a bot.
     """
     state = ClientState()
 
@@ -264,6 +265,7 @@ async def run_session(
                 web_url=web.urls[0] if web.urls else None,
                 can_fill_bots=state.can_fill_bots,
                 join_effect_name=state.join_effect_name,
+                turn_deadline=state.turn_deadline,
             )
             game_focused = state.active_pane == "game"
             left_border = "bold cyan" if game_focused else "grey50"
@@ -375,6 +377,8 @@ async def run_session(
                         return
                     key_task = asyncio.ensure_future(asyncio.to_thread(_read_single_key))
                     continue
+                if state.turn_timed_out:
+                    return
                 if key == "\t":
                     state.active_pane = "chat" if state.active_pane == "game" else "game"
                     redraw()
@@ -406,6 +410,15 @@ async def run_session(
     # (even on the pre-join waiting screen), not only after the next server msg.
     web.on_ready = redraw
 
+    async def tick_countdown() -> None:
+        """Refresh the terminal at most once per second while a turn expires."""
+        while not state.turn_timed_out:
+            if state.turn_deadline is None:
+                await asyncio.sleep(0.2)
+                continue
+            redraw()
+            await asyncio.sleep(1)
+
     try:
         redraw()
         # The web overlay runs forever (serve_forever), so it can't be a peer in
@@ -414,12 +427,18 @@ async def run_session(
         # try/except boundary means a web fault stays contained; only the two
         # session loops decide when the session ends (BR-U2-3).
         web_task = asyncio.ensure_future(web.serve())
+        countdown_task = asyncio.create_task(tick_countdown())
         try:
             await asyncio.gather(receiver_loop(), input_loop())
         finally:
             web_task.cancel()
+            countdown_task.cancel()
             try:
                 await web_task
+            except asyncio.CancelledError:
+                pass
+            try:
+                await countdown_task
             except asyncio.CancelledError:
                 pass
     finally:
@@ -442,6 +461,8 @@ async def run_session(
 
     if state.game_over:
         return "game_over"
+    if state.turn_timed_out:
+        return "turn_timeout"
     if state.joined_once:
         return "disconnected"
     return "not_joined"
@@ -1048,6 +1069,9 @@ async def main(argv: list[str] | None = None) -> None:
     if result == "game_over":
         print("Partie terminée. Au revoir !")
         return
+    if result == "turn_timeout":
+        print("Vous n'avez pas joué à temps : un bot reprend votre place.")
+        return
 
     for delay in BACKOFF_DELAYS:
         print(f"Connexion perdue. Nouvelle tentative dans {delay}s...")
@@ -1055,6 +1079,9 @@ async def main(argv: list[str] | None = None) -> None:
         result = await run_session(host, port, table_key, player_name, team_name, web_port=args.web_port)
         if result == "game_over":
             print("Partie terminée. Au revoir !")
+            return
+        if result == "turn_timeout":
+            print("Vous n'avez pas joué à temps : un bot reprend votre place.")
             return
         # "disconnected" or "not_joined" (e.g. server temporarily unreachable): keep retrying.
 

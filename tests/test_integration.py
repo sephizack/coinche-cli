@@ -36,7 +36,9 @@ SEAT_JOIN_ORDER = ("N", "E", "S", "W")
 NAMES_BY_SEAT = {"N": "Alice", "E": "Bob", "S": "Carol", "W": "Dave"}
 
 
-async def _start_server(target_score: int = 1000, bot_think_seconds: float = 0) -> tuple[asyncio.AbstractServer, int]:
+async def _start_server(
+    target_score: int = 1000, bot_think_seconds: float = 0, turn_timeout_seconds: float = 300
+) -> tuple[asyncio.AbstractServer, int]:
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         # trick_pause_seconds=0/round_pause_seconds=0: these tests don't care
         # about the UX pauses after each trick/round (added per user request)
@@ -49,6 +51,7 @@ async def _start_server(target_score: int = 1000, bot_think_seconds: float = 0) 
             trick_pause_seconds=0,
             round_pause_seconds=0,
             bot_think_seconds=bot_think_seconds,
+            turn_timeout_seconds=turn_timeout_seconds,
         )
 
     srv = await asyncio.start_server(_handler, HOST, 0)
@@ -249,7 +252,7 @@ def test_one_player_can_fill_the_table_with_bots():
             assert recap["name"] == "Système"
             assert recap["system"] is True
             assert recap["text"].startswith("Fin de manche:")
-            assert recap["text"].endswith(("Contrat réussi ✅", "Contrat chuté ❌"))
+            assert recap["text"].endswith(("Contrat réussi ✅.", "Contrat chuté ❌."))
             bot_seats = {player["seat"] for player in bots}
             revealed_hands: dict[str, list[str]] = {}
             for _ in bots:
@@ -266,6 +269,37 @@ def test_one_player_can_fill_the_table_with_bots():
             assert all(len(hand) == 8 for hand in revealed_hands.values())
         finally:
             if writer is not None:
+                writer.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_turn_timeout_replaces_only_the_idle_player_with_a_bot():
+    async def scenario() -> None:
+        srv, port = await _start_server(turn_timeout_seconds=0.05)
+        conns: dict = {}
+        try:
+            conns = await _join_all(port, "timeout01")
+            for reader, _writer in conns.values():
+                await _read_until(reader, protocol.DEAL)
+
+            request = await _read_until(conns["W"][0], protocol.BID_REQUEST)
+            assert 0 < request["turn_timeout_seconds"] <= 0.05
+
+            status = await _read_until(conns["N"][0], protocol.CONNECTION_STATUS)
+            assert status["seat"] == "W"
+            assert status["status"] == "replaced_by_bot"
+            timed_out = await _read_until(conns["W"][0], protocol.TURN_TIMEOUT)
+            assert "bot reprend votre place" in timed_out["message"]
+            assert await asyncio.wait_for(conns["W"][0].readline(), timeout=1) == b""
+
+            table = table_module.TABLES["timeout01"]
+            assert table.seats[table_module.Seat.W].is_bot is True
+            assert table.seats[table_module.Seat.W].connected is True
+        finally:
+            for _reader, writer in conns.values():
                 writer.close()
             srv.close()
             await srv.wait_closed()

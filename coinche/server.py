@@ -29,11 +29,13 @@ from coinche.table import (
     Table,
     TableFullError,
     cancel_background_tasks,
+    cancel_turn_timer,
     get_or_create_table,
     notify_lobby_subscribers,
     remove_table,
     tables_listing,
 )
+from coinche.timeouts import DEFAULT_GLOBAL_KICK_TIMEOUT_SECONDS, DEFAULT_TURN_TIMEOUT_SECONDS, validate_timeout_order
 
 TABLE_KEY_PATTERN = re.compile(rf"^[A-Za-z0-9]{{{protocol.TABLE_KEY_MIN_LENGTH},{protocol.TABLE_KEY_MAX_LENGTH}}}$")
 
@@ -180,6 +182,16 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a number") from error
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be strictly positive")
+    return parsed
+
+
 def _card_to_wire(card: Card) -> str:
     return str(card)
 
@@ -317,6 +329,7 @@ async def _send_bid_request(table: Table, seat: Seat) -> None:
             "legal_actions": options["legal_actions"],
             "can_coinche": options["can_coinche"],
             "can_surcoinche": options["can_surcoinche"],
+            "turn_timeout_seconds": _turn_time_remaining(table, seat),
         },
     )
 
@@ -331,8 +344,107 @@ async def _send_play_request(table: Table, seat: Seat) -> None:
             "legal_cards": [_card_to_wire(c) for c in options["legal_cards"]],
             "current_trick": _trick_to_wire(options["current_trick"]),
             "trump": options["trump"],
+            "turn_timeout_seconds": _turn_time_remaining(table, seat),
         },
     )
+
+
+def _turn_time_remaining(table: Table, seat: Seat) -> float:
+    if table.turn_timer_seat != seat or table.turn_deadline is None:
+        return table.turn_timeout_seconds
+    return max(0.0, table.turn_deadline - asyncio.get_running_loop().time())
+
+
+async def _ensure_turn_timer(table: Table, seat: Seat) -> float | None:
+    """Keep one deadline for the active human seat; bots never receive one."""
+    session = table.seats.get(seat)
+    if session is None or session.is_bot:
+        return None
+    loop = asyncio.get_running_loop()
+    if (
+        table.turn_timer_task is not None
+        and not table.turn_timer_task.done()
+        and table.turn_timer_seat == seat
+        and table.turn_deadline is not None
+        and table.turn_deadline > loop.time()
+    ):
+        return table.turn_deadline - loop.time()
+
+    cancel_turn_timer(table)
+    game = table.game
+    assert game is not None
+    deadline = loop.time() + table.turn_timeout_seconds
+    table.turn_timer_seat = seat
+    table.turn_deadline = deadline
+    table.turn_timer_task = asyncio.create_task(_handle_turn_timeout(table, game, seat, deadline))
+    return table.turn_timeout_seconds
+
+
+async def _request_turn(table: Table, seat: Seat) -> None:
+    """Arm the active human's deadline, then send its phase-specific request."""
+    if await _ensure_turn_timer(table, seat) is None:
+        _schedule_bot_turns(table)
+        return
+    assert table.game is not None
+    if table.game.phase == "bidding":
+        await _send_bid_request(table, seat)
+    else:
+        await _send_play_request(table, seat)
+
+
+async def _kick_timed_out_player(table: Table, seat: Seat, writer: asyncio.StreamWriter | None, name: str) -> None:
+    """Replace the expired human under the table lock and close only their socket."""
+    bot_name = table.replace_with_bot(seat)
+    logger.info("[%s] TIMEOUT %s (%s) -> bot %s", table.table_key, name, _seat_to_str(seat), bot_name)
+    await table.broadcast(
+        protocol.CONNECTION_STATUS,
+        {"seat": _seat_to_str(seat), "name": name, "bot_name": bot_name, "status": "replaced_by_bot"},
+        exclude=seat,
+    )
+    await notify_lobby_subscribers()
+    await table.send_to_writer(
+        writer,
+        protocol.TURN_TIMEOUT,
+        {"message": "Vous n'avez pas joué à temps : un bot reprend votre place."},
+    )
+    if writer is not None:
+        writer.close()
+    _schedule_bot_turns(table)
+
+
+async def _handle_turn_timeout(table: Table, game: Game, seat: Seat, deadline: float) -> None:
+    """Wait for one deadline and replace its still-idle human seat."""
+    task = asyncio.current_task()
+    try:
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining > 0:
+            await asyncio.sleep(remaining)
+        async with table.lock:
+            session = table.seats.get(seat)
+            if (
+                table.game is not game
+                or game.game_over
+                or game.next_to_act != seat
+                or table.turn_timer_task is not task
+                or table.turn_timer_seat != seat
+                or table.turn_deadline != deadline
+                or session is None
+                or session.is_bot
+            ):
+                return
+            writer = session.writer
+            name = session.name
+            table.turn_timer_task = None
+            table.turn_timer_seat = None
+            table.turn_deadline = None
+            await _kick_timed_out_player(table, seat, writer, name)
+    except asyncio.CancelledError:
+        raise
+    finally:
+        if table.turn_timer_task is task:
+            table.turn_timer_task = None
+            table.turn_timer_seat = None
+            table.turn_deadline = None
 
 
 async def _broadcast_deal(table: Table) -> None:
@@ -401,7 +513,7 @@ async def _handle_bid_result(table: Table, seat: Seat, result: dict) -> None:
                 "next_to_act": _seat_to_str(result["next_to_act"]),
             },
         )
-        await _send_bid_request(table, result["next_to_act"])
+        await _request_turn(table, result["next_to_act"])
 
     elif outcome == "redeal":
         logger.info(
@@ -416,7 +528,7 @@ async def _handle_bid_result(table: Table, seat: Seat, result: dict) -> None:
             {"outcome": "redeal", "dealer_seat": _seat_to_str(result["dealer_seat"])},
         )
         await _broadcast_deal(table)
-        await _send_bid_request(table, game.next_to_act)
+        await _request_turn(table, game.next_to_act)
 
     elif outcome == "contract":
         logger.info(
@@ -445,7 +557,7 @@ async def _handle_bid_result(table: Table, seat: Seat, result: dict) -> None:
                 ),
             },
         )
-        await _send_play_request(table, result["first_leader"])
+        await _request_turn(table, result["first_leader"])
 
 
 async def _handle_play_result(table: Table, result: dict) -> None:
@@ -481,7 +593,7 @@ async def _handle_play_result(table: Table, result: dict) -> None:
     )
 
     if not result["trick_complete"]:
-        await _send_play_request(table, result["next_to_act"])
+        await _request_turn(table, result["next_to_act"])
         return
 
     logger.info(
@@ -538,7 +650,7 @@ async def _continue_after_trick_pause(table: Table, result: dict) -> None:
     await table.broadcast(protocol.TRICK_CLEARED, {})
 
     if not result["round_complete"]:
-        await _send_play_request(table, result["next_to_act"])
+        await _request_turn(table, result["next_to_act"])
         return
 
     await _handle_round_completion(table, result)
@@ -601,7 +713,7 @@ async def _finish_round_pause(table: Table, game: Game) -> None:
             if table.game is not game or not table.has_humans():
                 return
             await _broadcast_deal(table)
-            await _send_bid_request(table, game.next_to_act)
+            await _request_turn(table, game.next_to_act)
     finally:
         if table.round_pause_task is asyncio.current_task():
             table.round_pause_task = None
@@ -750,7 +862,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         await notify_lobby_subscribers()
         await _broadcast_deal(table)
         assert table.game is not None
-        await _send_bid_request(table, table.game.next_to_act)
+        await _request_turn(table, table.game.next_to_act)
         _schedule_bot_turns(table)
         return
 
@@ -776,6 +888,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         except IllegalBidError as exc:
             await table.send_to(seat, protocol.ERROR, {"code": protocol.ILLEGAL_BID, "message": str(exc)})
             return
+        cancel_turn_timer(table)
         await _handle_bid_result(table, seat, result)
         _schedule_bot_turns(table)
 
@@ -795,6 +908,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         except IllegalCardError as exc:
             await table.send_to(seat, protocol.ERROR, {"code": protocol.ILLEGAL_CARD, "message": str(exc)})
             return
+        cancel_turn_timer(table)
         await _handle_play_result(table, result)
         _schedule_bot_turns(table)
 
@@ -810,7 +924,7 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         await table.broadcast(protocol.NEW_GAME, {"target_score": table.target_score})
         await _broadcast_deal(table)
         assert table.game is not None
-        await _send_bid_request(table, table.game.next_to_act)
+        await _request_turn(table, table.game.next_to_act)
         _schedule_bot_turns(table)
 
 
@@ -832,6 +946,7 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
         # Mid-game: convert the seat to a bot rather than removing it, so the
         # other three players' game keeps running instead of stalling on an
         # empty chair.
+        cancel_turn_timer(table)
         bot_name = table.replace_with_bot(seat)
         logger.info(
             "[%s] DEPART %s (%s) -> repris par un bot (%s)",
@@ -945,6 +1060,7 @@ async def _resolve_join(
     trick_pause_seconds: float,
     round_pause_seconds: float,
     bot_think_seconds: float,
+    turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
 ) -> tuple[Table, Seat | None, str | None] | None:
     """Read messages from a fresh client connection until a JOIN arrives.
 
@@ -963,6 +1079,7 @@ async def _resolve_join(
             trick_pause_seconds,
             round_pause_seconds,
             bot_think_seconds,
+            turn_timeout_seconds,
         )
     finally:
         LOBBY_SUBSCRIBERS.discard(writer)
@@ -975,6 +1092,7 @@ async def _resolve_join_inner(
     trick_pause_seconds: float,
     round_pause_seconds: float,
     bot_think_seconds: float,
+    turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
 ) -> tuple[Table, Seat | None, str | None] | None:
     while True:
         try:
@@ -1073,6 +1191,7 @@ async def _resolve_join_inner(
         trick_pause_seconds=trick_pause_seconds,
         round_pause_seconds=round_pause_seconds,
         bot_think_seconds=bot_think_seconds,
+        turn_timeout_seconds=turn_timeout_seconds,
     )
 
     async with table.lock:
@@ -1093,9 +1212,9 @@ async def _resolve_join_inner(
             assert table.game is not None
             if table.game.next_to_act == seat:
                 if table.game.phase == "bidding":
-                    await _send_bid_request(table, seat)
+                    await _request_turn(table, seat)
                 elif table.game.phase == "trick_play":
-                    await _send_play_request(table, seat)
+                    await _request_turn(table, seat)
             _schedule_bot_turns(table)
             await notify_lobby_subscribers()
             return table, seat, None
@@ -1138,9 +1257,9 @@ async def _resolve_join_inner(
                 # follow up with a normal request so the newcomer can act right away.
                 if table.game.next_to_act == target_seat:
                     if table.game.phase == "bidding":
-                        await _send_bid_request(table, target_seat)
+                        await _request_turn(table, target_seat)
                     elif table.game.phase == "trick_play":
-                        await _send_play_request(table, target_seat)
+                        await _request_turn(table, target_seat)
                 _schedule_bot_turns(table)
                 await notify_lobby_subscribers()
                 return table, target_seat, None
@@ -1193,7 +1312,7 @@ async def _resolve_join_inner(
         )
         if table.game is not None:
             await _broadcast_deal(table)
-            await _send_bid_request(table, table.game.next_to_act)
+            await _request_turn(table, table.game.next_to_act)
 
         await notify_lobby_subscribers()
         return table, seat, None
@@ -1206,6 +1325,7 @@ async def handle_connection(
     trick_pause_seconds: float = 2.5,
     round_pause_seconds: float = 4.0,
     bot_think_seconds: float = 1.0,
+    turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
 ) -> None:
     table: Table | None = None
     seat: Seat | None = None
@@ -1224,6 +1344,7 @@ async def handle_connection(
                 trick_pause_seconds,
                 round_pause_seconds,
                 bot_think_seconds,
+                turn_timeout_seconds,
             )
             if joined is None:
                 return
@@ -1308,18 +1429,19 @@ async def handle_connection(
                         logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
                     await notify_lobby_subscribers()
                 else:
-                    name = table.mark_disconnected(seat)
-                    logger.info("[%s] DECONNEXION %s (%s)", table.table_key, name, _seat_to_str(seat))
-                    await table.broadcast(
-                        protocol.CONNECTION_STATUS,
-                        {"seat": _seat_to_str(seat), "name": name, "status": "disconnected"},
-                    )
-                    if not table.has_connected_humans():
-                        await cancel_background_tasks(table)
-                    # Refresh lobby subscribers so a returning player's picker sees
-                    # this seat as disconnected (connected=False) and offers the
-                    # reconnect path instead of showing the table as locked.
-                    await notify_lobby_subscribers()
+                    session = table.seats.get(seat)
+                    if session is not None and session.writer is writer:
+                        name = table.mark_disconnected(seat)
+                        logger.info("[%s] DECONNEXION %s (%s)", table.table_key, name, _seat_to_str(seat))
+                        await table.broadcast(
+                            protocol.CONNECTION_STATUS,
+                            {"seat": _seat_to_str(seat), "name": name, "status": "disconnected"},
+                        )
+                        # Keep an active deadline while a player reconnects: it
+                        # still owns the same turn and must not stall the game.
+                        if not table.has_connected_humans():
+                            await cancel_background_tasks(table, include_turn_timer=False)
+                        await notify_lobby_subscribers()
         try:
             writer.close()
         except Exception:
@@ -1356,6 +1478,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="Minimum seconds each bot waits before bidding or playing; up to one random extra second (default: 1.0)",
+    )
+    parser.add_argument(
+        "--turn-timeout",
+        type=_positive_float,
+        default=DEFAULT_TURN_TIMEOUT_SECONDS,
+        help=f"Seconds a human may hold a turn before a bot replaces them (default: {DEFAULT_TURN_TIMEOUT_SECONDS:g})",
     )
     parser.add_argument(
         "--bot-samples",
@@ -1406,6 +1534,10 @@ def _detect_public_ip(timeout: float = 3.0) -> str | None:
 
 async def main(argv: list[str] | None = None) -> None:
     args = build_arg_parser().parse_args(argv)
+    try:
+        validate_timeout_order(args.turn_timeout, DEFAULT_GLOBAL_KICK_TIMEOUT_SECONDS)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
 
     handlers: list[logging.Handler] = [logging.StreamHandler()]
     if args.log_file:
@@ -1419,6 +1551,11 @@ async def main(argv: list[str] | None = None) -> None:
 
     configure_samples(args.bot_samples)
     logger.info("Bot Monte Carlo samples: %d", args.bot_samples)
+    logger.info(
+        "Timeouts validated: turn=%.1fs global-kick=%.1fs",
+        args.turn_timeout,
+        DEFAULT_GLOBAL_KICK_TIMEOUT_SECONDS,
+    )
 
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         await handle_connection(
@@ -1428,6 +1565,7 @@ async def main(argv: list[str] | None = None) -> None:
             trick_pause_seconds=args.trick_pause,
             round_pause_seconds=args.round_pause,
             bot_think_seconds=args.bot_think,
+            turn_timeout_seconds=args.turn_timeout,
         )
 
     server = await asyncio.start_server(_handler, args.host, args.port)

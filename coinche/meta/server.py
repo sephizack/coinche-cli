@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 from coinche import protocol
 from coinche.meta.session import MetaSession
+from coinche.timeouts import DEFAULT_GLOBAL_KICK_TIMEOUT_SECONDS
 from coinche.web.server import (
     _WS_MAGIC,
     STATIC_DIR,
@@ -56,7 +57,7 @@ _TABLE_KEY_PATTERN = re.compile(rf"^[A-Za-z0-9]{{{protocol.TABLE_KEY_MIN_LENGTH}
 # the seat / tearing down an abandoned table) and is torn down. The grace
 # window is comfortably longer than a page refresh or a brief network blip, so
 # a returning player resumes their session instead of being reaped.
-IDLE_TIMEOUT_SECONDS = 15 * 60.0
+IDLE_TIMEOUT_SECONDS = DEFAULT_GLOBAL_KICK_TIMEOUT_SECONDS
 REAP_INTERVAL_SECONDS = 15.0
 META_STATIC_DIR = Path(__file__).resolve().parent / "static"
 LANDING_PAGE_PATH = META_STATIC_DIR / "landing.html"
@@ -76,6 +77,8 @@ class MetaClientServer:
         idle_timeout: float = IDLE_TIMEOUT_SECONDS,
         reap_interval: float = REAP_INTERVAL_SECONDS,
     ) -> None:
+        if idle_timeout <= 0:
+            raise ValueError("idle timeout must be strictly positive")
         self.game_host = game_host
         self.game_port = game_port
         self.auth_user = auth_user

@@ -154,6 +154,7 @@ def waiting_for_text(
     players: dict[Seat, str],
     team_of: dict[Seat, str],
     local_seat: Seat,
+    turn_deadline: float | None = None,
 ) -> Text:
     """Bold indicator of whose turn it is right now, distinct from the "last
     action" line: "À vous !" (reversed, unmissable) when it's the local
@@ -163,7 +164,12 @@ def waiting_for_text(
     if whose_turn is None:
         return Text("")
     if whose_turn == local_seat:
-        return Text(" À vous ! ", style="bold black on yellow")
+        text = Text(" À vous ! ", style="bold black on yellow")
+        if turn_deadline is not None:
+            remaining = max(0, int(turn_deadline - time.time()))
+            style = "bold red" if remaining < 60 else "bold cyan"
+            text.append(f"  ⏱ {remaining // 60}:{remaining % 60:02d}", style=style)
+        return text
     name = players.get(whose_turn, whose_turn.value)
     camp = "nous" if team_of.get(whose_turn) == team_of.get(local_seat) else "eux"
     text = Text("En attente de ", style="grey70")
@@ -327,6 +333,7 @@ def build_table_view(
     web_url: str | None = None,
     can_fill_bots: bool = False,
     join_effect_name: str | None = None,
+    turn_deadline: float | None = None,
 ) -> Group:
     """Compose the whole table view into one root renderable for rich.live.Live.
 
@@ -350,7 +357,7 @@ def build_table_view(
         connection_status=connection_status,
         dealer_seat=dealer_seat,
     )
-    waiting = waiting_for_text(whose_turn, players, team_of, local_seat)
+    waiting = waiting_for_text(whose_turn, players, team_of, local_seat, turn_deadline)
     contract = contract_text(trump, contract_points, contract_bidder_name, coinche_level)
     last_trick_panel = last_trick_grid(local_seat, last_trick or {})
     blocks: list[RenderableType] = []

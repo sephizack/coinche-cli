@@ -15,7 +15,7 @@ import argparse
 import asyncio
 import logging
 
-from coinche.meta.server import MetaClientServer
+from coinche.meta.server import IDLE_TIMEOUT_SECONDS, MetaClientServer
 
 DEFAULT_GAME_HOST = "127.0.0.1"
 DEFAULT_GAME_PORT = 8765
@@ -37,6 +37,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--auth-user", default="coinche", help="Basic-auth username (default: coinche)")
     parser.add_argument("--auth-pass", required=True, help="Basic-auth password (required)")
+    parser.add_argument(
+        "--idle-timeout",
+        type=float,
+        default=IDLE_TIMEOUT_SECONDS,
+        help=f"Seconds without a browser before reaping a session (default: {IDLE_TIMEOUT_SECONDS:g})",
+    )
     parser.add_argument(
         "--log-level",
         default="INFO",
@@ -60,6 +66,7 @@ async def main(argv: list[str] | None = None) -> None:
         auth_pass=args.auth_pass,
         host=args.listen_host,
         port=args.listen_port,
+        idle_timeout=args.idle_timeout,
     )
     await server.serve()
 

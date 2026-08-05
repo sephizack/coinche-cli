@@ -10,6 +10,7 @@ from pathlib import Path
 
 from coinche import protocol, rules
 from coinche.game import PARTNER_OF, Game, Seat
+from coinche.timeouts import DEFAULT_TURN_TIMEOUT_SECONDS
 
 SEAT_ORDER: tuple[Seat, ...] = (Seat.N, Seat.E, Seat.S, Seat.W)
 
@@ -159,6 +160,7 @@ class Table:
         trick_pause_seconds: float = 2.5,
         round_pause_seconds: float = 4.0,
         bot_think_seconds: float = 1.0,
+        turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
     ) -> None:
         self.table_key = table_key
         self.target_score = target_score
@@ -174,8 +176,12 @@ class Table:
         # Minimum pause before each server-controlled bot decision. A further
         # random delay makes consecutive bot turns feel less mechanical.
         self.bot_think_seconds = bot_think_seconds
+        self.turn_timeout_seconds = turn_timeout_seconds
         self.lock = asyncio.Lock()
         self.bot_task: asyncio.Task[None] | None = None
+        self.turn_timer_task: asyncio.Task[None] | None = None
+        self.turn_timer_seat: Seat | None = None
+        self.turn_deadline: float | None = None
         # Visual pauses intentionally do not retain `lock`: chat and leaving
         # remain available while the completed trick / round recap is visible.
         # These tasks mark the game transition as pending so bot runners cannot
@@ -494,6 +500,7 @@ def get_or_create_table(
     trick_pause_seconds: float = 2.5,
     round_pause_seconds: float = 4.0,
     bot_think_seconds: float = 1.0,
+    turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
 ) -> Table:
     """Lazily create (on first join) or return the existing table for `table_key`."""
     if table_key not in TABLES:
@@ -503,22 +510,40 @@ def get_or_create_table(
             trick_pause_seconds=trick_pause_seconds,
             round_pause_seconds=round_pause_seconds,
             bot_think_seconds=bot_think_seconds,
+            turn_timeout_seconds=turn_timeout_seconds,
         )
     return TABLES[table_key]
 
 
-async def cancel_background_tasks(table: Table) -> None:
+def cancel_turn_timer(table: Table) -> None:
+    """Cancel the active human-turn deadline, if any, and clear its identity."""
+    task = table.turn_timer_task
+    table.turn_timer_task = None
+    table.turn_timer_seat = None
+    table.turn_deadline = None
+    if task is not None and task is not asyncio.current_task():
+        task.cancel()
+
+
+async def cancel_background_tasks(table: Table, include_turn_timer: bool = True) -> None:
     """Cancel and join background work that no longer has connected players."""
     current_task = asyncio.current_task()
     tasks = tuple(
         task
-        for task in (table.bot_task, table.trick_pause_task, table.round_pause_task)
+        for task in (
+            table.bot_task,
+            table.trick_pause_task,
+            table.round_pause_task,
+            table.turn_timer_task if include_turn_timer else None,
+        )
         if task is not None and task is not current_task
     )
     for task in tasks:
         task.cancel()
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
+    if include_turn_timer:
+        cancel_turn_timer(table)
 
 
 async def remove_table(table_key: str) -> None:

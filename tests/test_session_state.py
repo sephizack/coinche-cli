@@ -331,6 +331,32 @@ def test_play_request_sets_legal_cards_and_requests_action():
     assert state.whose_turn == Seat.S
 
 
+def test_turn_deadline_is_local_and_timeout_blocks_actions(monkeypatch):
+    state = ClientState()
+    _join(state)
+    monkeypatch.setattr("coinche.session_state.time.time", lambda: 1_000.0)
+    apply_message(
+        state,
+        protocol.BID_REQUEST,
+        {
+            "legal_actions": [],
+            "current_highest_bid": None,
+            "can_coinche": False,
+            "can_surcoinche": False,
+            "turn_timeout_seconds": 42.5,
+        },
+    )
+    assert state.turn_timeout_seconds == 42.5
+    assert state.turn_deadline == 1042.5
+
+    apply_message(state, protocol.TURN_TIMEOUT, {"message": "Remplacé par un bot."})
+    assert state.turn_timed_out is True
+    assert state.turn_deadline is None
+    assert state.pending_bid_request is None
+    assert state.turn_timeout_message == "Remplacé par un bot."
+    assert snapshot_to_dict(state)["turn_timeout_message"] == "Remplacé par un bot."
+
+
 def test_card_played_removes_own_card_and_updates_trick():
     state = ClientState()
     _join(state)
@@ -606,7 +632,7 @@ def test_connection_banner_matches_ui_renderer():
 
     state = ClientState()
     _join(state)
-    for status in ("disconnected", "connected", "replaced_by_bot", "bot_replaced", "joined"):
+    for status in ("disconnected", "connected", "bot_replaced", "joined"):
         apply_message(state, protocol.CONNECTION_STATUS, {"seat": "N", "name": "Nord", "status": status})
         assert state.last_action == ui.render_connection_banner("Nord", status).plain
 
@@ -645,7 +671,7 @@ def test_replaced_by_bot_status_renames_seat_and_flags_bot():
     assert result.action_requested is False
     assert state.players[Seat.N] == "Sephiroth"  # seat relabeled to the bot
     assert state.bots[Seat.N] is True
-    assert state.last_action == "👋 Nord a quitté — un bot prend la relève"
+    assert state.last_action == ""
     assert snapshot_to_dict(state)["bots"]["N"] is True
 
 

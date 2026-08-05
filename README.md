@@ -196,11 +196,17 @@ is shown for a fresh start.
 
 **Idle timeout / reaping.** A background reaper on the méta-client kicks any
 session that has had **no browser attached and no activity** for longer than
-the idle timeout (default 120s). A kicked session first sends `LEAVE` — so the
+the idle timeout (default 900s). A kicked session first sends `LEAVE` — so the
 game server frees its seat pre-game, or hands it to a bot mid-game, and tears
 down a now-empty table — then it is removed. This keeps abandoned sessions from
 pinning seats forever and doubles as table housekeeping. A session with a live
 browser attached is never reaped.
+
+**Turn timeout.** A connected human who does not act for 300 seconds is
+replaced by a bot for the rest of that game. The per-turn timeout must remain
+strictly below the meta-client idle timeout: $T_{\mathrm{tour}} < T_{\mathrm{kick\ global}}$
+(defaults: $300 < 900$). `run_app.sh` validates this relation when either
+`--turn-timeout` or `--idle-timeout` is supplied.
 
 ### One-command launch (server + méta-client)
 

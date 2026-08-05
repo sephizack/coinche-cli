@@ -15,6 +15,8 @@
 #   --meta-port PORT     port d'écoute web du méta-client (défaut: 8080)
 #   --game-port PORT     port TCP du serveur de jeu (défaut: 8765)
 #   --bot-samples N      distributions Monte-Carlo évaluées par coup de bot (défaut: 100)
+#   --turn-timeout SEC   délai maximum d'un tour humain (défaut: 300)
+#   --idle-timeout SEC   délai de reaping méta-client (défaut: 900)
 #   --server-log FICHIER écrit aussi les logs du serveur dans ce fichier
 #   --no-pull            ne pas faire de git pull avant de lancer
 #
@@ -36,6 +38,8 @@ META_PORT="8080"
 GAME_PORT="8765"
 BOT_SAMPLES="100"
 SERVER_LOG=""
+TURN_TIMEOUT="300"
+IDLE_TIMEOUT="900"
 DO_PULL=1
 if [[ -f .env ]]; then
     # `.env` assignments are otherwise shell-local: export them so the game
@@ -53,6 +57,8 @@ while [[ $# -gt 0 ]]; do
         --game-port) GAME_PORT="$2"; shift 2 ;;
         --bot-samples) BOT_SAMPLES="$2"; shift 2 ;;
         --server-log) SERVER_LOG="$2"; shift 2 ;;
+        --turn-timeout) TURN_TIMEOUT="$2"; shift 2 ;;
+        --idle-timeout) IDLE_TIMEOUT="$2"; shift 2 ;;
         --no-pull) DO_PULL=0; shift ;;
         -h|--help)
             sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -85,6 +91,18 @@ if [[ ! -d "$VENV_DIR" ]]; then
 fi
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
+
+if ! python - "$TURN_TIMEOUT" "$IDLE_TIMEOUT" <<'PY'
+import sys
+
+from coinche.timeouts import validate_timeout_order
+
+validate_timeout_order(float(sys.argv[1]), float(sys.argv[2]))
+PY
+then
+    echo "Erreur : --turn-timeout doit être strictement inférieur à --idle-timeout." >&2
+    exit 2
+fi
 
 REQUIREMENTS_FILE="requirements.txt"
 STAMP_FILE="$VENV_DIR/.requirements.installed"
@@ -168,7 +186,7 @@ cleanup() {
 # HUP couvre la fermeture brutale du terminal, absente du trap précédent.
 trap cleanup EXIT INT TERM HUP
 
-SERVER_ARGS=(--host 0.0.0.0 --port "$GAME_PORT" --bot-samples "$BOT_SAMPLES")
+SERVER_ARGS=(--host 0.0.0.0 --port "$GAME_PORT" --bot-samples "$BOT_SAMPLES" --turn-timeout "$TURN_TIMEOUT")
 if [[ -n "$SERVER_LOG" ]]; then
     SERVER_ARGS+=(--log-file "$SERVER_LOG")
 fi
@@ -209,7 +227,7 @@ echo "Démarrage du méta-client (web) sur le port $META_PORT ..."
 python -m coinche.meta \
     --host 127.0.0.1 --port "$GAME_PORT" \
     --listen-host 0.0.0.0 --listen-port "$META_PORT" \
-    --auth-user "$AUTH_USER" --auth-pass "$AUTH_PASS" &
+    --auth-user "$AUTH_USER" --auth-pass "$AUTH_PASS" --idle-timeout "$IDLE_TIMEOUT" &
 META_PID=$!
 
 echo "Application lancée. Ctrl+C pour tout arrêter."

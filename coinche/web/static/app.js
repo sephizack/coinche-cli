@@ -18,7 +18,7 @@
 //   "play_card" — play_card is the game-wire type, not the browser action).
 // =========================================================================
 
-const { createApp, ref, reactive, computed, watch, nextTick, onMounted } = Vue;
+const { createApp, ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } = Vue;
 
 // ---- Card vocabulary (display + accessible names) -----------------------
 const SUIT_NAMES = { "♥": "Cœur", "♦": "Carreau", "♠": "Pique", "♣": "Trèfle" };
@@ -552,6 +552,9 @@ const App = {
     // false: the very first connect is covered by the lobby's own loading
     // spinner, so we only raise this on an actual drop (see scheduleReconnect).
     const reconnecting = ref(false);
+    const countdownNow = ref(Date.now() / 1000);
+    let countdownInterval = null;
+    let countdownWarnings = new Set();
     // Optional méta-client context: when this page is served by the multi-
     // session méta-client, `window.__META__` carries the per-session WebSocket
     // path and the name the player already chose on the landing page. In the
@@ -1139,6 +1142,15 @@ const App = {
       const who = (s.players || {})[s.whose_turn] || s.whose_turn;
       return "Au tour de " + who;
     });
+    const turnSeconds = computed(() => {
+      const deadline = snapshot.value && snapshot.value.turn_deadline;
+      if (!deadline) return null;
+      return Math.max(0, Math.ceil(deadline - countdownNow.value));
+    });
+    const turnCountdown = computed(() => {
+      if (turnSeconds.value == null) return "";
+      return `${Math.floor(turnSeconds.value / 60)}:${String(turnSeconds.value % 60).padStart(2, "0")}`;
+    });
 
     // Round recap detail (uses last_round_contract — verified present in U1's
     // snapshot_to_dict).
@@ -1436,6 +1448,35 @@ const App = {
       if (open) unread.value = 0;
     });
 
+    watch(
+      () => snapshot.value && snapshot.value.turn_deadline,
+      (deadline) => {
+        if (countdownInterval) {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+        }
+        countdownWarnings = new Set();
+        if (!deadline) return;
+        const tick = () => {
+          countdownNow.value = Date.now() / 1000;
+          const remaining = Math.max(0, Math.ceil(deadline - countdownNow.value));
+          for (const threshold of [60, 30]) {
+            const key = `${deadline}:${threshold}`;
+            if (remaining <= threshold && remaining > 0 && !countdownWarnings.has(key)) {
+              countdownWarnings.add(key);
+              showToast(`Il reste ${remaining} secondes pour jouer.`, "info", 4000);
+            }
+          }
+          if (remaining === 0 && countdownInterval) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+          }
+        };
+        tick();
+        countdownInterval = setInterval(tick, 1000);
+      },
+    );
+
     // Auto-play: when our turn arrives and a card was pre-selected, play it.
     watch(
       () => snapshot.value && snapshot.value.whose_turn,
@@ -1461,6 +1502,9 @@ const App = {
     );
 
     onMounted(connect);
+    onUnmounted(() => {
+      if (countdownInterval) clearInterval(countdownInterval);
+    });
 
     return {
       snapshot,
@@ -1507,6 +1551,8 @@ const App = {
       bidRequest,
       canFillBots,
       turnText,
+      turnSeconds,
+      turnCountdown,
       recapContract,
       roundScores,
       winnerLabel,
@@ -1839,6 +1885,8 @@ const App = {
           <footer class="status-footer" aria-live="polite">
             <span v-if="statusMessage" class="status-footer__last">{{ statusMessage }}</span>
             <span v-if="turnText && !isSpectator" class="status-footer__turn">{{ turnText }}</span>
+            <span v-if="turnSeconds != null && snapshot.whose_turn === snapshot.seat" class="turn-countdown"
+                  :class="{ 'turn-countdown--urgent': turnSeconds < 60 }">⏱ {{ turnCountdown }}</span>
             <button v-if="canFillBots && !isSpectator" class="fill-bots-btn" data-testid="fill-bots"
                     :disabled="fillingBots" @click="fillBots">
               {{ fillingBots ? 'Ajout des bots…' : 'Remplir avec des bots' }}

@@ -123,6 +123,10 @@ class ClientState:
     # DEAL/RESYNC so the prompt never lingers past our turn.
     pending_bid_request: dict | None = None
     pending_play_request: dict | None = None
+    turn_timeout_seconds: float | None = None
+    turn_deadline: float | None = None
+    turn_timeout_message: str | None = None
+    turn_timed_out: bool = False
     # `active_bid_value_prompt` is (trump, legal_actions) once the player has
     # picked a trump and stage 2 (typing the point value) is on screen; it takes
     # display/dispatch priority over the stage-1 grid while set.
@@ -391,6 +395,11 @@ def _connection_banner_text(name: str, status: str) -> str:
     return f"✓ {name} reconnecté"
 
 
+def _clear_turn_timeout(state: ClientState) -> None:
+    state.turn_timeout_seconds = None
+    state.turn_deadline = None
+
+
 def _reset_to_lobby(state: ClientState) -> None:
     """Clear every table/game-scoped field so both UIs return to the lobby.
 
@@ -433,6 +442,10 @@ def _reset_to_lobby(state: ClientState) -> None:
     state.can_fill_bots = fresh.can_fill_bots
     state.pending_bid_request = fresh.pending_bid_request
     state.pending_play_request = fresh.pending_play_request
+    state.turn_timeout_seconds = fresh.turn_timeout_seconds
+    state.turn_deadline = fresh.turn_deadline
+    state.turn_timeout_message = fresh.turn_timeout_message
+    state.turn_timed_out = fresh.turn_timed_out
     state.active_bid_value_prompt = fresh.active_bid_value_prompt
     state.bid_value_buffer = fresh.bid_value_buffer
     state.bid_value_error = fresh.bid_value_error
@@ -459,6 +472,17 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
     (BR-U1-3)."""
     action_requested = False
     state.last_error = None
+    if msg_type in {
+        protocol.BID_UPDATE,
+        protocol.BIDDING_RESULT,
+        protocol.CARD_PLAYED,
+        protocol.DEAL,
+        protocol.ROUND_SCORE,
+        protocol.GAME_OVER,
+        protocol.NEW_GAME,
+        protocol.RESYNC,
+    }:
+        _clear_turn_timeout(state)
 
     if msg_type == protocol.JOINED:
         state.joined_once = True
@@ -569,6 +593,10 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.pending_bid_request = payload
         _apply_current_highest_bid(state, payload["current_highest_bid"])
         state.whose_turn = state.seat
+        timeout = payload.get("turn_timeout_seconds")
+        if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0:
+            state.turn_timeout_seconds = float(timeout)
+            state.turn_deadline = time.time() + float(timeout)
         action_requested = True
 
     elif msg_type == protocol.BID_UPDATE:
@@ -636,6 +664,10 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             state.last_trick = state.pending_last_trick
             state.pending_last_trick = None
         state.whose_turn = state.seat
+        timeout = payload.get("turn_timeout_seconds")
+        if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0:
+            state.turn_timeout_seconds = float(timeout)
+            state.turn_deadline = time.time() + float(timeout)
         action_requested = True
 
     elif msg_type == protocol.CARD_PLAYED:
@@ -804,6 +836,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             if bot_name and seat in state.players:
                 state.players[seat] = bot_name
             state.bots[seat] = True
+            return ApplyResult(action_requested=action_requested)
         # Trigger a short-lived join effect (like belote/rebelote) for
         # statuses that represent a human arriving at the table: bot_replaced,
         # reconnected, or the new "joined" (pre-game empty seat fill).
@@ -813,6 +846,16 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         # IN1/BR-U1-7: build the plain notice here (no `rich`); the terminal
         # side may re-render it styled from `last_action` in its redraw path.
         state.last_action = _connection_banner_text(payload["name"], payload["status"])
+
+    elif msg_type == protocol.TURN_TIMEOUT:
+        state.pending_bid_request = None
+        state.pending_play_request = None
+        state.legal_cards = []
+        state.active_bid_value_prompt = None
+        _clear_turn_timeout(state)
+        state.turn_timeout_message = payload.get("message") or "Vous avez été remplacé par un bot."
+        state.turn_timed_out = True
+        state.last_action = state.turn_timeout_message
 
     elif msg_type == protocol.CHAT:
         # A spectator's chat carries `seat: None` and its own `name` (spectators
@@ -899,6 +942,9 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "last_error": state.last_error,
         "pending_bid_request": state.pending_bid_request,  # so the web can show the bid panel
         "pending_play_request": state.whose_turn == state.seat and bool(state.legal_cards),
+        "turn_timeout_seconds": state.turn_timeout_seconds,
+        "turn_deadline": state.turn_deadline,
+        "turn_timeout_message": state.turn_timeout_message,
         "chat_messages": [
             {
                 "name": name,
@@ -923,6 +969,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
             "game_over": state.game_over,
             "round_over_screen": state.round_over_screen,
             "joined_once": state.joined_once,
+            "turn_timed_out": state.turn_timed_out,
         },
         "server_version": state.server_version,
     }

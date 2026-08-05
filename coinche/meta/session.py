@@ -250,6 +250,11 @@ class MetaSession:
                 apply_message(self.state, msg_type, payload)
                 if msg_type == protocol.ERROR:
                     self.forget_join()
+                elif msg_type == protocol.TURN_TIMEOUT:
+                    # The server has authoritatively expelled this session;
+                    # never reconnect and reclaim the bot seat automatically.
+                    self.forget_join()
+                    self._stop.set()
                 await self.bridge.broadcast_state(self.state)
         except (ConnectionError, OSError):
             pass

@@ -786,6 +786,22 @@ button {
   color: var(--gold-soft);
   font-weight: 700;
 }
+.turn-countdown {
+  color: var(--gold-soft);
+  font-family: system-ui, sans-serif;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.turn-countdown--urgent {
+  color: var(--danger);
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+@keyframes countdown-pulse {
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-countdown--urgent { animation: none; }
+}
 .fill-bots-btn {
   border: 1px solid var(--gold);
   border-radius: var(--radius-card);

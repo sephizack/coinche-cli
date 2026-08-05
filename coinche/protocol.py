@@ -47,6 +47,7 @@ RESYNC = "resync"
 CONNECTION_STATUS = "connection_status"
 TABLE_LISTING = "table_listing"
 LEFT = "left"
+TURN_TIMEOUT = "turn_timeout"
 ERROR = "error"
 
 SERVER_MESSAGE_TYPES = {
@@ -68,6 +69,7 @@ SERVER_MESSAGE_TYPES = {
     CONNECTION_STATUS,
     TABLE_LISTING,
     LEFT,
+    TURN_TIMEOUT,
     ERROR,
     CHAT,  # chat is also broadcast server -> client
 }
