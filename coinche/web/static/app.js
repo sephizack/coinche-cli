@@ -1411,6 +1411,7 @@ const App = {
     // so a slow WS connection doesn't flash "aucune table" before the tables pop
     // in. `snapshot` is null before the first {type:"state"} frame.
     const lobbyLoaded = computed(() => snapshot.value !== null);
+    const suppressDiscordNotification = ref(false);
 
     // Random venue key not already present, for the create card.
     const nextTableKey = computed(() => {
@@ -1427,7 +1428,7 @@ const App = {
       return key;
     });
 
-    function joinSpecificTable(tableKey, teamLabelText, seat) {
+    function joinSpecificTable(tableKey, teamLabelText, seat, suppressDiscordNotification = false) {
       const name = lobby.name.trim();
       if (!name) {
         showToast("Entrez votre nom d'abord", "error");
@@ -1439,6 +1440,7 @@ const App = {
       // When a specific empty chair is clicked, ask the server for that exact
       // seat (the server stays authoritative and falls back if it's taken).
       if (seat) payload.seat = seat;
+      if (suppressDiscordNotification) payload.suppress_discord_notification = true;
       sendAction("join", payload);
     }
 
@@ -1456,7 +1458,7 @@ const App = {
     }
 
     function createTable() {
-      joinSpecificTable(nextTableKey.value, lobbyTeams.value.nsLabel);
+      joinSpecificTable(nextTableKey.value, lobbyTeams.value.nsLabel, null, suppressDiscordNotification.value);
     }
 
     watch(chatOpen, (open) => {
@@ -1577,6 +1579,7 @@ const App = {
       lobbyTeams,
       lobbyTables,
       lobbyLoaded,
+      suppressDiscordNotification,
       nextTableKey,
       joinSpecificTable,
       showToast,
@@ -1664,11 +1667,17 @@ const App = {
 
         <div v-else class="lobby__grid">
           <!-- Create-a-table card -->
-          <button class="minitable minitable--create" data-testid="lobby-create" @click="createTable()">
-            <div class="minitable--create__plus">＋</div>
-            <div class="minitable--create__label">Nouvelle table</div>
-            <div class="minitable--create__hint">{{ nextTableKey }}</div>
-          </button>
+          <div class="minitable minitable--create">
+            <button class="minitable__create-button" type="button" data-testid="lobby-create" @click="createTable()">
+              <div class="minitable--create__plus">＋</div>
+              <div class="minitable--create__label">Nouvelle table</div>
+              <div class="minitable--create__hint">{{ nextTableKey }}</div>
+            </button>
+            <label class="minitable__discord-option">
+              <input type="checkbox" v-model="suppressDiscordNotification" data-testid="suppress-discord-notification" />
+              Ne pas notifier Discord
+            </label>
+          </div>
 
           <!-- One mini-table per live table -->
           <div v-for="t in lobbyTables" :key="t.key" class="minitable"

@@ -94,6 +94,10 @@ def parse_browser_message(raw: str | bytes) -> dict:
         joined = ", ".join(repr(field) for field in missing)
         raise WebProtocolError(f"Champ(s) requis manquant(s) pour l'action {action!r} : {joined}.")
 
+    if action == "join" and "suppress_discord_notification" in decoded:
+        if not isinstance(decoded["suppress_discord_notification"], bool):
+            raise WebProtocolError("suppress_discord_notification doit être un booléen.")
+
     return decoded
 
 

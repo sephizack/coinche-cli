@@ -90,6 +90,20 @@ def test_parse_rejects_incomplete_action_frames(frame: dict) -> None:
         parse_browser_message(json.dumps(frame))
 
 
+def test_parse_rejects_non_boolean_discord_notification_preference() -> None:
+    with pytest.raises(WebProtocolError):
+        parse_browser_message(
+            json.dumps(
+                {
+                    "action": "join",
+                    "table_key": "t1",
+                    "player_name": "Zoe",
+                    "suppress_discord_notification": "yes",
+                }
+            )
+        )
+
+
 @pytest.mark.parametrize(
     "frame",
     [
@@ -139,8 +153,16 @@ class FakeLink:
         self.calls.append(("chat", text))
         return True
 
-    async def send_join(self, table_key, player_name, team_name, seat=None, spectate=False) -> bool:
-        self.calls.append(("join", table_key, player_name, team_name, seat, spectate))
+    async def send_join(
+        self,
+        table_key,
+        player_name,
+        team_name,
+        seat=None,
+        spectate=False,
+        suppress_discord_notification=False,
+    ) -> bool:
+        self.calls.append(("join", table_key, player_name, team_name, seat, spectate, suppress_discord_notification))
         return True
 
     async def send_rematch(self) -> bool:
@@ -279,7 +301,16 @@ def test_round_trip_initial_frame_and_seam() -> None:
 
             await client.send(json.dumps({"action": "bid", "bid_action": "bid", "trump": "♠", "points": 90}))
             await client.send(json.dumps({"action": "chat", "text": "salut"}))
-            await client.send(json.dumps({"action": "join", "table_key": "t1", "player_name": "Zoe"}))
+            await client.send(
+                json.dumps(
+                    {
+                        "action": "join",
+                        "table_key": "t1",
+                        "player_name": "Zoe",
+                        "suppress_discord_notification": True,
+                    }
+                )
+            )
             await client.send(json.dumps({"action": "rematch"}))
             await client.send(json.dumps({"action": "lobby"}))
             await client.send(json.dumps({"action": "fill_bots"}))
@@ -289,7 +320,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
                 await asyncio.sleep(0.01)
             assert ("bid", "bid", "♠", 90) in link.calls
             assert ("chat", "salut") in link.calls
-            assert ("join", "t1", "Zoe", None, None, False) in link.calls
+            assert ("join", "t1", "Zoe", None, None, False, True) in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
             assert ("fill_bots",) in link.calls

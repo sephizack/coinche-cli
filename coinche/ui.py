@@ -951,6 +951,8 @@ def render_team_picker(
     table_entry: dict,
     team_cursor: int,
     error: str = "",
+    is_new_table: bool = False,
+    suppress_discord_notification: bool = False,
 ) -> RenderableType:
     """Team selection panel (step 2) for a chosen table.
 
@@ -1000,6 +1002,9 @@ def render_team_picker(
             line.append(" 🔒 complète", style="dim red")
         rows.append(line)
 
+    if is_new_table:
+        notification = "désactivée" if suppress_discord_notification else "activée"
+        rows.append(Text(f"Notification Discord : {notification}  (D pour changer)", style="dim grey50"))
     if error:
         rows.append(Text(f"⚠ {error}", style="bold red"))
     rows.append(Text(""))

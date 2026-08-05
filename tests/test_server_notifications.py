@@ -81,7 +81,7 @@ def test_discord_table_notification_posts_expected_embed(monkeypatch) -> None:
     ]
 
 
-def test_discord_notification_is_scheduled_only_when_table_is_created(monkeypatch) -> None:
+def test_discord_notification_is_scheduled_only_for_notified_new_tables(monkeypatch) -> None:
     class Writer:
         def write(self, data: bytes) -> None:
             pass
@@ -99,13 +99,26 @@ def test_discord_notification_is_scheduled_only_when_table_is_created(monkeypatc
         monkeypatch.setattr(server, "DISCORD_NOTIF_CHANNEL_POST_URL", "https://discord.example")
         server.TABLES.clear()
         try:
-            for table_key, player_name in (("CosmoCanyon", "Alice"), ("cosmocanyon", "Bob")):
+            for table_key, player_name, suppress_notification in (
+                ("Noctis", "Alice", True),
+                ("CosmoCanyon", "Bob", False),
+                ("cosmocanyon", "Charlie", False),
+            ):
                 reader = asyncio.StreamReader()
-                reader.feed_data(protocol.encode(protocol.JOIN, {"table_key": table_key, "player_name": player_name}))
+                reader.feed_data(
+                    protocol.encode(
+                        protocol.JOIN,
+                        {
+                            "table_key": table_key,
+                            "player_name": player_name,
+                            "suppress_discord_notification": suppress_notification,
+                        },
+                    )
+                )
                 joined = await server._resolve_join_inner(reader, Writer(), 1000, 0, 0, 0)
                 assert joined is not None
                 await asyncio.sleep(0)
-            assert notifications == [("https://discord.example", "CosmoCanyon", "Alice", Seat.N)]
+            assert notifications == [("https://discord.example", "CosmoCanyon", "Bob", Seat.N)]
         finally:
             server.TABLES.clear()
 

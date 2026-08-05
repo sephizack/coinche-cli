@@ -1136,6 +1136,7 @@ async def _resolve_join_inner(
     player_name = str(payload["player_name"]).strip()
     team_name = str(payload["team_name"]).strip() if payload.get("team_name") else None
     spectate = bool(payload.get("spectate"))
+    suppress_discord_notification = payload.get("suppress_discord_notification", False)
 
     preferred_seat: Seat | None = None
     if payload.get("seat"):
@@ -1276,7 +1277,7 @@ async def _resolve_join_inner(
             await _send_error(writer, protocol.TABLE_FULL, "Table is full")
             return None
 
-        if table_was_created and DISCORD_NOTIF_CHANNEL_POST_URL:
+        if table_was_created and DISCORD_NOTIF_CHANNEL_POST_URL and not suppress_discord_notification:
             asyncio.create_task(
                 _notify_discord_table_created(DISCORD_NOTIF_CHANNEL_POST_URL, table_key, player_name, seat)
             )

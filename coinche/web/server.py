@@ -372,6 +372,7 @@ class WebOverlayServer:
                 msg.get("team_name"),
                 msg.get("seat"),
                 spectate=bool(msg.get("spectate")),
+                suppress_discord_notification=bool(msg.get("suppress_discord_notification")),
             )
         elif action == "continue" and self.on_round_continue is not None:
             await self.on_round_continue()

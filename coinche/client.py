@@ -94,12 +94,15 @@ class ClientLink:
         team_name: str | None,
         seat: str | None = None,
         spectate: bool = False,
+        suppress_discord_notification: bool = False,
     ) -> bool:
         payload = {"table_key": table_key, "player_name": player_name, "team_name": team_name}
         if seat is not None:
             payload["seat"] = seat
         if spectate:
             payload["spectate"] = True
+        if suppress_discord_notification:
+            payload["suppress_discord_notification"] = True
         return await self._send(protocol.JOIN, payload)
 
     async def send_rematch(self) -> bool:
@@ -124,6 +127,7 @@ async def run_session(
     connection: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None,
     web_port: int = 0,
     seat: str | None = None,
+    suppress_discord_notification: bool = False,
 ) -> str:
     """Run one connection attempt end-to-end.
 
@@ -156,7 +160,13 @@ async def run_session(
             return "not_joined"
 
     link = ClientLink(writer)
-    if not await link.send_join(table_key, player_name, team_name, seat=seat):
+    if not await link.send_join(
+        table_key,
+        player_name,
+        team_name,
+        seat=seat,
+        suppress_discord_notification=suppress_discord_notification,
+    ):
         return "not_joined"
 
     # Web overlay bridge (U2): mirrors this session's state to any attached
@@ -739,7 +749,8 @@ async def _lobby_picker(
     host: str,
     port: int,
     player_name: str = "",
-) -> tuple[str, str | None, str | None, asyncio.StreamReader, asyncio.StreamWriter] | None:
+    suppress_discord_notification: bool = False,
+) -> tuple[str, str | None, str | None, bool, asyncio.StreamReader, asyncio.StreamWriter] | None:
     """Live-updating interactive lobby picker.
 
     Step 1 — table selection: browse tables, Enter to pick one.
@@ -747,10 +758,10 @@ async def _lobby_picker(
     Step 2b — bot selection (table already running, has bots): pick which bot to
     replace, Enter to take over its seat.
 
-    Returns ``(table_key, team_name, seat, reader, writer)`` on success (``seat``
-    is a specific N/E/S/W chair when replacing a bot, else ``None``), or ``None``
-    on cancel / connection error.  The reader/writer are kept open so the caller
-    can reuse them for JOIN via ``run_session``.
+    Returns ``(table_key, team_name, seat, suppress_discord_notification, reader,
+    writer)`` on success (``seat`` is a specific N/E/S/W chair when replacing a
+    bot, else ``None``), or ``None`` on cancel / connection error. The reader/writer
+    are kept open so the caller can reuse them for JOIN via ``run_session``.
     """
     try:
         reader, writer = await asyncio.open_connection(host, port)
@@ -809,7 +820,15 @@ async def _lobby_picker(
         if step == "table":
             live.update(ui.render_lobby(latest_tables, table_cursor, error=lobby_error, player_name=player_name))
         elif step == "team" and selected_table is not None:
-            live.update(ui.render_team_picker(selected_table, team_cursor, error=lobby_error))
+            live.update(
+                ui.render_team_picker(
+                    selected_table,
+                    team_cursor,
+                    error=lobby_error,
+                    is_new_table=new_table_mode,
+                    suppress_discord_notification=suppress_discord_notification,
+                )
+            )
         elif step == "bot" and selected_table is not None:
             live.update(
                 ui.render_bot_picker(
@@ -944,7 +963,7 @@ async def _lobby_picker(
                             # directly. The server's RESYNC path restores our seat, so
                             # we skip team selection and reuse the disconnected seat's
                             # team label.
-                            return selected["table_key"], reconnect.get("team_name"), None, reader, writer
+                            return selected["table_key"], reconnect.get("team_name"), None, False, reader, writer
                         if _replaceable_bot_seats(selected):
                             # Running table with bots: pick which bot to take over.
                             step = "bot"
@@ -969,6 +988,8 @@ async def _lobby_picker(
                     team_cursor = 0
                 elif key == "2":
                     team_cursor = 1
+                elif key == "d" and new_table_mode:
+                    suppress_discord_notification = not suppress_discord_notification
                 elif key in ("\r", "\n"):
                     team_label = "Equipe 1" if team_cursor == 0 else "Equipe 2"
                     equipes: dict[str, list[str]] = {"Equipe 1": [], "Equipe 2": []}
@@ -979,7 +1000,14 @@ async def _lobby_picker(
                     if len(equipes[team_label]) >= 2:
                         lobby_error = f"{team_label} est complète."
                     else:
-                        return selected_table["table_key"], team_label, None, reader, writer
+                        return (
+                            selected_table["table_key"],
+                            team_label,
+                            None,
+                            suppress_discord_notification if new_table_mode else False,
+                            reader,
+                            writer,
+                        )
 
             elif current_step == "bot" and selected_table is not None:
                 bots = _replaceable_bot_seats(selected_table)
@@ -999,6 +1027,7 @@ async def _lobby_picker(
                         selected_table["table_key"],
                         chosen.get("team_name"),
                         chosen["seat"],
+                        False,
                         reader,
                         writer,
                     )
@@ -1040,6 +1069,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=0,
         help="Port for the web overlay (0 = auto). The reachable URL(s) are printed on start.",
     )
+    parser.add_argument(
+        "--sans-notification-discord",
+        action="store_true",
+        help="Do not notify Discord when this connection creates a new table.",
+    )
     return parser
 
 
@@ -1053,16 +1087,25 @@ async def main(argv: list[str] | None = None) -> None:
         table_key = args.table
         team_name = args.team.strip() if args.team else None
         seat = args.seat.strip().upper() if args.seat else None
+        suppress_discord_notification = args.sans_notification_discord
         connection: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None = None
     else:
-        result = await _lobby_picker(host, port, player_name)
+        result = await _lobby_picker(host, port, player_name, args.sans_notification_discord)
         if result is None:
             return
-        table_key, team_name, seat, conn_reader, conn_writer = result
+        table_key, team_name, seat, suppress_discord_notification, conn_reader, conn_writer = result
         connection = (conn_reader, conn_writer)
 
     result = await run_session(
-        host, port, table_key, player_name, team_name, connection=connection, web_port=args.web_port, seat=seat
+        host,
+        port,
+        table_key,
+        player_name,
+        team_name,
+        connection=connection,
+        web_port=args.web_port,
+        seat=seat,
+        suppress_discord_notification=suppress_discord_notification,
     )
     if result == "not_joined":
         return
@@ -1076,7 +1119,15 @@ async def main(argv: list[str] | None = None) -> None:
     for delay in BACKOFF_DELAYS:
         print(f"Connexion perdue. Nouvelle tentative dans {delay}s...")
         await asyncio.sleep(delay)
-        result = await run_session(host, port, table_key, player_name, team_name, web_port=args.web_port)
+        result = await run_session(
+            host,
+            port,
+            table_key,
+            player_name,
+            team_name,
+            web_port=args.web_port,
+            suppress_discord_notification=suppress_discord_notification,
+        )
         if result == "game_over":
             print("Partie terminée. Au revoir !")
             return
