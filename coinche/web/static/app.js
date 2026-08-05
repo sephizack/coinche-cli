@@ -771,6 +771,14 @@ const App = {
 
     function tryPendingJoin(snap) {
       if (!snap || !snap.flags) return;
+      if (snap.flags.turn_timed_out) {
+        // The session was expelled from its seat. A deep-link URL may still
+        // name that table after a page refresh, but it must not silently take
+        // over the bot that replaced this player.
+        clearPendingJoin();
+        pendingJoinSent = true;
+        return;
+      }
       if (snap.flags.joined_once) {
         clearPendingJoin();
         return;
@@ -930,6 +938,13 @@ const App = {
         snap.last_error !== (prev && prev.last_error)
       ) {
         showToast(snap.last_error, "error");
+      }
+
+      if (
+        snap.turn_timeout_message &&
+        snap.turn_timeout_message !== (prev && prev.turn_timeout_message)
+      ) {
+        showToast(snap.turn_timeout_message, "error", 8000);
       }
 
       // Back in the lobby (the server sent LEFT and cleared joined_once): a

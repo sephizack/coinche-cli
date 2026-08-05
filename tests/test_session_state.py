@@ -354,7 +354,16 @@ def test_turn_deadline_is_local_and_timeout_blocks_actions(monkeypatch):
     assert state.turn_deadline is None
     assert state.pending_bid_request is None
     assert state.turn_timeout_message == "Remplacé par un bot."
+    assert state.joined_once is False
+    assert state.seat is None
+    assert state.table_key is None
+    assert state.status_message == "Remplacé par un bot."
     assert snapshot_to_dict(state)["turn_timeout_message"] == "Remplacé par un bot."
+
+    _join(state)
+    assert state.turn_timed_out is False
+    assert state.turn_timeout_message is None
+    assert state.last_action == ""
 
 
 def test_card_played_removes_own_card_and_updates_trick():

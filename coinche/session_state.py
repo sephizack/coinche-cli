@@ -484,6 +484,11 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
     }:
         _clear_turn_timeout(state)
 
+    if msg_type in {protocol.JOINED, protocol.SPECTATING}:
+        state.turn_timed_out = False
+        state.turn_timeout_message = None
+        state.last_action = ""
+
     if msg_type == protocol.JOINED:
         state.joined_once = True
         state.table_key = payload["table_key"]
@@ -848,14 +853,17 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.last_action = _connection_banner_text(payload["name"], payload["status"])
 
     elif msg_type == protocol.TURN_TIMEOUT:
+        timeout_message = payload.get("message") or "Vous avez été remplacé par un bot."
+        _reset_to_lobby(state)
         state.pending_bid_request = None
         state.pending_play_request = None
         state.legal_cards = []
         state.active_bid_value_prompt = None
         _clear_turn_timeout(state)
-        state.turn_timeout_message = payload.get("message") or "Vous avez été remplacé par un bot."
+        state.turn_timeout_message = timeout_message
         state.turn_timed_out = True
-        state.last_action = state.turn_timeout_message
+        state.status_message = timeout_message
+        state.last_action = timeout_message
 
     elif msg_type == protocol.CHAT:
         # A spectator's chat carries `seat: None` and its own `name` (spectators

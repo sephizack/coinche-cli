@@ -407,6 +407,70 @@ def test_ws_routes_to_session_and_relays_actions() -> None:
     asyncio.run(scenario())
 
 
+def test_turn_timeout_returns_browser_to_lobby_and_resubscribes() -> None:
+    """An expelled player sees the lobby and its session does not reclaim the bot seat."""
+
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            _, headers, _ = await http_get(port, "/new?name=Bob")
+            session_id = headers["location"][len("/s/") :]
+            session = server.sessions[session_id]
+            ws = await WSClient.connect(port, f"/s/{session_id}/ws")
+            await asyncio.wait_for(ws.recv(), timeout=5)  # initial lobby state
+
+            await ws.send(json.dumps({"action": "join", "table_key": "table1", "player_name": "Bob"}))
+            for _ in range(200):
+                if any(msg_type == protocol.JOIN for msg_type, _payload in game.received):
+                    break
+                await asyncio.sleep(0.01)
+
+            await game.send_to_all(
+                protocol.JOINED,
+                {
+                    "table_key": "table1",
+                    "seat": "S",
+                    "players": [{"seat": "S", "name": "Bob"}],
+                    "server_version": "9.9.9",
+                },
+            )
+            await asyncio.wait_for(ws.recv(), timeout=5)  # joined table state
+
+            timeout_message = "Vous n'avez pas joué à temps : un bot reprend votre place."
+            await game.send_to_all(protocol.TURN_TIMEOUT, {"message": timeout_message})
+            for writer in list(game.writers):
+                writer.close()
+
+            saw_lobby = False
+            for _ in range(10):
+                frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+                snapshot = frame.get("snapshot", {})
+                if (
+                    frame["type"] == "state"
+                    and not snapshot["flags"]["joined_once"]
+                    and snapshot["turn_timeout_message"] == timeout_message
+                ):
+                    saw_lobby = True
+                    break
+            assert saw_lobby, "timeout state did not return the browser to the lobby"
+            assert session._join_args is None
+
+            for _ in range(200):
+                subscriptions = [msg for msg in game.received if msg == (protocol.SUBSCRIBE_LOBBY, {})]
+                if len(subscriptions) >= 2:
+                    break
+                await asyncio.sleep(0.01)
+            assert len(subscriptions) >= 2, "timed-out session did not reconnect to the lobby"
+            await ws.close()
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
 def test_leave_forgets_remembered_join() -> None:
     """A browser 'leave' clears the session's remembered JOIN so a later TCP
     reconnect returns to the lobby instead of re-seating at the abandoned
@@ -558,6 +622,8 @@ def test_landing_page_stores_deep_link_before_resuming_session() -> None:
             script = body.decode("utf-8")
             assert "function tryPendingJoin(snap)" in script
             assert "tryPendingJoin(snap);" in script
+            assert "if (snap.flags.turn_timed_out)" in script
+            assert "clearPendingJoin();" in script
         finally:
             await _stop(server, task)
             await game.stop()
