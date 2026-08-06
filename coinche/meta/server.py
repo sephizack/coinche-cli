@@ -24,6 +24,7 @@ import base64
 import contextlib
 import hashlib
 import hmac
+import html
 import json
 import logging
 import mimetypes
@@ -51,6 +52,12 @@ logger = logging.getLogger(__name__)
 _MAX_NAME_LEN = 24
 _REALM = "Coinche"
 _TABLE_KEY_PATTERN = re.compile(rf"^[A-Za-z0-9]{{{protocol.TABLE_KEY_MIN_LENGTH},{protocol.TABLE_KEY_MAX_LENGTH}}}$")
+_PAIR_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+_PAIR_CODE_GROUP_SIZE = 4
+_PAIR_CODE_LENGTH = 10
+_PAIR_CODE_TTL_SECONDS = 10 * 60
+_BROWSER_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+_ACCESS_COOKIE_NAME = "coinche_access"
 
 # Idle-session reaper defaults. A session with no browser attached and no
 # activity for `IDLE_TIMEOUT_SECONDS` is kicked: it LEAVEs its table (freeing
@@ -88,6 +95,8 @@ class MetaClientServer:
         self.idle_timeout = idle_timeout
         self.reap_interval = reap_interval
         self.sessions: dict[str, MetaSession] = {}
+        self.pairing_codes: dict[str, float] = {}
+        self.browser_sessions: dict[str, float] = {}
         self._bound: tuple[str, int] | None = None
         self.urls: list[str] = []
 
@@ -169,6 +178,14 @@ class MetaClientServer:
 
         method, path, _ = request_line
         try:
+            route = urlsplit(path).path
+            pairing_code = self._pairing_code_from_path(path)
+            if method == "GET" and (pairing_code is not None or route == "/a"):
+                if pairing_code is None:
+                    await self._serve_pairing_entry(writer)
+                else:
+                    await self._redeem_pairing_code(pairing_code, writer)
+                return
             if not self._authorized(headers):
                 await self._write_unauthorized(writer)
                 _safe_close(writer)
@@ -217,6 +234,10 @@ class MetaClientServer:
             else:
                 await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", landing_page)
             _safe_close(writer)
+            return
+
+        if route == "/pair":
+            await self._create_pairing_page(writer)
             return
 
         if route == "/new":
@@ -299,6 +320,69 @@ class MetaClientServer:
         await WebOverlayServer._write_http(writer, 200, "application/json; charset=utf-8", body.encode("utf-8"))
         _safe_close(writer)
 
+    async def _create_pairing_page(self, writer: asyncio.StreamWriter) -> None:
+        """Mint a one-use, short-lived link for another trusted LAN device."""
+        self._purge_expired_access()
+        code = "".join(secrets.choice(_PAIR_CODE_ALPHABET) for _ in range(_PAIR_CODE_LENGTH))
+        self.pairing_codes[code] = time.monotonic() + _PAIR_CODE_TTL_SECONDS
+        display_code = "-".join(
+            code[index : index + _PAIR_CODE_GROUP_SIZE] for index in range(0, len(code), _PAIR_CODE_GROUP_SIZE)
+        )
+        access_url = f"{self._pairing_base_url()}/a/{display_code}"
+        body = f"""<!doctype html>
+<html lang=\"fr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+<title>Accès voiture</title><link rel=\"stylesheet\" href=\"/styles.css\"></head>
+<body><main class=\"lobby\"><section class=\"lobby__card\">
+<h1 class=\"lobby__title\">Accès voiture</h1>
+<p>Ouvrez ce lien sur la voiture dans les 10 minutes.</p>
+<p><strong>{html.escape(access_url)}</strong></p>
+<p>Ou ajoutez <strong>{html.escape(self._pairing_base_url())}/a</strong> aux favoris de la voiture,</p>
+<p>puis saisissez ce code : <strong>{display_code}</strong></p>
+<p>La voiture restera connectée pendant 30 jours, sauf redémarrage du serveur. Ce lien ne fonctionne qu'une fois.</p>
+<p><a class=\"rematch-btn\" href=\"/\">Retour</a></p>
+</section></main></body></html>"""
+        await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body.encode("utf-8"))
+        _safe_close(writer)
+
+    async def _serve_pairing_entry(self, writer: asyncio.StreamWriter) -> None:
+        """Serve the public page where a second device enters a pairing code."""
+        body = b"""<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acces voiture</title><link rel="stylesheet" href="/styles.css"></head>
+<body><main class="lobby"><section class="lobby__card">
+<h1 class="lobby__title">Acces voiture</h1>
+<p>Saisissez le code affiche sur le telephone.</p>
+<form class="lobby__field"
+    onsubmit="event.preventDefault();location.href='/a/'+this.code.value.replace(/[^A-Za-z0-9]/g,'').toUpperCase()">
+<label for="code">Code</label>
+<input id="code" name="code" type="text" maxlength="12" required
+     autocomplete="one-time-code" autocapitalize="characters" placeholder="ABCD-EFGH-JK">
+<button class="rematch-btn" style="width:100%;margin-top:1rem" type="submit">Ouvrir</button>
+</form></section></main></body></html>"""
+        await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body)
+        _safe_close(writer)
+
+    async def _redeem_pairing_code(self, code: str, writer: asyncio.StreamWriter) -> None:
+        """Exchange a valid pairing link for a persistent browser-only cookie."""
+        self._purge_expired_access()
+        expires_at = self.pairing_codes.pop(code, None)
+        if expires_at is None or expires_at <= time.monotonic():
+            await WebOverlayServer._write_http(
+                writer, 404, "text/plain; charset=utf-8", b"Lien d'acces invalide ou expire."
+            )
+            _safe_close(writer)
+            return
+        session_token = secrets.token_urlsafe(32)
+        self.browser_sessions[session_token] = time.monotonic() + _BROWSER_SESSION_TTL_SECONDS
+        await self._redirect(
+            writer,
+            "/",
+            set_cookie=(
+                f"{_ACCESS_COOKIE_NAME}={session_token}; Path=/; HttpOnly; SameSite=Strict; "
+                f"Max-Age={_BROWSER_SESSION_TTL_SECONDS}"
+            ),
+        )
+
     async def _serve_game_page(
         self,
         session: MetaSession,
@@ -378,6 +462,10 @@ class MetaClientServer:
 
     # ---------------------------------------------------------------- helpers
     def _authorized(self, headers: dict[str, str]) -> bool:
+        self._purge_expired_access()
+        cookie = self._cookie_value(headers.get("cookie", ""), _ACCESS_COOKIE_NAME)
+        if cookie is not None and cookie in self.browser_sessions:
+            return True
         header = headers.get("authorization", "")
         if not header.lower().startswith("basic "):
             return False
@@ -388,6 +476,35 @@ class MetaClientServer:
         user, _, password = decoded.partition(":")
         # Constant-time comparison to avoid leaking length/prefix via timing.
         return hmac.compare_digest(user, self.auth_user) and hmac.compare_digest(password, self.auth_pass)
+
+    @staticmethod
+    def _pairing_code_from_path(path: str) -> str | None:
+        route = urlsplit(path).path
+        if not route.startswith("/a/"):
+            return None
+        code = route[len("/a/") :]
+        normalized = code.replace("-", "").upper()
+        if len(normalized) != _PAIR_CODE_LENGTH or any(char not in _PAIR_CODE_ALPHABET for char in normalized):
+            return None
+        return normalized
+
+    def _pairing_base_url(self) -> str:
+        return next((url for url in self.urls if not url.startswith("http://127.0.0.1:")), self.urls[0])
+
+    def _purge_expired_access(self) -> None:
+        now = time.monotonic()
+        self.pairing_codes = {code: expires_at for code, expires_at in self.pairing_codes.items() if expires_at > now}
+        self.browser_sessions = {
+            token: expires_at for token, expires_at in self.browser_sessions.items() if expires_at > now
+        }
+
+    @staticmethod
+    def _cookie_value(cookie_header: str, name: str) -> str | None:
+        for part in cookie_header.split(";"):
+            key, separator, value = part.strip().partition("=")
+            if separator and hmac.compare_digest(key, name):
+                return value
+        return None
 
     async def _write_unauthorized(self, writer: asyncio.StreamWriter) -> None:
         body = b"Authentification requise."
@@ -402,8 +519,12 @@ class MetaClientServer:
         await writer.drain()
 
     @staticmethod
-    async def _redirect(writer: asyncio.StreamWriter, location: str) -> None:
-        head = f"HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    async def _redirect(writer: asyncio.StreamWriter, location: str, set_cookie: str | None = None) -> None:
+        cookie_header = f"Set-Cookie: {set_cookie}\r\n" if set_cookie is not None else ""
+        head = (
+            f"HTTP/1.1 302 Found\r\nLocation: {location}\r\n{cookie_header}"
+            "Content-Length: 0\r\nConnection: close\r\n\r\n"
+        )
         writer.write(head.encode("latin-1"))
         await writer.drain()
         # We announced `Connection: close`; actually close so a client reading to

@@ -181,6 +181,19 @@ Flow for a player:
    redirects to `/s/<random-id>` (an unguessable per-session URL).
 3. Play from the same web UI as the overlay (lobby → join a table/team → game).
 
+**Accès voiture sans ressaisir le Basic Auth.** Depuis un téléphone déjà
+authentifié, ouvrez la page d'accueil puis cliquez sur « Ouvrir sur un autre
+appareil ». Elle produit un lien court, à ouvrir sur la voiture dans les
+10 minutes. Le lien est à usage unique et crée sur la voiture un cookie
+`HttpOnly` valable 30 jours ; les visites suivantes ne demandent plus le mot
+de passe. Le mot de passe Basic Auth reste nécessaire pour créer de nouveaux
+liens. Pour ne taper que le code court, enregistrez une fois
+`http://<meta-host>:8080/a` dans les favoris de la voiture : cette page publique
+demande le code affiché sur le téléphone. Ce mécanisme est prévu pour un réseau
+local de confiance : sans HTTPS, ne partagez pas le lien ni le réseau avec des
+personnes non fiables. L'accès appairé est conservé en mémoire : un redémarrage
+du méta-client le révoque et demande un nouvel appairage.
+
 Each session runs as an independent set of asyncio tasks on the one event loop
 (no per-session thread), reconnecting to the game server on its own with
 backoff if the connection drops. The terminal client (`coinche.client`) and the

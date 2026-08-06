@@ -13,6 +13,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import struct
 
 from coinche import protocol
@@ -84,13 +85,17 @@ class FakeGameServer:
 # --------------------------------------------------------------------------- #
 
 
-async def http_get(port: int, path: str, auth: str | None = AUTH) -> tuple[int, dict[str, str], bytes]:
+async def http_get(
+    port: int, path: str, auth: str | None = AUTH, cookie: str | None = None
+) -> tuple[int, dict[str, str], bytes]:
     """Perform a single HTTP/1.1 GET (Connection: close) and return status,
     headers, body."""
     reader, writer = await asyncio.open_connection(HOST, port)
     lines = [f"GET {path} HTTP/1.1", f"Host: {HOST}:{port}", "Connection: close"]
     if auth is not None:
         lines.append(f"Authorization: Basic {auth}")
+    if cookie is not None:
+        lines.append(f"Cookie: {cookie}")
     writer.write(("\r\n".join(lines) + "\r\n\r\n").encode("latin-1"))
     await writer.drain()
     raw = await reader.read()
@@ -223,6 +228,40 @@ def test_requires_basic_auth() -> None:
             status, _, body = await http_get(port, "/", auth=AUTH)
             assert status == 200
             assert b"Votre nom" in body
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
+def test_pairing_link_authenticates_a_second_browser_without_basic_auth() -> None:
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            status, _, body = await http_get(port, "/a", auth=None)
+            assert status == 200
+            assert b"Saisissez le code" in body
+
+            status, _, body = await http_get(port, "/pair")
+            assert status == 200
+            match = re.search(rb"/a/([A-Z2-9-]+)", body)
+            assert match is not None
+            pairing_path = "/a/" + match.group(1).decode("ascii")
+
+            status, headers, _ = await http_get(port, pairing_path, auth=None)
+            assert status == 302
+            assert headers["location"] == "/"
+            cookie = headers["set-cookie"].split(";", 1)[0]
+
+            status, _, body = await http_get(port, "/", auth=None, cookie=cookie)
+            assert status == 200
+            assert b"Votre nom" in body
+
+            status, _, _ = await http_get(port, pairing_path, auth=None)
+            assert status == 404
         finally:
             await _stop(server, task)
             await game.stop()
