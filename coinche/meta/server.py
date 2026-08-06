@@ -53,8 +53,7 @@ _MAX_NAME_LEN = 24
 _REALM = "Coinche"
 _TABLE_KEY_PATTERN = re.compile(rf"^[A-Za-z0-9]{{{protocol.TABLE_KEY_MIN_LENGTH},{protocol.TABLE_KEY_MAX_LENGTH}}}$")
 _PAIR_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-_PAIR_CODE_GROUP_SIZE = 4
-_PAIR_CODE_LENGTH = 10
+_PAIR_CODE_LENGTH = 6
 _PAIR_CODE_TTL_SECONDS = 10 * 60
 _BROWSER_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 _ACCESS_COOKIE_NAME = "coinche_access"
@@ -325,9 +324,7 @@ class MetaClientServer:
         self._purge_expired_access()
         code = "".join(secrets.choice(_PAIR_CODE_ALPHABET) for _ in range(_PAIR_CODE_LENGTH))
         self.pairing_codes[code] = time.monotonic() + _PAIR_CODE_TTL_SECONDS
-        display_code = "-".join(
-            code[index : index + _PAIR_CODE_GROUP_SIZE] for index in range(0, len(code), _PAIR_CODE_GROUP_SIZE)
-        )
+        display_code = code
         access_url = f"{self._pairing_base_url()}/a/{display_code}"
         body = f"""<!doctype html>
 <html lang=\"fr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
@@ -358,8 +355,8 @@ class MetaClientServer:
 <form class="lobby__field"
     onsubmit="event.preventDefault();location.href='/a/'+this.code.value.replace(/[^A-Za-z0-9]/g,'').toUpperCase()">
 <label for="code">Code</label>
-<input id="code" name="code" type="text" maxlength="12" required
-     autocomplete="one-time-code" autocapitalize="characters" placeholder="ABCD-EFGH-JK">
+<input id="code" name="code" type="text" maxlength="6" pattern="[A-Za-z2-9]{6}" required
+    autocomplete="one-time-code" autocapitalize="characters" placeholder="ABCDEF">
 <button type="submit">Ouvrir</button>
 </form></section></main></body></html>"""
         await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body)
@@ -406,6 +403,7 @@ class MetaClientServer:
                 "wsPath": f"/s/{session.session_id}/ws",
                 "name": session.player_name,
                 "sessionId": session.session_id,
+                "metaClient": True,
                 "tableKey": table_key,
                 "preferredSeat": preferred_seat,
                 "spectate": spectate,
@@ -486,7 +484,7 @@ class MetaClientServer:
         if not route.startswith("/a/"):
             return None
         code = route[len("/a/") :]
-        normalized = code.replace("-", "").upper()
+        normalized = code.upper()
         if len(normalized) != _PAIR_CODE_LENGTH or any(char not in _PAIR_CODE_ALPHABET for char in normalized):
             return None
         return normalized

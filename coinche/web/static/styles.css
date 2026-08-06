@@ -1641,6 +1641,40 @@ body > .lobby {
   font-family: system-ui, sans-serif;
   font-size: 1rem;
 }
+.pairing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 42px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid rgba(212, 175, 55, 0.7);
+  border-radius: var(--radius-card);
+  background: rgba(212, 175, 55, 0.12);
+  color: var(--gold-soft);
+  font-family: system-ui, sans-serif;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.pairing-badge:hover,
+.pairing-badge:focus-visible {
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.22);
+  color: var(--text-on-felt);
+}
+.pairing-badge__label {
+  color: var(--gold);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.pairing-badge__hint {
+  font-size: 0.82rem;
+}
+.pairing-badge--landing {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
 .team-picker {
   display: grid;
   grid-template-columns: 1fr 1fr;

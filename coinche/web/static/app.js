@@ -561,6 +561,7 @@ const App = {
     // mono-session overlay it's absent, so everything falls back to the
     // original behaviour (root `/ws`, empty name).
     const META = window.__META__ || {};
+    const isMetaClient = META.metaClient === true;
     const PENDING_JOIN_KEY = "coinche.pendingJoin";
 
     // Session recovery (méta-client only): persist this session's id so the
@@ -1548,6 +1549,7 @@ const App = {
       confetti,
       reconnecting,
       lobby,
+      isMetaClient,
       REDUCED_MOTION,
       joined,
       isSpectator,
@@ -1655,6 +1657,10 @@ const App = {
           <button class="leave-btn" type="button" data-testid="lobby-disconnect" @click="disconnect">
             Déconnexion
           </button>
+          <a v-if="isMetaClient" class="pairing-badge" href="/pair">
+            <span class="pairing-badge__label">Acces voiture</span>
+            <span class="pairing-badge__hint">Ouvrir sur un autre appareil</span>
+          </a>
         </header>
 
         <!-- Before the first snapshot lands the table list is unknown; show a
