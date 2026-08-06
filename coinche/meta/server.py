@@ -348,16 +348,19 @@ class MetaClientServer:
         """Serve the public page where a second device enters a pairing code."""
         body = b"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Acces voiture</title><link rel="stylesheet" href="/styles.css"></head>
-<body><main class="lobby"><section class="lobby__card">
-<h1 class="lobby__title">Acces voiture</h1>
+    <title>Acces voiture</title><style>
+    body{margin:0;background:#10251c;color:#f7f1df;font:18px system-ui,sans-serif}
+    main{max-width:28rem;margin:10vh auto;padding:1.5rem}.card{padding:1.5rem;border:1px solid #d4af37}
+    input,button{box-sizing:border-box;width:100%;padding:.75rem;font:inherit}button{margin-top:1rem}
+    </style></head><body><main><section class="card">
+    <h1>Acces voiture</h1>
 <p>Saisissez le code affiche sur le telephone.</p>
 <form class="lobby__field"
     onsubmit="event.preventDefault();location.href='/a/'+this.code.value.replace(/[^A-Za-z0-9]/g,'').toUpperCase()">
 <label for="code">Code</label>
 <input id="code" name="code" type="text" maxlength="12" required
      autocomplete="one-time-code" autocapitalize="characters" placeholder="ABCD-EFGH-JK">
-<button class="rematch-btn" style="width:100%;margin-top:1rem" type="submit">Ouvrir</button>
+<button type="submit">Ouvrir</button>
 </form></section></main></body></html>"""
         await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body)
         _safe_close(writer)

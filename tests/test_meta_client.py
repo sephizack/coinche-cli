@@ -244,6 +244,7 @@ def test_pairing_link_authenticates_a_second_browser_without_basic_auth() -> Non
             status, _, body = await http_get(port, "/a", auth=None)
             assert status == 200
             assert b"Saisissez le code" in body
+            assert b"styles.css" not in body
 
             status, _, body = await http_get(port, "/pair")
             assert status == 200
