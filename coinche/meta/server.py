@@ -345,12 +345,12 @@ class MetaClientServer:
         """Serve the public page where a second device enters a pairing code."""
         body = b"""<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Acces voiture</title><style>
+    <title>Acces rapide</title><style>
     body{margin:0;background:#10251c;color:#f7f1df;font:18px system-ui,sans-serif}
     main{max-width:28rem;margin:10vh auto;padding:1.5rem}.card{padding:1.5rem;border:1px solid #d4af37}
     input,button{box-sizing:border-box;width:100%;padding:.75rem;font:inherit}button{margin-top:1rem}
     </style></head><body><main><section class="card">
-    <h1>Acces voiture</h1>
+    <h1>Acces tapide</h1>
 <p>Saisissez le code affiche sur le telephone.</p>
 <form class="lobby__field"
     onsubmit="event.preventDefault();location.href='/a/'+this.code.value.replace(/[^A-Za-z0-9]/g,'').toUpperCase()">
