@@ -4,11 +4,11 @@ from coinche.cards import Card, Seat
 from coinche.rules import (
     ALLOWED_TRUMPS,
     CAPOT,
-    NORMAL_POOL,
     card_points,
     is_valid_bid,
     legal_bid_actions,
     legal_cards_to_play,
+    round_to_nearest_ten,
     score_round,
     trick_winner,
 )
@@ -25,6 +25,13 @@ def test_card_points_normal_trump_suit():
 def test_card_points_normal_non_trump_suit():
     assert card_points(Card("A", "♥"), "♠") == 11
     assert card_points(Card("V", "♥"), "♠") == 2  # jack is non-trump here
+
+
+def test_round_to_nearest_ten_uses_the_last_digit():
+    assert round_to_nearest_ten(91) == 90
+    assert round_to_nearest_ten(94) == 90
+    assert round_to_nearest_ten(95) == 100
+    assert round_to_nearest_ten(99) == 100
 
 
 # --- Bidding legality (A5/A6) --------------------------------------------------
@@ -250,13 +257,14 @@ def test_score_round_93_faits_sur_100_reste_chute():
 
 
 def test_score_round_contract_failed_defenders_get_pool_plus_bid():
-    # 100 annoncés et 90 faits : chuté -> adversaires reçoivent 162 + 100 = 262.
+    # 100 annoncés et 90 faits : chuté -> le pool de 162 est arrondi à 160,
+    # puis le contrat est ajouté, soit 260 pour les adversaires.
     captured = {"NS": 90, "EW": 72}
     bid = {"team": "NS", "trump": "♠", "points": 100}
     result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder=None)
     assert result["NS"]["contract_result"] == "failed"
     assert result["NS"]["total"] == 0
-    assert result["EW"]["total"] == NORMAL_POOL + 100  # 262
+    assert result["EW"]["total"] == 260
 
 
 def test_score_round_capot_achieved():
@@ -264,7 +272,7 @@ def test_score_round_capot_achieved():
     bid = {"team": "NS", "trump": "♠", "points": CAPOT}
     result = score_round(captured, bid, coinche_level=1, capot_result=True, belote_holder=None, attacker_tricks=8)
     assert result["NS"]["contract_result"] == "capot_achieved"
-    assert result["NS"]["total"] == 502  # 252 réalisés + 250 demandés
+    assert result["NS"]["total"] == 500  # 252 réalisés arrondis à 250 + 250 demandés
     assert result["EW"]["total"] == 0
 
 
@@ -274,34 +282,34 @@ def test_score_round_capot_failed_defenders_get_502():
     result = score_round(captured, bid, coinche_level=1, capot_result=False, belote_holder=None, attacker_tricks=6)
     assert result["NS"]["contract_result"] == "capot_failed"
     assert result["NS"]["total"] == 0
-    assert result["EW"]["total"] == 502  # 252 chute capot + 250 demandé
+    assert result["EW"]["total"] == 500  # 252 + 250, arrondis à la dizaine
 
 
 def test_score_round_unannounced_capot_upgrades_to_252():
-    # 100 annoncés et capot fait (non annoncé) : 252 + 100 = 352.
+    # 100 annoncés et capot fait (non annoncé) : 252 arrondis à 250 + 100 = 350.
     captured = {"NS": 162, "EW": 0}
     bid = {"team": "NS", "trump": "♠", "points": 100}
     result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder=None, attacker_tricks=8)
-    assert result["NS"]["total"] == 352  # 252 + 100
+    assert result["NS"]["total"] == 350
     assert result["EW"]["total"] == 0
 
 
 def test_score_round_coinche_doubles_bid_plus_pool():
-    # 100 annoncés, 90 faits, contré : (100 + 162) × 2 = 524 pour les gagnants.
+    # 100 annoncés, 90 faits, contré : (100 + 160) × 2 = 520 pour les gagnants.
     captured = {"NS": 90, "EW": 72}
     bid = {"team": "NS", "trump": "♠", "points": 100}
     result = score_round(captured, bid, coinche_level=2, capot_result=None, belote_holder=None)
     assert result["NS"]["total"] == 0
-    assert result["EW"]["total"] == (100 + NORMAL_POOL) * 2  # 524
+    assert result["EW"]["total"] == 520
 
 
 def test_score_round_surcoinche_quadruples_bid_plus_pool():
-    # 100 annoncés, 90 faits, surcontré : (100 + 162) × 4 = 1048.
+    # 100 annoncés, 90 faits, surcontré : (100 + 160) × 4 = 1040.
     captured = {"NS": 90, "EW": 72}
     bid = {"team": "NS", "trump": "♠", "points": 100}
     result = score_round(captured, bid, coinche_level=4, capot_result=None, belote_holder=None)
     assert result["NS"]["total"] == 0
-    assert result["EW"]["total"] == (100 + NORMAL_POOL) * 4  # 1048
+    assert result["EW"]["total"] == 1040
 
 
 def test_score_round_coinche_on_made_contract_doubles_attackers():
@@ -317,8 +325,8 @@ def test_score_round_belote_counted_once_and_not_multiplied_on_coinche():
     captured = {"NS": 90, "EW": 72}
     bid = {"team": "NS", "trump": "♠", "points": 100}
     result = score_round(captured, bid, coinche_level=2, capot_result=None, belote_holder="EW")
-    # Chute contrée : (100 + 162) × 2 = 524, belote +20 non multipliée.
-    assert result["EW"]["total"] == (100 + NORMAL_POOL) * 2 + 20  # 544
+    # Chute contrée : (100 + 160) × 2 = 520, belote +20 non multipliée.
+    assert result["EW"]["total"] == 540
     assert result["EW"]["belote_bonus"] == 20
 
 
@@ -331,7 +339,7 @@ def test_score_round_belote_bonus_credited_to_holder_on_failure():
     assert result["NS"]["contract_result"] == "failed"
     assert result["NS"]["total"] == 20  # 0 base + 20 belote (règle coinche classique)
     assert result["NS"]["belote_bonus"] == 20
-    assert result["EW"]["total"] == NORMAL_POOL + 110  # 272
+    assert result["EW"]["total"] == 270
 
 
 def test_score_round_belote_helps_fulfil_contract():

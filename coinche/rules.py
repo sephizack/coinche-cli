@@ -47,14 +47,14 @@ CAPOT = "capot"
 ALLOWED_TRUMPS: tuple[str, ...] = SUITS
 
 CAPOT_ANNOUNCE = 250  # points "demandés" for an announced capot
-CAPOT_POINTS = 252  # points "réalisés" when a capot is actually made
+CAPOT_POINTS = 252  # raw card points when a capot is actually made
 COINCHE_MULTIPLIER = 2  # A9
 SURCOINCHE_MULTIPLIER = 4  # A9
 BELOTE_BONUS = 20  # A11
 DIX_DE_DER = 10  # last-trick bonus, folded into captured points by callers
 
 NORMAL_POOL = 162  # 152 card points + 10 dix-de-der (A10)
-CAPOT_TOTAL = CAPOT_ANNOUNCE + CAPOT_POINTS  # 502: value of an announced capot
+CAPOT_TOTAL = CAPOT_ANNOUNCE + CAPOT_POINTS  # raw value of an announced capot
 
 TRICKS_PER_ROUND = 8
 
@@ -267,10 +267,10 @@ def score_round(
 
     Scoring model ("points faits + points demandés"):
 
-    * Contrat réussi : preneurs = arrondi(points cartes) + demandé ;
-      adversaires = arrondi(leurs points cartes). Un capot réalisé (8 plis)
-      remplace les points cartes du preneur par 252, qu'il ait été annoncé ou
-      non.
+        * Contrat réussi : preneurs = arrondi(points cartes) + demandé ;
+            adversaires = arrondi(leurs points cartes). Un capot réalisé (8 plis)
+            remplace les points cartes du preneur par 250 (252 arrondis), qu'il ait
+            été annoncé ou non.
     * Contrat chuté : preneurs = 0 ; adversaires = (162 + demandé). Un capot
       annoncé et chuté donne (502) aux adversaires.
     * Coinche / surcoinche : la somme (demandé + chute) du camp gagnant est
@@ -319,8 +319,8 @@ def score_round(
         # Points réalisés by the attackers: a full capot is worth 252
         # regardless of whether it was the announced contract.
         if is_capot_bid or attacker_made_capot:
-            attacker_realized = CAPOT_POINTS
-            capot_bonus[attacking_team] = CAPOT_POINTS
+            attacker_realized = round_to_nearest_ten(CAPOT_POINTS)
+            capot_bonus[attacking_team] = attacker_realized
         else:
             attacker_realized = round_to_nearest_ten(captured_points_by_team.get(attacking_team, 0))
         attacking_base = attacker_realized + announced
@@ -336,9 +336,9 @@ def score_round(
         # Pour un capot annoncé, la chute vaut 502 (déjà 252 + 250 demandés) :
         # on n'ajoute donc pas `announced` une seconde fois.
         if is_capot_bid:
-            defending_base = CAPOT_TOTAL
+            defending_base = round_to_nearest_ten(CAPOT_TOTAL)
         else:
-            defending_base = NORMAL_POOL + announced
+            defending_base = round_to_nearest_ten(NORMAL_POOL) + announced
         attacking_base = 0
         contract_result = "capot_failed" if is_capot_bid else "failed"
         winning_team = defending_team
