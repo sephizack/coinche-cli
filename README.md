@@ -176,7 +176,8 @@ or, with the launcher (creates `.venv`, installs deps, then runs it):
 Flow for a player:
 
 1. Open `http://<meta-host>:8080/` — the browser prompts for the basic-auth
-   user/password you configured.
+  user/password you configured once. A valid login creates a 30-day browser
+  cookie, so later page loads do not need to repeat the Basic Auth prompt.
 2. Enter a name and submit → the méta-client spins up a fresh session and
    redirects to `/s/<random-id>` (an unguessable per-session URL).
 3. Play from the same web UI as the overlay (lobby → join a table/team → game).
@@ -191,8 +192,9 @@ liens. Pour ne taper que le code court, enregistrez une fois
 `http://<meta-host>:8080/a` dans les favoris de la voiture : cette page publique
 demande le code affiché sur le téléphone. Ce mécanisme est prévu pour un réseau
 local de confiance : sans HTTPS, ne partagez pas le lien ni le réseau avec des
-personnes non fiables. L'accès appairé est conservé en mémoire : un redémarrage
-du méta-client le révoque et demande un nouvel appairage.
+personnes non fiables. Les accès appairé et Basic Auth sont conservés en
+mémoire : un redémarrage du méta-client les révoque et demande une nouvelle
+authentification ou un nouvel appairage.
 
 Each session runs as an independent set of asyncio tasks on the one event loop
 (no per-session thread), reconnecting to the game server on its own with

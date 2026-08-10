@@ -441,13 +441,20 @@ class WebOverlayServer:
         _safe_close(writer)
 
     @staticmethod
-    async def _write_http(writer: asyncio.StreamWriter, status: int, content_type: str, body: bytes) -> None:
+    async def _write_http(
+        writer: asyncio.StreamWriter,
+        status: int,
+        content_type: str,
+        body: bytes,
+        set_cookie: str | None = None,
+    ) -> None:
         reasons = {200: "OK", 400: "Bad Request", 403: "Forbidden", 404: "Not Found", 405: "Method Not Allowed"}
+        cookie_header = f"Set-Cookie: {set_cookie}\r\n" if set_cookie is not None else ""
         head = (
             f"HTTP/1.1 {status} {reasons.get(status, 'OK')}\r\n"
             f"Content-Type: {content_type}\r\n"
             f"Content-Length: {len(body)}\r\n"
-            "Connection: close\r\n\r\n"
+            f"{cookie_header}Connection: close\r\n\r\n"
         )
         writer.write(head.encode("latin-1") + body)
         await writer.drain()

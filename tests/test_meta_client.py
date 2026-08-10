@@ -17,6 +17,7 @@ import re
 import struct
 
 from coinche import protocol
+from coinche.meta import server as meta_server
 from coinche.meta.server import LANDING_PAGE_PATH, MetaClientServer
 
 HOST = "127.0.0.1"
@@ -212,6 +213,14 @@ async def _stop(server: MetaClientServer, task: asyncio.Task) -> None:
 # --------------------------------------------------------------------------- #
 
 
+def test_pairing_base_url_prefers_configured_public_url(monkeypatch) -> None:
+    server = MetaClientServer(HOST, 9999, "coinche", "secret")
+    server.urls = ["http://127.0.0.1:8123", "http://192.168.1.20:8123"]
+    monkeypatch.setattr(meta_server, "COINCHE_PUBLIC_URL", "https://coinche.example.org")
+
+    assert server._pairing_base_url() == "https://coinche.example.org"
+
+
 def test_requires_basic_auth() -> None:
     async def scenario() -> None:
         game = FakeGameServer()
@@ -225,7 +234,12 @@ def test_requires_basic_auth() -> None:
             status, _, _ = await http_get(port, "/", auth=base64.b64encode(b"coinche:wrong").decode())
             assert status == 401
 
-            status, _, body = await http_get(port, "/", auth=AUTH)
+            status, headers, body = await http_get(port, "/", auth=AUTH)
+            assert status == 200
+            assert b"Votre nom" in body
+            cookie = headers["set-cookie"].split(";", 1)[0]
+
+            status, _, body = await http_get(port, "/", auth=None, cookie=cookie)
             assert status == 200
             assert b"Votre nom" in body
         finally:

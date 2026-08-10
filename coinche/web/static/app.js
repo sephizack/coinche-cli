@@ -1659,7 +1659,6 @@ const App = {
           </button>
           <a v-if="isMetaClient" class="pairing-badge" href="/pair">
             <span class="pairing-badge__label">Acces rapide</span>
-            <span class="pairing-badge__hint">Ouvrir sur un autre appareil</span>
           </a>
         </header>
 

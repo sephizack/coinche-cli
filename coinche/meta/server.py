@@ -12,9 +12,9 @@ A single listener protected by HTTP Basic auth. Flow:
 
 This module owns the *only* HTTP listener; each `MetaSession`'s
 `WebOverlayServer`-derived bridge is used purely as a relay (its `.serve()` is
-never called). Basic auth guards every request, including the WS handshake
-(browsers replay stored Basic credentials on same-origin WebSocket upgrades),
-and the random session id is itself an unguessable capability.
+never called). Basic auth guards every request, including the WS handshake,
+and a successful landing-page login establishes a persistent browser cookie.
+The random session id is itself an unguessable capability.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ import html
 import json
 import logging
 import mimetypes
+import os
 import re
 import secrets
 import time
@@ -57,6 +58,7 @@ _PAIR_CODE_LENGTH = 6
 _PAIR_CODE_TTL_SECONDS = 10 * 60
 _BROWSER_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 _ACCESS_COOKIE_NAME = "coinche_access"
+COINCHE_PUBLIC_URL = os.environ.get("COINCHE_PUBLIC_URL", "").rstrip("/")
 
 # Idle-session reaper defaults. A session with no browser attached and no
 # activity for `IDLE_TIMEOUT_SECONDS` is kicked: it LEAVEs its table (freeing
@@ -185,9 +187,13 @@ class MetaClientServer:
                 else:
                     await self._redeem_pairing_code(pairing_code, writer)
                 return
-            if not self._authorized(headers):
+            auth_source = self._authorization_source(headers)
+            if auth_source is None:
                 await self._write_unauthorized(writer)
                 _safe_close(writer)
+                return
+            if auth_source == "basic" and method == "GET" and route == "/":
+                await self._serve_landing_page(writer, self._new_access_cookie())
                 return
             await self._route(method, path, headers, reader, writer)
         except (ConnectionError, OSError):
@@ -223,16 +229,7 @@ class MetaClientServer:
             return
 
         if route == "/":
-            try:
-                landing_page = LANDING_PAGE_PATH.read_bytes()
-            except OSError:
-                logger.exception("Méta-client : template de page d'accueil introuvable")
-                await WebOverlayServer._write_http(
-                    writer, 500, "text/plain; charset=utf-8", b"Landing page unavailable"
-                )
-            else:
-                await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", landing_page)
-            _safe_close(writer)
+            await self._serve_landing_page(writer)
             return
 
         if route == "/pair":
@@ -372,16 +369,7 @@ class MetaClientServer:
             )
             _safe_close(writer)
             return
-        session_token = secrets.token_urlsafe(32)
-        self.browser_sessions[session_token] = time.monotonic() + _BROWSER_SESSION_TTL_SECONDS
-        await self._redirect(
-            writer,
-            "/",
-            set_cookie=(
-                f"{_ACCESS_COOKIE_NAME}={session_token}; Path=/; HttpOnly; SameSite=Strict; "
-                f"Max-Age={_BROWSER_SESSION_TTL_SECONDS}"
-            ),
-        )
+        await self._redirect(writer, "/", set_cookie=self._new_access_cookie())
 
     async def _serve_game_page(
         self,
@@ -461,22 +449,44 @@ class MetaClientServer:
         await writer.drain()
         await session.handle_ws(_WSConnection(reader, writer))
 
+    async def _serve_landing_page(self, writer: asyncio.StreamWriter, set_cookie: str | None = None) -> None:
+        try:
+            landing_page = LANDING_PAGE_PATH.read_bytes()
+        except OSError:
+            logger.exception("Méta-client : template de page d'accueil introuvable")
+            await WebOverlayServer._write_http(
+                writer, 500, "text/plain; charset=utf-8", b"Landing page unavailable", set_cookie
+            )
+        else:
+            await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", landing_page, set_cookie)
+        _safe_close(writer)
+
     # ---------------------------------------------------------------- helpers
-    def _authorized(self, headers: dict[str, str]) -> bool:
+    def _authorization_source(self, headers: dict[str, str]) -> str | None:
         self._purge_expired_access()
         cookie = self._cookie_value(headers.get("cookie", ""), _ACCESS_COOKIE_NAME)
         if cookie is not None and cookie in self.browser_sessions:
-            return True
+            return "cookie"
         header = headers.get("authorization", "")
         if not header.lower().startswith("basic "):
-            return False
+            return None
         try:
             decoded = base64.b64decode(header[len("basic ") :].strip()).decode("utf-8")
         except (ValueError, UnicodeDecodeError):
-            return False
+            return None
         user, _, password = decoded.partition(":")
         # Constant-time comparison to avoid leaking length/prefix via timing.
-        return hmac.compare_digest(user, self.auth_user) and hmac.compare_digest(password, self.auth_pass)
+        if hmac.compare_digest(user, self.auth_user) and hmac.compare_digest(password, self.auth_pass):
+            return "basic"
+        return None
+
+    def _new_access_cookie(self) -> str:
+        session_token = secrets.token_urlsafe(32)
+        self.browser_sessions[session_token] = time.monotonic() + _BROWSER_SESSION_TTL_SECONDS
+        return (
+            f"{_ACCESS_COOKIE_NAME}={session_token}; Path=/; HttpOnly; SameSite=Strict; "
+            f"Max-Age={_BROWSER_SESSION_TTL_SECONDS}"
+        )
 
     @staticmethod
     def _pairing_code_from_path(path: str) -> str | None:
@@ -490,6 +500,8 @@ class MetaClientServer:
         return normalized
 
     def _pairing_base_url(self) -> str:
+        if COINCHE_PUBLIC_URL:
+            return COINCHE_PUBLIC_URL
         return next((url for url in self.urls if not url.startswith("http://127.0.0.1:")), self.urls[0])
 
     def _purge_expired_access(self) -> None:
