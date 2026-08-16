@@ -104,6 +104,24 @@ def test_parse_rejects_non_boolean_discord_notification_preference() -> None:
         )
 
 
+def test_parse_rejects_invalid_table_options() -> None:
+    with pytest.raises(WebProtocolError):
+        parse_browser_message(
+            json.dumps(
+                {
+                    "action": "join",
+                    "table_key": "t1",
+                    "player_name": "Zoe",
+                    "coinche_blocks_bidding": "no",
+                }
+            )
+        )
+    with pytest.raises(WebProtocolError):
+        parse_browser_message(
+            json.dumps({"action": "join", "table_key": "t1", "player_name": "Zoe", "bot_type": "advanced"})
+        )
+
+
 @pytest.mark.parametrize(
     "frame",
     [
@@ -161,8 +179,22 @@ class FakeLink:
         seat=None,
         spectate=False,
         suppress_discord_notification=False,
+        coinche_blocks_bidding=True,
+        bot_type="default",
     ) -> bool:
-        self.calls.append(("join", table_key, player_name, team_name, seat, spectate, suppress_discord_notification))
+        self.calls.append(
+            (
+                "join",
+                table_key,
+                player_name,
+                team_name,
+                seat,
+                spectate,
+                suppress_discord_notification,
+                coinche_blocks_bidding,
+                bot_type,
+            )
+        )
         return True
 
     async def send_rematch(self) -> bool:
@@ -320,7 +352,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
                 await asyncio.sleep(0.01)
             assert ("bid", "bid", "♠", 90) in link.calls
             assert ("chat", "salut") in link.calls
-            assert ("join", "t1", "Zoe", None, None, False, True) in link.calls
+            assert ("join", "t1", "Zoe", None, None, False, True, True, "default") in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
             assert ("fill_bots",) in link.calls

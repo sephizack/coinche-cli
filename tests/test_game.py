@@ -109,6 +109,23 @@ def test_bid_after_coinche_is_rejected():
         game.submit_bid(seat, "bid", trump="♥", points=90)
 
 
+def test_bid_after_coinche_cancels_it_when_table_rule_allows_bidding():
+    game = Game(initial_dealer=Seat.N, coinche_blocks_bidding=False)
+    bidder = game.next_to_act
+    game.submit_bid(bidder, "bid", trump="♠", points=80)
+    coinche_result = game.submit_bid(bidder.next(), "coinche")
+
+    seat = coinche_result["next_to_act"]
+    options = game.bid_options_for(seat)
+    assert options["legal_actions"]
+    assert options["can_surcoinche"] is True
+
+    game.submit_bid(seat, "bid", trump="♥", points=90)
+    assert game.bid_state is not None
+    assert game.bid_state.coinche_level == 1
+    assert game.bid_state.current_highest_bid == {"team": TEAM_OF[seat], "seat": seat, "trump": "♥", "points": 90}
+
+
 def test_surcoinche_ends_bidding_and_starts_play():
     game = Game(initial_dealer=Seat.N)
     bidder = game.next_to_act

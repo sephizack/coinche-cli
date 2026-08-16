@@ -409,6 +409,11 @@ async def _kick_timed_out_player(table: Table, seat: Seat, writer: asyncio.Strea
     )
     if writer is not None:
         writer.close()
+    if not table.has_humans():
+        await remove_table(table.table_key)
+        logger.info("[%s] table abandonnee (plus aucun joueur humain) -> supprimee", table.table_key)
+        await notify_lobby_subscribers()
+        return
     _schedule_bot_turns(table)
 
 
@@ -1137,6 +1142,8 @@ async def _resolve_join_inner(
     team_name = str(payload["team_name"]).strip() if payload.get("team_name") else None
     spectate = bool(payload.get("spectate"))
     suppress_discord_notification = payload.get("suppress_discord_notification", False)
+    coinche_blocks_bidding = payload.get("coinche_blocks_bidding", True)
+    bot_type = payload.get("bot_type", "default")
 
     preferred_seat: Seat | None = None
     if payload.get("seat"):
@@ -1189,6 +1196,8 @@ async def _resolve_join_inner(
     table = get_or_create_table(
         table_key,
         target_score=target_score,
+        coinche_blocks_bidding=coinche_blocks_bidding,
+        bot_type=bot_type,
         trick_pause_seconds=trick_pause_seconds,
         round_pause_seconds=round_pause_seconds,
         bot_think_seconds=bot_think_seconds,

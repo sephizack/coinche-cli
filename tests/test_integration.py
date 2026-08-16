@@ -111,6 +111,38 @@ async def _join_all(port: int, table_key: str) -> dict[str, tuple[asyncio.Stream
     return conns
 
 
+def test_join_creation_options_configure_the_new_table() -> None:
+    async def scenario() -> None:
+        srv, port = await _start_server()
+        writer = None
+        try:
+            reader, writer = await _connect(port)
+            await _send(
+                writer,
+                protocol.JOIN,
+                {
+                    "table_key": "rules01",
+                    "player_name": "Alice",
+                    "coinche_blocks_bidding": False,
+                    "bot_type": "default",
+                },
+            )
+            await _read_until(reader, protocol.JOINED)
+
+            table = table_module.TABLES["rules01"]
+            assert table.coinche_blocks_bidding is False
+            assert table.bot_type == "default"
+        finally:
+            if writer is not None:
+                writer.close()
+                await writer.wait_closed()
+            await table_module.remove_table("rules01")
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
 async def _bid_min_and_finalize_contract(conns: dict, observer_reader: asyncio.StreamReader) -> dict:
     """Scripted deterministic auction: W bids the minimum legal contract, the
     other three seats pass in rotation, closing the auction with W as both
@@ -298,6 +330,35 @@ def test_turn_timeout_replaces_only_the_idle_player_with_a_bot():
             table = table_module.TABLES["timeout01"]
             assert table.seats[table_module.Seat.W].is_bot is True
             assert table.seats[table_module.Seat.W].connected is True
+        finally:
+            for _reader, writer in conns.values():
+                writer.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_last_human_timing_out_removes_abandoned_table():
+    async def scenario() -> None:
+        srv, port = await _start_server(turn_timeout_seconds=0.05)
+        conns: dict = {}
+        try:
+            conns = await _join_all(port, "timeout02")
+            for reader, _writer in conns.values():
+                await _read_until(reader, protocol.DEAL)
+
+            for seat in ("N", "E", "S"):
+                table = table_module.TABLES["timeout02"]
+                await server._kick_timed_out_player(
+                    table,
+                    table_module.Seat(seat),
+                    conns[seat][1],
+                    NAMES_BY_SEAT[seat],
+                )
+
+            await _read_until(conns["W"][0], protocol.TURN_TIMEOUT)
+            assert "timeout02" not in table_module.TABLES
         finally:
             for _reader, writer in conns.values():
                 writer.close()

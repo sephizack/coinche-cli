@@ -95,6 +95,8 @@ class ClientLink:
         seat: str | None = None,
         spectate: bool = False,
         suppress_discord_notification: bool = False,
+        coinche_blocks_bidding: bool = True,
+        bot_type: str = "default",
     ) -> bool:
         payload = {"table_key": table_key, "player_name": player_name, "team_name": team_name}
         if seat is not None:
@@ -103,6 +105,10 @@ class ClientLink:
             payload["spectate"] = True
         if suppress_discord_notification:
             payload["suppress_discord_notification"] = True
+        if not coinche_blocks_bidding:
+            payload["coinche_blocks_bidding"] = False
+        if bot_type != "default":
+            payload["bot_type"] = bot_type
         return await self._send(protocol.JOIN, payload)
 
     async def send_rematch(self) -> bool:

@@ -195,7 +195,8 @@ class MetaClientServer:
             if auth_source == "basic" and method == "GET" and route == "/":
                 await self._serve_landing_page(writer, self._new_access_cookie())
                 return
-            await self._route(method, path, headers, reader, writer)
+            set_cookie = self._new_access_cookie() if auth_source == "basic" and method == "GET" else None
+            await self._route(method, path, headers, reader, writer, set_cookie)
         except (ConnectionError, OSError):
             _safe_close(writer)
         except Exception:  # noqa: BLE001 — per-connection boundary
@@ -209,6 +210,7 @@ class MetaClientServer:
         headers: dict[str, str],
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
+        set_cookie: str | None,
     ) -> None:
         split = urlsplit(path)
         route = split.path
@@ -217,27 +219,31 @@ class MetaClientServer:
         if headers.get("upgrade", "").lower() == "websocket":
             session = self._session_for_ws(route)
             if session is None:
-                await WebOverlayServer._write_http(writer, 404, "text/plain; charset=utf-8", b"Unknown session")
+                await WebOverlayServer._write_http(
+                    writer, 404, "text/plain; charset=utf-8", b"Unknown session", set_cookie
+                )
                 _safe_close(writer)
                 return
-            await self._upgrade_and_route_ws(session, reader, writer, headers)
+            await self._upgrade_and_route_ws(session, reader, writer, headers, set_cookie)
             return
 
         if method != "GET":
-            await WebOverlayServer._write_http(writer, 405, "text/plain; charset=utf-8", b"Method Not Allowed")
+            await WebOverlayServer._write_http(
+                writer, 405, "text/plain; charset=utf-8", b"Method Not Allowed", set_cookie
+            )
             _safe_close(writer)
             return
 
         if route == "/":
-            await self._serve_landing_page(writer)
+            await self._serve_landing_page(writer, set_cookie)
             return
 
         if route == "/pair":
-            await self._create_pairing_page(writer)
+            await self._create_pairing_page(writer, set_cookie)
             return
 
         if route == "/new":
-            await self._create_and_redirect(split.query, writer)
+            await self._create_and_redirect(split.query, writer, set_cookie)
             return
 
         # Liveness probe for a stored session id (browser localStorage): the
@@ -245,14 +251,14 @@ class MetaClientServer:
         # falls back to the name form instead of a dead reconnect. Returns the
         # remembered player name so the SPA can restore it too.
         if route == "/api/session":
-            await self._session_status(split.query, writer)
+            await self._session_status(split.query, writer, set_cookie)
             return
 
         session_id = route[len("/s/") :].strip("/") if route.startswith("/s/") else ""
         if session_id and "/" not in session_id:
             session = self.sessions.get(session_id)
             if session is None:
-                await self._redirect(writer, "/")
+                await self._redirect(writer, "/", set_cookie)
                 return
             params = parse_qs(split.query)
             table_key = (params.get("table", [""])[0] or "").strip()
@@ -264,12 +270,13 @@ class MetaClientServer:
                 table_key if _TABLE_KEY_PATTERN.fullmatch(table_key) else None,
                 preferred_seat if preferred_seat in {"N", "E", "S", "W"} else None,
                 spectate,
+                set_cookie,
             )
             return
 
         # Anything else is a static asset (app.js, styles.css, vendor/…),
         # served from the same static root as the mono-session overlay.
-        await self._serve_static(writer, route)
+        await self._serve_static(writer, route, set_cookie)
 
     def _session_for_ws(self, route: str) -> MetaSession | None:
         if not (route.startswith("/s/") and route.endswith("/ws")):
@@ -277,12 +284,12 @@ class MetaClientServer:
         session_id = route[len("/s/") : -len("/ws")].strip("/")
         return self.sessions.get(session_id)
 
-    async def _create_and_redirect(self, query: str, writer: asyncio.StreamWriter) -> None:
+    async def _create_and_redirect(self, query: str, writer: asyncio.StreamWriter, set_cookie: str | None) -> None:
         params = parse_qs(query)
         name = (params.get("name", [""])[0] or "").strip()[:_MAX_NAME_LEN]
         if not name:
             # No name → back to the landing page.
-            await self._redirect(writer, "/")
+            await self._redirect(writer, "/", set_cookie)
             return
         session_id = secrets.token_urlsafe(9)
         session = MetaSession(session_id, self.game_host, self.game_port, name)
@@ -297,9 +304,9 @@ class MetaClientServer:
             suffix += f"&seat={preferred_seat}"
         if suffix and spectate:
             suffix += "&spectate=true"
-        await self._redirect(writer, f"/s/{session_id}{suffix}")
+        await self._redirect(writer, f"/s/{session_id}{suffix}", set_cookie)
 
-    async def _session_status(self, query: str, writer: asyncio.StreamWriter) -> None:
+    async def _session_status(self, query: str, writer: asyncio.StreamWriter, set_cookie: str | None) -> None:
         """Report whether a stored session id is still live (JSON).
 
         `{"alive": true, "name": "Alice"}` when the id maps to a live session,
@@ -313,10 +320,12 @@ class MetaClientServer:
             if session is not None
             else json.dumps({"alive": False})
         )
-        await WebOverlayServer._write_http(writer, 200, "application/json; charset=utf-8", body.encode("utf-8"))
+        await WebOverlayServer._write_http(
+            writer, 200, "application/json; charset=utf-8", body.encode("utf-8"), set_cookie
+        )
         _safe_close(writer)
 
-    async def _create_pairing_page(self, writer: asyncio.StreamWriter) -> None:
+    async def _create_pairing_page(self, writer: asyncio.StreamWriter, set_cookie: str | None) -> None:
         """Mint a one-use, short-lived link for another trusted LAN device."""
         self._purge_expired_access()
         code = "".join(secrets.choice(_PAIR_CODE_ALPHABET) for _ in range(_PAIR_CODE_LENGTH))
@@ -335,7 +344,7 @@ class MetaClientServer:
 <p>La voiture restera connectée pendant 30 jours, sauf redémarrage du serveur. Ce lien ne fonctionne qu'une fois.</p>
 <p><a class=\"rematch-btn\" href=\"/\">Retour</a></p>
 </section></main></body></html>"""
-        await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body.encode("utf-8"))
+        await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body.encode("utf-8"), set_cookie)
         _safe_close(writer)
 
     async def _serve_pairing_entry(self, writer: asyncio.StreamWriter) -> None:
@@ -378,12 +387,13 @@ class MetaClientServer:
         table_key: str | None = None,
         preferred_seat: str | None = None,
         spectate: bool = False,
+        set_cookie: str | None = None,
     ) -> None:
         """Serve the vendored SPA shell with a per-session `window.__META__`."""
         try:
             html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         except OSError:
-            await WebOverlayServer._write_http(writer, 404, "text/plain; charset=utf-8", b"Not Found")
+            await WebOverlayServer._write_http(writer, 404, "text/plain; charset=utf-8", b"Not Found", set_cookie)
             _safe_close(writer)
             return
         meta = json.dumps(
@@ -399,10 +409,10 @@ class MetaClientServer:
         ).replace("<", "\\u003c")
         inject = f'\n    <base href="/" />\n    <script>window.__META__ = {meta};</script>'
         html = html.replace("<head>", "<head>" + inject, 1)
-        await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
+        await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"), set_cookie)
         _safe_close(writer)
 
-    async def _serve_static(self, writer: asyncio.StreamWriter, route: str) -> None:
+    async def _serve_static(self, writer: asyncio.StreamWriter, route: str, set_cookie: str | None) -> None:
         """Serve a file from `STATIC_DIR`, guarding against path traversal."""
         rel = route.lstrip("/")
         if not rel:
@@ -411,11 +421,11 @@ class MetaClientServer:
         try:
             target.relative_to(STATIC_DIR)
         except ValueError:
-            await WebOverlayServer._write_http(writer, 403, "text/plain; charset=utf-8", b"Forbidden")
+            await WebOverlayServer._write_http(writer, 403, "text/plain; charset=utf-8", b"Forbidden", set_cookie)
             _safe_close(writer)
             return
         if not target.is_file():
-            await WebOverlayServer._write_http(writer, 404, "text/plain; charset=utf-8", b"Not Found")
+            await WebOverlayServer._write_http(writer, 404, "text/plain; charset=utf-8", b"Not Found", set_cookie)
             _safe_close(writer)
             return
         content_type, _ = mimetypes.guess_type(str(target))
@@ -423,7 +433,7 @@ class MetaClientServer:
             content_type = "application/octet-stream"
         if content_type.startswith("text/") or content_type in ("application/javascript", "application/json"):
             content_type = f"{content_type}; charset=utf-8"
-        await WebOverlayServer._write_http(writer, 200, content_type, target.read_bytes())
+        await WebOverlayServer._write_http(writer, 200, content_type, target.read_bytes(), set_cookie)
         _safe_close(writer)
 
     async def _upgrade_and_route_ws(
@@ -432,18 +442,22 @@ class MetaClientServer:
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
         headers: dict[str, str],
+        set_cookie: str | None,
     ) -> None:
         key = headers.get("sec-websocket-key")
         if not key:
-            await WebOverlayServer._write_http(writer, 400, "text/plain; charset=utf-8", b"Bad WebSocket Request")
+            await WebOverlayServer._write_http(
+                writer, 400, "text/plain; charset=utf-8", b"Bad WebSocket Request", set_cookie
+            )
             _safe_close(writer)
             return
         accept = base64.b64encode(hashlib.sha1((key + _WS_MAGIC).encode("ascii")).digest()).decode("ascii")
+        cookie_header = f"Set-Cookie: {set_cookie}\r\n" if set_cookie is not None else ""
         handshake = (
             "HTTP/1.1 101 Switching Protocols\r\n"
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
-            f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+            f"Sec-WebSocket-Accept: {accept}\r\n{cookie_header}\r\n"
         )
         writer.write(handshake.encode("ascii"))
         await writer.drain()

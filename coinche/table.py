@@ -157,6 +157,8 @@ class Table:
         self,
         table_key: str,
         target_score: int = rules.DEFAULT_TARGET_SCORE,
+        coinche_blocks_bidding: bool = True,
+        bot_type: str = "default",
         trick_pause_seconds: float = 2.5,
         round_pause_seconds: float = 4.0,
         bot_think_seconds: float = 1.0,
@@ -164,6 +166,8 @@ class Table:
     ) -> None:
         self.table_key = table_key
         self.target_score = target_score
+        self.coinche_blocks_bidding = coinche_blocks_bidding
+        self.bot_type = bot_type
         # How long the server waits after broadcasting a trick's result before
         # moving play on (next play_request, or dealing the next round), so
         # every player has time to see the last card played (per user request).
@@ -239,7 +243,7 @@ class Table:
                 seat=preferred_seat, name=name, writer=writer, connected=True, team_name=team_name
             )
             if all(s is not None for s in self.seats.values()):
-                self.game = Game(target_score=self.target_score)
+                self.game = Game(target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding)
             return preferred_seat
 
         normalized_team = team_name.strip().lower() if team_name else None
@@ -262,7 +266,9 @@ class Table:
                                 seat=partner_seat, name=name, writer=writer, connected=True, team_name=team_name
                             )
                             if all(s is not None for s in self.seats.values()):
-                                self.game = Game(target_score=self.target_score)
+                                self.game = Game(
+                                    target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding
+                                )
                             return partner_seat
                         break
 
@@ -272,7 +278,7 @@ class Table:
                     seat=seat, name=name, writer=writer, connected=True, team_name=team_name
                 )
                 if all(s is not None for s in self.seats.values()):
-                    self.game = Game(target_score=self.target_score)
+                    self.game = Game(target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding)
                 return seat
 
         raise TableFullError(self.table_key)
@@ -427,7 +433,7 @@ class Table:
                 )
                 added.append(seat)
         if added:
-            self.game = Game(target_score=self.target_score)
+            self.game = Game(target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding)
         return added
 
     def restart_game(self) -> Game:
@@ -435,7 +441,7 @@ class Table:
         (rematch). Resets cumulative scores/round number/dealer rotation back
         to a fresh `Game`, keeping the same seated players."""
         assert self.game is not None and self.game.game_over
-        self.game = Game(target_score=self.target_score)
+        self.game = Game(target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding)
         return self.game
 
     async def broadcast(self, msg_type: str, payload: dict, exclude: Seat | None = None) -> None:
@@ -497,6 +503,8 @@ TABLES: dict[str, Table] = {}
 def get_or_create_table(
     table_key: str,
     target_score: int = rules.DEFAULT_TARGET_SCORE,
+    coinche_blocks_bidding: bool = True,
+    bot_type: str = "default",
     trick_pause_seconds: float = 2.5,
     round_pause_seconds: float = 4.0,
     bot_think_seconds: float = 1.0,
@@ -507,6 +515,8 @@ def get_or_create_table(
         TABLES[table_key] = Table(
             table_key,
             target_score=target_score,
+            coinche_blocks_bidding=coinche_blocks_bidding,
+            bot_type=bot_type,
             trick_pause_seconds=trick_pause_seconds,
             round_pause_seconds=round_pause_seconds,
             bot_think_seconds=bot_think_seconds,

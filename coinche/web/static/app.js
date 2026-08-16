@@ -1412,7 +1412,13 @@ const App = {
     // so a slow WS connection doesn't flash "aucune table" before the tables pop
     // in. `snapshot` is null before the first {type:"state"} frame.
     const lobbyLoaded = computed(() => snapshot.value !== null);
-    const suppressDiscordNotification = ref(false);
+    const tableOptionsOpen = ref(false);
+    const tableOptions = reactive({
+      name: "",
+      suppressDiscordNotification: false,
+      botType: "default",
+      coincheBlocksBidding: true,
+    });
 
     // Random venue key not already present, for the create card.
     const nextTableKey = computed(() => {
@@ -1429,7 +1435,7 @@ const App = {
       return key;
     });
 
-    function joinSpecificTable(tableKey, teamLabelText, seat, suppressDiscordNotification = false) {
+    function joinSpecificTable(tableKey, teamLabelText, seat, tableSettings = null) {
       const name = lobby.name.trim();
       if (!name) {
         showToast("Entrez votre nom d'abord", "error");
@@ -1441,7 +1447,11 @@ const App = {
       // When a specific empty chair is clicked, ask the server for that exact
       // seat (the server stays authoritative and falls back if it's taken).
       if (seat) payload.seat = seat;
-      if (suppressDiscordNotification) payload.suppress_discord_notification = true;
+      if (tableSettings) {
+        if (tableSettings.suppressDiscordNotification) payload.suppress_discord_notification = true;
+        if (!tableSettings.coincheBlocksBidding) payload.coinche_blocks_bidding = false;
+        if (tableSettings.botType !== "default") payload.bot_type = tableSettings.botType;
+      }
       sendAction("join", payload);
     }
 
@@ -1459,7 +1469,12 @@ const App = {
     }
 
     function createTable() {
-      joinSpecificTable(nextTableKey.value, lobbyTeams.value.nsLabel, null, suppressDiscordNotification.value);
+      const tableKey = tableOptions.name.trim() || nextTableKey.value;
+      if (!/^[A-Za-z0-9]{4,20}$/.test(tableKey)) {
+        showToast("Le nom doit contenir de 4 à 20 lettres ou chiffres", "error");
+        return;
+      }
+      joinSpecificTable(tableKey, lobbyTeams.value.nsLabel, null, tableOptions);
     }
 
     watch(chatOpen, (open) => {
@@ -1581,7 +1596,8 @@ const App = {
       lobbyTeams,
       lobbyTables,
       lobbyLoaded,
-      suppressDiscordNotification,
+      tableOptionsOpen,
+      tableOptions,
       nextTableKey,
       joinSpecificTable,
       showToast,
@@ -1676,12 +1692,28 @@ const App = {
             <button class="minitable__create-button" type="button" data-testid="lobby-create" @click="createTable()">
               <div class="minitable--create__plus">＋</div>
               <div class="minitable--create__label">Nouvelle table</div>
-              <div class="minitable--create__hint">{{ nextTableKey }}</div>
+              <div class="minitable--create__hint">{{ tableOptions.name || nextTableKey }}</div>
             </button>
-            <label class="minitable__discord-option">
-              <input type="checkbox" v-model="suppressDiscordNotification" data-testid="suppress-discord-notification" />
-              Ne pas notifier Discord
-            </label>
+            <button class="minitable__options-button" type="button" data-testid="table-options"
+                    :aria-expanded="tableOptionsOpen" @click="tableOptionsOpen = !tableOptionsOpen">Options de table</button>
+            <div v-if="tableOptionsOpen" class="table-options" data-testid="table-options-panel">
+              <label>Nom de la table
+                <input v-model="tableOptions.name" maxlength="20" placeholder="{{ nextTableKey }}" />
+              </label>
+              <label>Type de bot
+                <select v-model="tableOptions.botType">
+                  <option value="default">Par défaut</option>
+                </select>
+              </label>
+              <label class="table-options__check">
+                <input type="checkbox" v-model="tableOptions.coincheBlocksBidding" />
+                Coinche / Contre bloque les annonces
+              </label>
+              <label class="table-options__check">
+                <input type="checkbox" v-model="tableOptions.suppressDiscordNotification" data-testid="suppress-discord-notification" />
+                Ne pas notifier Discord
+              </label>
+            </div>
           </div>
 
           <!-- One mini-table per live table -->

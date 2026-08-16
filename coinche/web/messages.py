@@ -97,6 +97,11 @@ def parse_browser_message(raw: str | bytes) -> dict:
     if action == "join" and "suppress_discord_notification" in decoded:
         if not isinstance(decoded["suppress_discord_notification"], bool):
             raise WebProtocolError("suppress_discord_notification doit être un booléen.")
+    if action == "join" and "coinche_blocks_bidding" in decoded:
+        if not isinstance(decoded["coinche_blocks_bidding"], bool):
+            raise WebProtocolError("coinche_blocks_bidding doit être un booléen.")
+    if action == "join" and "bot_type" in decoded and decoded["bot_type"] != "default":
+        raise WebProtocolError("bot_type doit être 'default'.")
 
     return decoded
 

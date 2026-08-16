@@ -35,6 +35,16 @@ def test_add_player_fills_seats_in_order():
     assert table.game is not None  # auto-starts once the 4th seat fills
 
 
+def test_table_passes_non_blocking_coinche_rule_to_games():
+    table = Table("abcd", coinche_blocks_bidding=False, bot_type="default")
+    for name in ("Alice", "Bob", "Carol", "Dave"):
+        table.add_player(name, FakeWriter())
+
+    assert table.game is not None
+    assert table.game.coinche_blocks_bidding is False
+    assert table.bot_type == "default"
+
+
 def test_fill_with_bots_occupies_open_seats_and_starts_game():
     table = Table("abcd")
     table.add_player("Alice", FakeWriter())

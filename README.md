@@ -101,6 +101,12 @@ live member lists), then Enter to join; Esc returns to step 1.  When
 another player creates a table or joins one, the list and team rosters
 update automatically.
 
+In the Web lobby, **Options de table** opens the settings for a new table:
+table name, Discord notification, bot type (currently `Par défaut` only), and
+whether a Coinche/Contre blocks later bids. The blocking rule is enabled by
+default. When disabled, a later valid bid cancels the Coinche and returns the
+contract multiplier to normal.
+
 Alternatively, `./run_client.sh` creates the `.venv` if it doesn't exist,
 activates it, installs/updates `requirements.txt` when needed, then launches
 the client — passing through any arguments you give it:

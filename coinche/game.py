@@ -91,9 +91,11 @@ class Game:
         self,
         target_score: int = rules.DEFAULT_TARGET_SCORE,
         initial_dealer: Seat = Seat.N,
+        coinche_blocks_bidding: bool = True,
     ) -> None:
         self.target_score = target_score
         self.dealer = initial_dealer
+        self.coinche_blocks_bidding = coinche_blocks_bidding
         self.round_number = 0
         self.cumulative_scores: dict[str, int] = {"NS": 0, "EW": 0}
         self.phase = "bidding"
@@ -146,11 +148,12 @@ class Game:
         current = bid.current_highest_bid
         can_coinche = current is not None and bid.coinche_level == 1 and TEAM_OF[seat] != current["team"]
         can_surcoinche = current is not None and bid.coinche_level == 2 and TEAM_OF[seat] == current["team"]
-        # Once a coinche is on the table (coinche_level >= 2), the auction is
-        # closed to new point bids: the only moves left are passing or
-        # surcoinching (A6). Offering fresh bids would let the auction climb
-        # past the coinche, which isn't allowed.
-        legal_actions = rules.legal_bid_actions(current) if bid.coinche_level == 1 else []
+        # In the standard mode, a Coinche closes normal bidding (A6). The
+        # alternate table rule leaves the auction open: a later bid cancels
+        # the Coinche and restores its normal multiplier.
+        legal_actions = (
+            rules.legal_bid_actions(current) if bid.coinche_level == 1 or not self.coinche_blocks_bidding else []
+        )
         return {
             "current_highest_bid": current,
             "legal_actions": legal_actions,
@@ -187,7 +190,7 @@ class Game:
             return {"outcome": "continue", "seat": seat, "action": "pass", "next_to_act": bid.next_to_act}
 
         if action == "bid":
-            if bid.coinche_level != 1:
+            if bid.coinche_level != 1 and self.coinche_blocks_bidding:
                 raise IllegalBidError("Cannot bid once a coinche has been declared")
             new_bid = {"trump": trump, "points": points}
             if not rules.is_valid_bid(new_bid, bid.current_highest_bid):

@@ -1583,16 +1583,49 @@ body > .lobby {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
-.minitable__discord-option {
+.minitable__options-button {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: var(--gold-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+}
+.minitable__options-button:hover {
+  background: rgba(212, 175, 55, 0.16);
+}
+.table-options {
+  display: grid;
+  width: 100%;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-top: 1px solid rgba(212, 175, 55, 0.3);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.table-options label {
+  display: grid;
+  gap: var(--sp-1);
+}
+.table-options input:not([type="checkbox"]),
+.table-options select {
+  width: 100%;
+  padding: var(--sp-2);
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  border-radius: var(--radius-card);
+  background: var(--felt-green-dark);
+  color: var(--text-primary);
+  font: inherit;
+}
+.table-options__check {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 0 var(--sp-3) var(--sp-3);
-  color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.75rem;
 }
-.minitable__discord-option input {
+.table-options__check input {
   accent-color: var(--gold);
 }
 .lobby__card {

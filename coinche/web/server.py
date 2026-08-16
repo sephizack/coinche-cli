@@ -373,6 +373,8 @@ class WebOverlayServer:
                 msg.get("seat"),
                 spectate=bool(msg.get("spectate")),
                 suppress_discord_notification=bool(msg.get("suppress_discord_notification")),
+                coinche_blocks_bidding=msg.get("coinche_blocks_bidding", True),
+                bot_type=msg.get("bot_type", "default"),
             )
         elif action == "continue" and self.on_round_continue is not None:
             await self.on_round_continue()

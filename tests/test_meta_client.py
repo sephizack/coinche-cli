@@ -325,6 +325,54 @@ def test_new_session_redirects_and_connects_to_game() -> None:
     asyncio.run(scenario())
 
 
+def test_direct_session_url_sets_and_accepts_access_cookie() -> None:
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            _, headers, _ = await http_get(port, "/new?name=Alice")
+            location = headers["location"]
+
+            status, headers, body = await http_get(port, location)
+            assert status == 200
+            assert b"window.__META__" in body
+            cookie = headers["set-cookie"].split(";", 1)[0]
+
+            status, _, body = await http_get(port, location, auth=None, cookie=cookie)
+            assert status == 200
+            assert b"window.__META__" in body
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
+def test_table_deep_link_sets_and_accepts_access_cookie() -> None:
+    async def scenario() -> None:
+        game = FakeGameServer()
+        await game.start()
+        server, task, port = await _start_meta(game.port)
+        try:
+            table_key = "CosmoCanyonLongNameX"
+            status, headers, _ = await http_get(port, f"/new?name=Alice&table={table_key}&seat=S")
+            assert status == 302
+            location = headers["location"]
+            assert location.endswith(f"?table={table_key}&seat=S")
+            cookie = headers["set-cookie"].split(";", 1)[0]
+
+            status, _, body = await http_get(port, location, auth=None, cookie=cookie)
+            assert status == 200
+            assert f'"tableKey": "{table_key}"'.encode() in body
+            assert b'"preferredSeat": "S"' in body
+        finally:
+            await _stop(server, task)
+            await game.stop()
+
+    asyncio.run(scenario())
+
+
 def test_table_deep_link_reaches_session_page() -> None:
     async def scenario() -> None:
         game = FakeGameServer()

@@ -410,10 +410,12 @@ def choose_bid(game: Game, seat: Seat) -> dict:
             return own_rebid
         if _should_counter("coinche", current, strengths):
             return {"action": "coinche"}
-    if options["can_surcoinche"] and current is not None:
+    non_blocking_coinche = options["can_surcoinche"] and not game.coinche_blocks_bidding
+    if options["can_surcoinche"] and current is not None and not non_blocking_coinche:
         if _should_counter("surcoinche", current, strengths):
             return {"action": "surcoinche"}
 
+    deferred_normal_action = None
     last_partner_bid = next(
         (bid for bid in reversed(options["bid_history"]) if bid.get("action") == "bid" and _is_partner_bid(bid, seat)),
         None,
@@ -421,10 +423,14 @@ def choose_bid(game: Game, seat: Seat) -> dict:
     if last_partner_bid:
         partner_action = _try_partner_support(hand, last_partner_bid, options, seat, best_trump)
         if partner_action is not None:
-            return partner_action
+            if partner_action["action"] == "bid" or not non_blocking_coinche:
+                return partner_action
+            deferred_normal_action = partner_action
     own_action = _try_open_suit(hand, best_trump, opening_ceilings, options, seat)
     if own_action is not None:
-        return own_action
+        if own_action["action"] == "bid" or not non_blocking_coinche:
+            return own_action
+        deferred_normal_action = own_action
     if current is None:
         fallback_trump = _forced_opener_trump(hand)
         if fallback_trump is not None:
@@ -438,7 +444,9 @@ def choose_bid(game: Game, seat: Seat) -> dict:
         forced = next(action for action in options["legal_actions"] if action["trump"] == best_trump)
         return {"action": "bid", "trump": forced["trump"], "points": forced["points"]}
 
-    return {"action": "pass"}
+    if non_blocking_coinche and current is not None and _should_counter("surcoinche", current, strengths):
+        return {"action": "surcoinche"}
+    return deferred_normal_action or {"action": "pass"}
 
 
 def _card_strength(card: Card, trump: str) -> int:

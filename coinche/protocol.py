@@ -107,7 +107,9 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
 # allowed even when the table is full or a game is already in progress -- it is
 # the sanctioned way to watch a table you can't sit at (see server._resolve_join).
 # A creator can also set the optional boolean "suppress_discord_notification"
-# to keep a newly-created table out of the Discord notification channel.
+# to keep a newly-created table out of the Discord notification channel. It
+# may also set ``coinche_blocks_bidding`` (defaults to true) and ``bot_type``
+# (currently only ``"default"``) for a newly-created table.
 
 _VALID_BID_ACTIONS = {"pass", "bid", "coinche", "surcoinche"}
 
@@ -170,6 +172,12 @@ def _validate_client_payload(msg_type: str, payload: dict) -> None:
             points = payload.get("points")
             if points != "capot" and not isinstance(points, int):
                 raise ProtocolError(f"Invalid points value: {points!r}")
-    elif msg_type == JOIN and "suppress_discord_notification" in payload:
+    if msg_type == JOIN and "suppress_discord_notification" in payload:
         if not isinstance(payload["suppress_discord_notification"], bool):
             raise ProtocolError("suppress_discord_notification must be a boolean")
+    if msg_type == JOIN and "coinche_blocks_bidding" in payload:
+        if not isinstance(payload["coinche_blocks_bidding"], bool):
+            raise ProtocolError("coinche_blocks_bidding must be a boolean")
+    if msg_type == JOIN and "bot_type" in payload:
+        if payload["bot_type"] != "default":
+            raise ProtocolError("bot_type must be 'default'")
