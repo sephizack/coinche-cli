@@ -1731,17 +1731,17 @@ const App = {
                         :class="{ 'table-options__chip--active': tableOptions.coincheBlocksBidding }"
                         :aria-pressed="tableOptions.coincheBlocksBidding"
                         @click="tableOptions.coincheBlocksBidding = !tableOptions.coincheBlocksBidding">
-                  {{ tableOptions.coincheBlocksBidding ? 'Bloquant' : 'Continue' }}
+                  {{ tableOptions.coincheBlocksBidding ? 'Oui' : 'Non' }}
                 </button>
               </div>
               <div class="table-options__setting">
-                <span>Notifier Discord</span>
+                <span>Notification Discord</span>
                 <button class="table-options__chip" type="button"
                         :class="{ 'table-options__chip--active': discordNotificationsEnabled }"
                         :aria-pressed="discordNotificationsEnabled"
                         data-testid="suppress-discord-notification"
                         @click="discordNotificationsEnabled = !discordNotificationsEnabled">
-                  {{ discordNotificationsEnabled ? 'Activé' : 'Désactivé' }}
+                  {{ discordNotificationsEnabled ? 'Activée' : 'Désactivée' }}
                 </button>
               </div>
             </div>

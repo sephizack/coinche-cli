@@ -384,6 +384,57 @@ def _should_counter(
     return strengths[current["trump"]] >= required
 
 
+def _choose_normal_bid(
+    game: Game,
+    seat: Seat,
+    hand: list[Card],
+    best_trump: str,
+    opening_ceilings: dict[str, int | str | None],
+    options: dict,
+) -> dict:
+    """Choose a normal bid or pass, excluding Coinche and Surcoinche."""
+    last_partner_bid = next(
+        (bid for bid in reversed(options["bid_history"]) if bid.get("action") == "bid" and _is_partner_bid(bid, seat)),
+        None,
+    )
+    if last_partner_bid:
+        support_partner_action = _try_partner_support(hand, last_partner_bid, options, seat, best_trump)
+        if support_partner_action is not None:
+            return support_partner_action
+
+    own_action = _try_open_suit(hand, best_trump, opening_ceilings, options, seat)
+    if own_action is not None:
+        return own_action
+
+    if options["current_highest_bid"] is None:
+        fallback_trump = _forced_opener_trump(hand)
+        if fallback_trump is not None:
+            legal_for_suit = _legal_bids_up_to(options, fallback_trump, rules.BID_MIN + rules.BID_STEP)
+            if legal_for_suit:
+                choice = legal_for_suit[-1]
+                return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
+
+    bid_state = game.bid_state
+    if options["current_highest_bid"] is None and bid_state is not None and bid_state.pass_streak == 3:
+        forced = next(action for action in options["legal_actions"] if action["trump"] == best_trump)
+        return {"action": "bid", "trump": forced["trump"], "points": forced["points"]}
+
+    return {"action": "pass"}
+
+
+def _choose_counter_action(
+    options: dict, current: dict | None, strengths: dict[str, int]
+) -> dict | None:
+    """Choose Coinche or Surcoinche without displacing a normal Capot rebid."""
+    if current is None:
+        return None
+    if options["can_coinche"] and _should_counter("coinche", current, strengths):
+        return {"action": "coinche"}
+    if options["can_surcoinche"] and _should_counter("surcoinche", current, strengths):
+        return {"action": "surcoinche"}
+    return None
+
+
 def choose_bid(game: Game, seat: Seat) -> dict:
     """Choose a legal, conservative auction action from the bot's own hand."""
     options = game.bid_options_for(seat)
@@ -404,49 +455,13 @@ def choose_bid(game: Game, seat: Seat) -> dict:
             key=lambda trump: (_ceiling_value(opening_ceilings[trump]), strengths[trump]),
         )
 
-    if options["can_coinche"] and current is not None:
-        own_rebid = _try_open_suit(hand, best_trump, opening_ceilings, options, seat)
-        if own_rebid is not None and own_rebid.get("points") == rules.CAPOT:
-            return own_rebid
-        if _should_counter("coinche", current, strengths):
-            return {"action": "coinche"}
-    non_blocking_coinche = options["can_surcoinche"] and not game.coinche_blocks_bidding
-    if options["can_surcoinche"] and current is not None and not non_blocking_coinche:
-        if _should_counter("surcoinche", current, strengths):
-            return {"action": "surcoinche"}
-
-    deferred_normal_action = None
-    last_partner_bid = next(
-        (bid for bid in reversed(options["bid_history"]) if bid.get("action") == "bid" and _is_partner_bid(bid, seat)),
-        None,
-    )
-    if last_partner_bid:
-        partner_action = _try_partner_support(hand, last_partner_bid, options, seat, best_trump)
-        if partner_action is not None:
-            if partner_action["action"] == "bid" or not non_blocking_coinche:
-                return partner_action
-            deferred_normal_action = partner_action
-    own_action = _try_open_suit(hand, best_trump, opening_ceilings, options, seat)
-    if own_action is not None:
-        if own_action["action"] == "bid" or not non_blocking_coinche:
-            return own_action
-        deferred_normal_action = own_action
-    if current is None:
-        fallback_trump = _forced_opener_trump(hand)
-        if fallback_trump is not None:
-            legal_for_suit = _legal_bids_up_to(options, fallback_trump, rules.BID_MIN + rules.BID_STEP)
-            if legal_for_suit:
-                choice = legal_for_suit[-1]
-                return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
-
-    bid_state = game.bid_state
-    if current is None and bid_state is not None and bid_state.pass_streak == 3:
-        forced = next(action for action in options["legal_actions"] if action["trump"] == best_trump)
-        return {"action": "bid", "trump": forced["trump"], "points": forced["points"]}
-
-    if non_blocking_coinche and current is not None and _should_counter("surcoinche", current, strengths):
+    counter_action = _choose_counter_action(options, current, strengths)
+    normal_action = _choose_normal_bid(game, seat, hand, best_trump, opening_ceilings, options)
+    if counter_action is not None and normal_action.get("points") != rules.CAPOT:
+        return counter_action
+    if options["can_surcoinche"] and normal_action["action"] == "bid" and normal_action["trump"] == current["trump"]:
         return {"action": "surcoinche"}
-    return deferred_normal_action or {"action": "pass"}
+    return normal_action
 
 
 def _card_strength(card: Card, trump: str) -> int:
