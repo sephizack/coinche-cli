@@ -1456,7 +1456,7 @@ def test_bot_rebids_capot_before_coinching() -> None:
     assert action == {"action": "bid", "trump": "♠", "points": "capot"}
 
 
-def test_bot_rebids_instead_of_surcoinching_when_coinche_does_not_block_bidding() -> None:
+def test_bot_surcoinches_own_rebid_when_coinche_does_not_block_bidding() -> None:
     game = Game(coinche_blocks_bidding=False)
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "A♠", "10♠", "R♠", "A♥", "A♦", "7♣")
@@ -1467,9 +1467,19 @@ def test_bot_rebids_instead_of_surcoinching_when_coinche_does_not_block_bidding(
 
     action = choose_bid(game, Seat.W)
 
-    assert action["action"] == "bid"
-    assert action["trump"] == "♠"
-    assert action["points"] != 80
+    assert action == {"action": "surcoinche"}
+
+
+def test_bot_announces_another_trump_after_non_blocking_opponent_coinche() -> None:
+    # W opens ♥ and S coinches. E cannot support ♥ but has a strong ♠ hand,
+    # so the still-open auction lets E replace the coinched contract with ♠.
+    game = Game(coinche_blocks_bidding=False)
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "A♠", "10♠", "A♦", "A♣", "7♥", "8♥")
+    game.submit_bid(Seat.W, "bid", trump="♥", points=80)
+    game.submit_bid(Seat.S, "coinche")
+
+    assert choose_bid(game, Seat.E) == {"action": "bid", "trump": "♠", "points": 130}
 
 
 def test_opener_passes_without_partner_bonus_when_no_partner_bid_on_trump() -> None:

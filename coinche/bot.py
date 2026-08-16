@@ -422,9 +422,7 @@ def _choose_normal_bid(
     return {"action": "pass"}
 
 
-def _choose_counter_action(
-    options: dict, current: dict | None, strengths: dict[str, int]
-) -> dict | None:
+def _choose_counter_action(options: dict, current: dict | None, strengths: dict[str, int]) -> dict | None:
     """Choose Coinche or Surcoinche without displacing a normal Capot rebid."""
     if current is None:
         return None
