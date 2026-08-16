@@ -1609,7 +1609,7 @@ body > .lobby {
   display: grid;
   gap: var(--sp-1);
 }
-.table-options input:not([type="checkbox"]),
+.table-options input,
 .table-options select {
   width: 100%;
   padding: var(--sp-2);
@@ -1619,14 +1619,34 @@ body > .lobby {
   color: var(--text-primary);
   font: inherit;
 }
-.table-options__check {
+.table-options__setting {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  cursor: pointer;
+  justify-content: space-between;
+  gap: var(--sp-3);
 }
-.table-options__check input {
-  accent-color: var(--gold);
+.table-options__chip {
+  flex: 0 0 auto;
+  min-width: 82px;
+  padding: 5px var(--sp-3);
+  border: 1px solid rgba(245, 245, 245, 0.28);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.table-options__chip:hover {
+  border-color: var(--gold-soft);
+  color: var(--gold-soft);
+}
+.table-options__chip--active {
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.2);
+  color: var(--gold-soft);
 }
 .lobby__card {
   width: min(520px, 100%);

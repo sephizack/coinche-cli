@@ -1419,9 +1419,18 @@ const App = {
       botType: "default",
       coincheBlocksBidding: true,
     });
+    const discordNotificationsEnabled = computed({
+      get: () => !tableOptions.suppressDiscordNotification,
+      set: (enabled) => {
+        tableOptions.suppressDiscordNotification = !enabled;
+      },
+    });
+    const tableNameEdited = ref(false);
 
-    // Random venue key not already present, for the create card.
-    const nextTableKey = computed(() => {
+    // Choose a random venue key once, then preserve it in the editable field.
+    // Re-roll only when another table takes the untouched suggested key.
+    const nextTableKey = ref("table1");
+    function suggestedTableKey() {
       const keys = new Set(lobbyTables.value.map((t) => t.key.toLowerCase()));
       if (!tableNames.length) return "table1";
       const base = tableNames[Math.floor(Math.random() * tableNames.length)];
@@ -1433,7 +1442,16 @@ const App = {
         suffix += 1;
       }
       return key;
-    });
+    }
+
+    function refreshSuggestedTableKey() {
+      const keys = new Set(lobbyTables.value.map((t) => t.key.toLowerCase()));
+      if (tableNameEdited.value || (tableOptions.name && !keys.has(tableOptions.name.toLowerCase()))) return;
+      nextTableKey.value = suggestedTableKey();
+      tableOptions.name = nextTableKey.value;
+    }
+
+    watch(lobbyTables, refreshSuggestedTableKey, { immediate: true });
 
     function joinSpecificTable(tableKey, teamLabelText, seat, tableSettings = null) {
       const name = lobby.name.trim();
@@ -1598,6 +1616,8 @@ const App = {
       lobbyLoaded,
       tableOptionsOpen,
       tableOptions,
+      discordNotificationsEnabled,
+      tableNameEdited,
       nextTableKey,
       joinSpecificTable,
       showToast,
@@ -1698,21 +1718,32 @@ const App = {
                     :aria-expanded="tableOptionsOpen" @click="tableOptionsOpen = !tableOptionsOpen">Options de table</button>
             <div v-if="tableOptionsOpen" class="table-options" data-testid="table-options-panel">
               <label>Nom de la table
-                <input v-model="tableOptions.name" maxlength="20" placeholder="{{ nextTableKey }}" />
+                <input v-model="tableOptions.name" maxlength="20" @input="tableNameEdited = true" />
               </label>
               <label>Type de bot
                 <select v-model="tableOptions.botType">
                   <option value="default">Par défaut</option>
                 </select>
               </label>
-              <label class="table-options__check">
-                <input type="checkbox" v-model="tableOptions.coincheBlocksBidding" />
-                Coinche / Contre bloque les annonces
-              </label>
-              <label class="table-options__check">
-                <input type="checkbox" v-model="tableOptions.suppressDiscordNotification" data-testid="suppress-discord-notification" />
-                Ne pas notifier Discord
-              </label>
+              <div class="table-options__setting">
+                <span>Coincher bloque les annonces</span>
+                <button class="table-options__chip" type="button"
+                        :class="{ 'table-options__chip--active': tableOptions.coincheBlocksBidding }"
+                        :aria-pressed="tableOptions.coincheBlocksBidding"
+                        @click="tableOptions.coincheBlocksBidding = !tableOptions.coincheBlocksBidding">
+                  {{ tableOptions.coincheBlocksBidding ? 'Bloquant' : 'Continue' }}
+                </button>
+              </div>
+              <div class="table-options__setting">
+                <span>Notifier Discord</span>
+                <button class="table-options__chip" type="button"
+                        :class="{ 'table-options__chip--active': discordNotificationsEnabled }"
+                        :aria-pressed="discordNotificationsEnabled"
+                        data-testid="suppress-discord-notification"
+                        @click="discordNotificationsEnabled = !discordNotificationsEnabled">
+                  {{ discordNotificationsEnabled ? 'Activé' : 'Désactivé' }}
+                </button>
+              </div>
             </div>
           </div>
 
