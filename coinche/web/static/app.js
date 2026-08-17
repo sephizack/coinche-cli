@@ -1747,7 +1747,7 @@ const App = {
           <div class="minitable minitable--create">
             <button class="minitable__create-button" type="button" data-testid="lobby-create" @click="createTable()">
               <div class="minitable--create__plus">＋</div>
-              <div class="minitable--create__label">Nouvelle table</div>
+              <div class="minitable--create__label">Créer table</div>
               <div class="minitable--create__hint">{{ tableOptions.name || nextTableKey }}</div>
             </button>
             <button class="minitable__options-button" type="button" data-testid="table-options"

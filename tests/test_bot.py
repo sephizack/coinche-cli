@@ -81,6 +81,27 @@ def test_noob_does_not_use_the_default_bot_fallback_opener() -> None:
     assert choose_bid(game, Seat.W, "noob") == {"action": "pass"}
 
 
+def test_noob_randomly_raises_its_teams_latest_bid(monkeypatch) -> None:
+    game = Game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "bid", trump="♥", points=90)
+    game.submit_bid(Seat.E, "pass")
+    monkeypatch.setattr(noob.random, "randrange", lambda stop: 0)
+
+    assert choose_bid(game, Seat.N, "noob") == {"action": "bid", "trump": "♥", "points": 100}
+
+
+def test_noob_keeps_its_regular_bid_logic_when_random_raise_does_not_trigger(monkeypatch) -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "8♠", "A♥", "8♥", "7♦", "8♦", "7♣")
+    game.submit_bid(Seat.W, "bid", trump="♥", points=80)
+    game.submit_bid(Seat.S, "pass")
+    monkeypatch.setattr(noob.random, "randrange", lambda stop: 1)
+
+    assert choose_bid(game, Seat.E, "noob") == {"action": "pass"}
+
+
 def test_noob_plays_a_random_legal_card(monkeypatch) -> None:
     game = Game()
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)
