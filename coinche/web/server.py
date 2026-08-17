@@ -28,7 +28,7 @@ import struct
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from coinche.bot import available_bot_types
+from coinche.bot import DEFAULT_BOT_TYPE, available_bot_types
 from coinche.session_state import ClientState, snapshot_to_dict
 from coinche.web.messages import (
     WebProtocolError,
@@ -377,7 +377,7 @@ class WebOverlayServer:
                 spectate=bool(msg.get("spectate")),
                 suppress_discord_notification=bool(msg.get("suppress_discord_notification")),
                 coinche_blocks_bidding=msg.get("coinche_blocks_bidding", True),
-                bot_type=msg.get("bot_type", "smart"),
+                bot_type=msg.get("bot_type", DEFAULT_BOT_TYPE),
             )
         elif action == "continue" and self.on_round_continue is not None:
             await self.on_round_continue()

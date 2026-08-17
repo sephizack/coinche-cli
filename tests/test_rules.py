@@ -229,13 +229,26 @@ def test_score_round_contract_made_normal():
     assert result["EW"]["total"] == 70
 
 
-def test_score_round_made_example_from_spec():
-    # 80 annoncés et 60 faits avec belote : 80 + 60 + 20 = 160 preneurs, 102 adversaires.
+def test_score_round_opponent_has_more_points_fails_contract():
+    # 80 annoncés, 80 cartes faites par NS (contrat atteint), mais EW a fait 82 cartes :
+    # l'adversaire ayant fait plus de points, le contrat est chuté.
+    captured = {"NS": 80, "EW": 82}
+    bid = {"team": "NS", "trump": "♠", "points": 80}
+    result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder=None)
+    assert result["NS"]["contract_result"] == "failed"
+    assert result["NS"]["total"] == 0
+    assert result["EW"]["total"] == 240  # 160 (pool) + 80 (demandé)
+
+
+def test_score_round_opponent_has_more_points_with_belote_fails_contract():
+    # 80 annoncés et 60 faits avec belote (total 80 = contrat atteint), mais adversaires = 102 :
+    # l'adversaire ayant plus de points (102 > 80), le contrat est chuté.
     captured = {"NS": 60, "EW": 102}
     bid = {"team": "NS", "trump": "♠", "points": 80}
     result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder="NS")
-    assert result["NS"]["total"] == 160  # 60 + 80 + 20 belote
-    assert result["EW"]["total"] == 100  # 102 arrondi à 100
+    assert result["NS"]["contract_result"] == "failed"
+    assert result["NS"]["total"] == 20  # 0 base + 20 belote
+    assert result["EW"]["total"] == 240  # 160 (pool) + 80 (demandé)
 
 
 def test_score_round_98_faits_sur_100_arrondi_a_5_valide_le_contrat():
@@ -343,9 +356,11 @@ def test_score_round_belote_bonus_credited_to_holder_on_failure():
 
 
 def test_score_round_belote_helps_fulfil_contract():
-    # 80 annoncés, 60 cartes + belote NS (60 + 20 = 80) -> contrat réussi.
-    captured = {"NS": 60, "EW": 102}
-    bid = {"team": "NS", "trump": "♠", "points": 80}
+    # 90 annoncés, 72 cartes + 20 belote NS = 92 points (vs 90 adversaires) :
+    # la belote permet d'atteindre le contrat (92 >= 90) et de dépasser les adversaires (92 >= 90) -> réussi.
+    captured = {"NS": 72, "EW": 90}
+    bid = {"team": "NS", "trump": "♠", "points": 90}
     result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder="NS")
     assert result["NS"]["contract_result"] == "made"
-    assert result["NS"]["total"] == 160  # 60 (arrondi) + 80 + 20 belote
+    assert result["NS"]["total"] == 180  # 70 (72 arrondi à 10) + 90 (demandé) + 20 (belote)
+    assert result["EW"]["total"] == 90  # 90 arrondi à 10

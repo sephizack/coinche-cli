@@ -28,6 +28,7 @@ from rich.live import Live
 from rich.text import Text
 
 from coinche import __version__, protocol, ui
+from coinche.bot import DEFAULT_BOT_TYPE
 from coinche.session_state import ClientState, _build_last_round_contract, apply_message
 from coinche.table import TABLE_NAMES
 from coinche.web import WebOverlayServer
@@ -96,7 +97,7 @@ class ClientLink:
         spectate: bool = False,
         suppress_discord_notification: bool = False,
         coinche_blocks_bidding: bool = True,
-        bot_type: str = "smart",
+        bot_type: str = DEFAULT_BOT_TYPE,
     ) -> bool:
         payload = {"table_key": table_key, "player_name": player_name, "team_name": team_name}
         if seat is not None:
@@ -107,7 +108,7 @@ class ClientLink:
             payload["suppress_discord_notification"] = True
         if not coinche_blocks_bidding:
             payload["coinche_blocks_bidding"] = False
-        if bot_type != "smart":
+        if bot_type != DEFAULT_BOT_TYPE:
             payload["bot_type"] = bot_type
         return await self._send(protocol.JOIN, payload)
 

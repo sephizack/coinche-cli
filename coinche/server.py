@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 
 from coinche import __version__, protocol, rules
-from coinche.bot import choose_bid, choose_card, configure_samples, is_supported_bot_type
+from coinche.bot import DEFAULT_BOT_TYPE, choose_bid, choose_card, configure_samples, is_supported_bot_type
 from coinche.cards import Card, Seat
 from coinche.game import PARTNER_OF, TEAM_OF, Game, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
@@ -1169,7 +1169,7 @@ async def _resolve_join_inner(
     spectate = bool(payload.get("spectate"))
     suppress_discord_notification = payload.get("suppress_discord_notification", False)
     coinche_blocks_bidding = payload.get("coinche_blocks_bidding", True)
-    bot_type = payload.get("bot_type", "smart")
+    bot_type = payload.get("bot_type", DEFAULT_BOT_TYPE)
     if not isinstance(bot_type, str) or not is_supported_bot_type(bot_type):
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "Type de bot inconnu.")
         return None

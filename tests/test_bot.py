@@ -14,6 +14,7 @@ import coinche.bot_types.noob as noob
 from coinche import server
 from coinche.benchmark import run_cloclo_benchmark
 from coinche.bot import (
+    DEFAULT_BOT_TYPE,
     _auction_card_weights,
     _known_void_suits,
     _sample_hidden_hands,
@@ -62,7 +63,8 @@ def test_bot_entry_point_dispatches_to_the_requested_type(monkeypatch) -> None:
 
 
 def test_smart_is_the_public_name_of_the_default_strategy() -> None:
-    assert "smart" in available_bot_types()
+    assert DEFAULT_BOT_TYPE == "smart"
+    assert DEFAULT_BOT_TYPE in available_bot_types()
     assert "default" not in available_bot_types()
 
 

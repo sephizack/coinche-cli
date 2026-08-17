@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from coinche import protocol, rules
+from coinche.bot import DEFAULT_BOT_TYPE
 from coinche.game import PARTNER_OF, Game, Seat
 from coinche.timeouts import DEFAULT_TURN_TIMEOUT_SECONDS
 
@@ -159,7 +160,7 @@ class Table:
         table_key: str,
         target_score: int = rules.DEFAULT_TARGET_SCORE,
         coinche_blocks_bidding: bool = True,
-        bot_type: str = "smart",
+        bot_type: str = DEFAULT_BOT_TYPE,
         trick_pause_seconds: float = 2.5,
         round_pause_seconds: float = 4.0,
         bot_think_seconds: float = 1.0,
@@ -514,7 +515,7 @@ def get_or_create_table(
     table_key: str,
     target_score: int = rules.DEFAULT_TARGET_SCORE,
     coinche_blocks_bidding: bool = True,
-    bot_type: str = "smart",
+    bot_type: str = DEFAULT_BOT_TYPE,
     trick_pause_seconds: float = 2.5,
     round_pause_seconds: float = 4.0,
     bot_think_seconds: float = 1.0,

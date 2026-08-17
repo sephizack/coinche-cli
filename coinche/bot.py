@@ -14,8 +14,10 @@ from coinche.game import Game
 # The server configures this explicit runtime value through ``--bot-samples``.
 MONTE_CARLO_SAMPLES = 100
 
+DEFAULT_BOT_TYPE = "toto"
+
 _BOT_TYPES: dict[str, Callable[[int], BotType]] = {
-    "smart": DefaultBot,
+    DEFAULT_BOT_TYPE: DefaultBot,
     "maestro": MaestroBot,
     "cloclo": ClocloBot,
     "noob": NoobBot,
@@ -38,12 +40,12 @@ def _get_bot(bot_type: str) -> BotType:
     return strategy_type(MONTE_CARLO_SAMPLES)
 
 
-def choose_bid(game: Game, seat: Seat, bot_type: str = "smart") -> dict:
+def choose_bid(game: Game, seat: Seat, bot_type: str = DEFAULT_BOT_TYPE) -> dict:
     """Choose an auction action using the table's configured bot strategy."""
     return _get_bot(bot_type).choose_bid(game, seat)
 
 
-def choose_card(game: Game, seat: Seat, bot_type: str = "smart") -> Card:
+def choose_card(game: Game, seat: Seat, bot_type: str = DEFAULT_BOT_TYPE) -> Card:
     """Choose a card using the table's configured bot strategy."""
     return _get_bot(bot_type).choose_card(game, seat)
 

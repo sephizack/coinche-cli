@@ -301,8 +301,7 @@ def score_round(
     announced = CAPOT_ANNOUNCE if is_capot_bid else bid["points"]
     attacker_made_capot = attacker_tricks == TRICKS_PER_ROUND
 
-    # The belote (+20) held by the attackers helps fulfil the contract:
-    # "La belote aide à accomplir le contrat" (spec).
+    # The belote (+20) held by each team:
     attacker_belote = BELOTE_BONUS if belote_holder == attacking_team else 0
 
     # Attacking-team base score before coinche multiplier (excludes belote).
@@ -310,10 +309,16 @@ def score_round(
         contract_made = bool(capot_result)
     else:
         attacking_points = captured_points_by_team.get(attacking_team, 0)
+        defending_points = captured_points_by_team.get(defending_team, 0)
         # Les points faits (cartes + belote éventuelle des preneurs) sont
         # arrondis à 5 près avant d'être comparés au contrat : 98 sur 100
         # annoncés vaut donc contrat réussi (98 -> 100).
-        contract_made = round_to_nearest_five(attacking_points + attacker_belote) >= bid["points"]
+        # De plus, si l'adversaire a fait plus de points à la fin de la manche
+        # (cartes + belote éventuelle), le contrat est quand même perdu (chuté).
+        contract_made = (
+            round_to_nearest_five(attacking_points + attacker_belote) >= bid["points"]
+            and attacking_points >= defending_points
+        )
 
     if contract_made:
         # Points réalisés by the attackers: a full capot is worth 252
