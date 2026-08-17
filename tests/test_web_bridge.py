@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from coinche import bot
 from coinche.session_state import ClientState
 from coinche.web import WebOverlayServer
 from coinche.web.messages import (
@@ -118,8 +119,15 @@ def test_parse_rejects_invalid_table_options() -> None:
         )
     with pytest.raises(WebProtocolError):
         parse_browser_message(
-            json.dumps({"action": "join", "table_key": "t1", "player_name": "Zoe", "bot_type": "advanced"})
+            json.dumps({"action": "join", "table_key": "t1", "player_name": "Zoe", "bot_type": "unknown"})
         )
+
+
+def test_parse_accepts_a_registered_bot_type(monkeypatch) -> None:
+    monkeypatch.setitem(bot._BOT_TYPES, "test", bot.DefaultBot)
+    frame = {"action": "join", "table_key": "t1", "player_name": "Zoe", "bot_type": "test"}
+
+    assert parse_browser_message(json.dumps(frame)) == frame
 
 
 @pytest.mark.parametrize(
@@ -363,6 +371,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
             frame = json.loads(await asyncio.wait_for(client.recv(), timeout=5))
             assert frame["type"] == "state"
             assert frame["snapshot"]["status_message"] == "En attente de joueurs (2/4)..."
+            assert frame["snapshot"]["available_bot_types"] == ["default"]
             await client.close()
         finally:
             await _stop(task)

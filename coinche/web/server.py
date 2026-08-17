@@ -28,6 +28,7 @@ import struct
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+from coinche.bot import available_bot_types
 from coinche.session_state import ClientState, snapshot_to_dict
 from coinche.web.messages import (
     WebProtocolError,
@@ -395,7 +396,9 @@ class WebOverlayServer:
         unaffected."""
         if not self.clients:
             return
-        frame = encode_state_frame(snapshot_to_dict(state))
+        snapshot = snapshot_to_dict(state)
+        snapshot["available_bot_types"] = list(available_bot_types())
+        frame = encode_state_frame(snapshot)
         for ws in list(self.clients):
             try:
                 await asyncio.wait_for(ws.send(frame), timeout=BROADCAST_TIMEOUT)

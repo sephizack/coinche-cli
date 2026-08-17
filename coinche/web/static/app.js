@@ -1412,6 +1412,10 @@ const App = {
     // so a slow WS connection doesn't flash "aucune table" before the tables pop
     // in. `snapshot` is null before the first {type:"state"} frame.
     const lobbyLoaded = computed(() => snapshot.value !== null);
+    const availableBotTypes = computed(() => {
+      const types = snapshot.value && snapshot.value.available_bot_types;
+      return Array.isArray(types) && types.length ? types : ["default"];
+    });
     const tableOptionsOpen = ref(false);
     const tableOptions = reactive({
       name: "",
@@ -1614,6 +1618,7 @@ const App = {
       lobbyTeams,
       lobbyTables,
       lobbyLoaded,
+      availableBotTypes,
       tableOptionsOpen,
       tableOptions,
       discordNotificationsEnabled,
@@ -1722,7 +1727,9 @@ const App = {
               </label>
               <label>Type de bot
                 <select v-model="tableOptions.botType">
-                  <option value="default">Par défaut</option>
+                  <option v-for="botType in availableBotTypes" :key="botType" :value="botType">
+                    {{ botType === "default" ? "Par défaut" : botType }}
+                  </option>
                 </select>
               </label>
               <div class="table-options__setting">

@@ -17,6 +17,7 @@ from coinche.bot import (
     _select_tactical_card_for_simulation,
     _support_ceiling,
     _team_auction_supports_trump,
+    available_bot_types,
     choose_bid,
     choose_card,
     configure_samples,
@@ -27,6 +28,25 @@ from coinche.game import TEAM_OF, Game
 
 def _cards(*values: str):
     return [Card(value[:-1], value[-1]) for value in values]
+
+
+def test_bot_entry_point_dispatches_to_the_requested_type(monkeypatch) -> None:
+    class TestBot:
+        def __init__(self, sample_count: int) -> None:
+            self.sample_count = sample_count
+
+        def choose_bid(self, game: Game, seat: Seat) -> dict:
+            return {"action": "test_bid", "samples": self.sample_count}
+
+        def choose_card(self, game: Game, seat: Seat) -> Card:
+            return Card("7", "♠")
+
+    monkeypatch.setitem(bot._BOT_TYPES, "test", TestBot)
+    monkeypatch.setattr(bot, "MONTE_CARLO_SAMPLES", 17)
+
+    assert "test" in available_bot_types()
+    assert choose_bid(Game(), Seat.W, "test") == {"action": "test_bid", "samples": 17}
+    assert choose_card(Game(), Seat.W, "test") == Card("7", "♠")
 
 
 def test_bot_bids_a_strong_trump_hand() -> None:

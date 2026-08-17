@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 
+from coinche import bot
+
 # Per-message size cap for inbound browser frames (BR-U2-5). Mirrors the
 # server's 64 KiB `readline` DoS guard at this new I/O boundary. A browser
 # action frame is always tiny (a card, a bid, a short chat line), so anything
@@ -100,8 +102,10 @@ def parse_browser_message(raw: str | bytes) -> dict:
     if action == "join" and "coinche_blocks_bidding" in decoded:
         if not isinstance(decoded["coinche_blocks_bidding"], bool):
             raise WebProtocolError("coinche_blocks_bidding doit être un booléen.")
-    if action == "join" and "bot_type" in decoded and decoded["bot_type"] != "default":
-        raise WebProtocolError("bot_type doit être 'default'.")
+    if action == "join" and "bot_type" in decoded:
+        bot_type = decoded["bot_type"]
+        if not isinstance(bot_type, str) or not bot.is_supported_bot_type(bot_type):
+            raise WebProtocolError("Type de bot inconnu.")
 
     return decoded
 

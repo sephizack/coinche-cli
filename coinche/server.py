@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 
 from coinche import __version__, protocol, rules
-from coinche.bot import choose_bid, choose_card, configure_samples
+from coinche.bot import choose_bid, choose_card, configure_samples, is_supported_bot_type
 from coinche.cards import Card, Seat
 from coinche.game import PARTNER_OF, TEAM_OF, Game, IllegalBidError, IllegalCardError, NotYourTurnError
 from coinche.table import (
@@ -788,9 +788,9 @@ async def _run_bot_turns(table: Table) -> None:
             started = time.monotonic()
             loop = asyncio.get_running_loop()
             if phase == "bidding":
-                bid_action = await loop.run_in_executor(None, choose_bid, game, seat)
+                bid_action = await loop.run_in_executor(None, choose_bid, game, seat, table.bot_type)
             elif phase == "trick_play":
-                card = await loop.run_in_executor(None, choose_card, game, seat)
+                card = await loop.run_in_executor(None, choose_card, game, seat, table.bot_type)
             else:
                 return
 
@@ -1144,6 +1144,9 @@ async def _resolve_join_inner(
     suppress_discord_notification = payload.get("suppress_discord_notification", False)
     coinche_blocks_bidding = payload.get("coinche_blocks_bidding", True)
     bot_type = payload.get("bot_type", "default")
+    if not isinstance(bot_type, str) or not is_supported_bot_type(bot_type):
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "Type de bot inconnu.")
+        return None
 
     preferred_seat: Seat | None = None
     if payload.get("seat"):
