@@ -319,6 +319,13 @@ button {
   top: 50%;
 }
 
+.seat__identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 100%;
+}
 .seat__nameplate {
   display: inline-flex;
   align-items: center;
@@ -370,7 +377,7 @@ button {
   color: var(--gold);
   font-weight: 700;
 }
-/* "bot" pill on a seat driven by a bot, mirroring the lobby's .seatchip__tag. */
+/* Bot strategy control beneath the nameplate, mirroring the lobby's .seatchip__tag. */
 .seat__tag {
   font-size: 0.6rem;
   text-transform: uppercase;
@@ -1827,6 +1834,27 @@ body > .lobby {
   color: var(--gold);
   font-family: "Georgia", serif;
   font-size: 1.7rem;
+}
+.recap__outcome {
+  margin: 0 0 var(--sp-6);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-card);
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.recap__outcome--won {
+  background: rgba(123, 216, 143, 0.15);
+  color: #7bd88f;
+}
+.recap__outcome--lost {
+  background: rgba(231, 76, 60, 0.15);
+  color: #ff8c82;
+}
+.recap__outcome--tied {
+  background: rgba(212, 175, 55, 0.15);
+  color: var(--gold-soft);
 }
 .recap__scores-title {
   margin: 0;

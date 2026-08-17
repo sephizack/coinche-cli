@@ -205,14 +205,16 @@ const SeatPanel = {
   },
   template: `
     <div :class="seatClasses">
-      <div class="seat__nameplate">
-        <span class="seat__name">{{ name }}</span>
-        <span v-if="isBot && isTurn" class="seat__turn-spinner" role="status" aria-label="Le bot joue"></span>
+      <div class="seat__identity">
+        <div class="seat__nameplate">
+          <span class="seat__name">{{ name }}</span>
+          <span v-if="isBot && isTurn" class="seat__turn-spinner" role="status" aria-label="Le bot joue"></span>
+          <span v-if="isDealer" class="seat__badge">(D)</span>
+        </div>
         <button v-if="isBot" class="seat__tag" type="button"
           :aria-label="'Changer le type du bot ' + name"
           :title="'Changer le type du bot'"
-                @click="$emit('change-bot-type')">BOT {{ botType || 'smart' }}</button>
-        <span v-if="isDealer" class="seat__badge">(D)</span>
+          @click="$emit('change-bot-type')">BOT {{ botType || 'smart' }}</button>
       </div>
       <span v-if="!connected" class="seat__offline-note">déconnecté</span>
       <div class="seat__slot">
@@ -1208,6 +1210,14 @@ const App = {
       };
     });
 
+    const roundOutcome = computed(() => {
+      const scores = roundScores.value;
+      if (!scores) return null;
+      if (scores.nous.total > scores.eux.total) return "won";
+      if (scores.nous.total < scores.eux.total) return "lost";
+      return "tied";
+    });
+
     const winnerLabel = computed(() => {
       const s = snapshot.value;
       if (!s || !s.winning_team) return "";
@@ -1547,12 +1557,17 @@ const App = {
     );
 
     // Auto-play: when our turn arrives and a card was pre-selected, play it.
+    // A completed trick still names its winner as `whose_turn` during the
+    // visual pause, so wait for TRICK_CLEARED to empty the table first.
     watch(
-      () => snapshot.value && snapshot.value.whose_turn,
-      (turn) => {
+      () => {
+        const s = snapshot.value;
+        return [s ? s.whose_turn : null, s ? Object.keys(s.current_trick || {}).length : 0];
+      },
+      ([turn, trickSize]) => {
         if (!pendingCard.value) return;
         const s = snapshot.value;
-        if (!s || turn !== s.seat) return;
+        if (!s || turn !== s.seat || trickSize === 4) return;
         const card = pendingCard.value;
         pendingCard.value = null;
         sendAction("play", { card });
@@ -1625,6 +1640,7 @@ const App = {
       turnCountdown,
       recapContract,
       roundScores,
+      roundOutcome,
       winnerLabel,
       finalNous,
       finalEux,
@@ -1835,6 +1851,9 @@ const App = {
       </button>
       <div class="recap__card" role="dialog" aria-labelledby="rr-title">
         <h2 class="recap__title" id="rr-title">Fin de la manche</h2>
+        <p v-if="roundOutcome" class="recap__outcome" :class="'recap__outcome--' + roundOutcome">
+          {{ roundOutcome === 'won' ? 'Vous avez gagné la manche' : roundOutcome === 'lost' ? 'Vous avez perdu la manche' : 'Manche nulle' }}
+        </p>
         <p class="recap__scores-title">Points faits</p>
         <div class="recap__scores" v-if="roundScores">
           <div>

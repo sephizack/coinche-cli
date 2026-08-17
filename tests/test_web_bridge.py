@@ -740,6 +740,9 @@ def test_web_client_shows_final_round_recap_before_game_over() -> None:
 
     assert app.index('v-else-if="flags.round_over_screen"') < app.index('v-else-if="flags.game_over"')
     assert "{{ flags.game_over ? 'Voir le résultat de la partie' : 'Manche suivante' }}" in app
+    assert "roundOutcome" in app
+    assert "Vous avez gagné la manche" in app
+    assert "Vous avez perdu la manche" in app
     assert 'data-testid="round-recap-chat-toggle"' in app
     assert 'data-testid="game-over-chat-toggle"' in app
     assert 'v-if="chatOpen && (flags.round_over_screen || flags.game_over)"' in app
@@ -869,6 +872,19 @@ def test_web_client_animates_each_new_trick_card() -> None:
     for position in ("south", "north", "west", "east"):
         assert f".trick-card--{position}.trick-card-enter-active" in styles
         assert f"@keyframes trick-card-enter-{position}" in styles
+
+
+def test_web_client_keeps_bot_type_control_outside_the_nameplate() -> None:
+    """Bot names retain the full nameplate width while their strategy remains selectable."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    identity = app[app.index('<div class="seat__identity">') : app.index('<span v-if="!connected"')]
+    assert '<div class="seat__nameplate">' in identity
+    assert '<button v-if="isBot" class="seat__tag"' in identity
+    assert identity.index('</div>\n        <button v-if="isBot"') > identity.index('<div class="seat__nameplate">')
+    assert ".seat__identity" in styles
 
 
 def test_web_client_disconnect_clears_browser_storage() -> None:
