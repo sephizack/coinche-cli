@@ -1728,7 +1728,7 @@ const App = {
               <label>Type de bot
                 <select v-model="tableOptions.botType">
                   <option v-for="botType in availableBotTypes" :key="botType" :value="botType">
-                    {{ botType === "default" ? "Par défaut" : botType }}
+                    {{ botType === "default" ? "Par défaut" : botType === "maestro" ? "Maestro - audacieux" : botType }}
                   </option>
                 </select>
               </label>

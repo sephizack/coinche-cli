@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from coinche.bot_types import DefaultBot
+from coinche.bot_types import DefaultBot, MaestroBot, NoobBot
 from coinche.bot_types import default as _default
 from coinche.bot_types.base import BotType
 from coinche.cards import Card, Seat
@@ -14,7 +14,7 @@ from coinche.game import Game
 # The server configures this explicit runtime value through ``--bot-samples``.
 MONTE_CARLO_SAMPLES = 100
 
-_BOT_TYPES: dict[str, Callable[[int], BotType]] = {"default": DefaultBot}
+_BOT_TYPES: dict[str, Callable[[int], BotType]] = {"default": DefaultBot, "maestro": MaestroBot, "noob": NoobBot}
 
 
 def available_bot_types() -> tuple[str, ...]:

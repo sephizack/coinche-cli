@@ -102,10 +102,12 @@ another player creates a table or joins one, the list and team rosters
 update automatically.
 
 In the Web lobby, **Options de table** opens the settings for a new table:
-table name, Discord notification, bot type (currently `Par défaut` only), and
+table name, Discord notification, bot type (`Par défaut` or `Maestro`), and
 whether a Coinche/Contre blocks later bids. The blocking rule is enabled by
-default. When disabled, a later valid bid cancels the Coinche and returns the
-contract multiplier to normal.
+default. `Maestro` uses the same information-safe card play as the default bot
+but announces one extra trick when it holds firm trump control. When disabled,
+a later valid bid cancels the Coinche and returns the contract multiplier to
+normal.
 
 Alternatively, `./run_client.sh` creates the `.venv` if it doesn't exist,
 activates it, installs/updates `requirements.txt` when needed, then launches

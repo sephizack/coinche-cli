@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 
+from coinche.bot import is_supported_bot_type
 from coinche.rules import ALLOWED_TRUMPS
 
 TABLE_KEY_MIN_LENGTH = 4
@@ -179,5 +180,5 @@ def _validate_client_payload(msg_type: str, payload: dict) -> None:
         if not isinstance(payload["coinche_blocks_bidding"], bool):
             raise ProtocolError("coinche_blocks_bidding must be a boolean")
     if msg_type == JOIN and "bot_type" in payload:
-        if payload["bot_type"] != "default":
-            raise ProtocolError("bot_type must be 'default'")
+        if not isinstance(payload["bot_type"], str) or not is_supported_bot_type(payload["bot_type"]):
+            raise ProtocolError(f"Unknown bot_type: {payload['bot_type']!r}")
