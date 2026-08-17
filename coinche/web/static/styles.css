@@ -379,6 +379,7 @@ button {
 }
 /* Bot strategy control beneath the nameplate, mirroring the lobby's .seatchip__tag. */
 .seat__tag {
+  font: inherit;
   font-size: 0.6rem;
   text-transform: uppercase;
   color: var(--gold-soft);
@@ -387,7 +388,6 @@ button {
   border-radius: 4px;
   padding: 0 3px;
   cursor: pointer;
-  font: inherit;
 }
 .seat__tag:hover,
 .seat__tag:focus-visible {

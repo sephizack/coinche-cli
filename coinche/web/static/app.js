@@ -214,7 +214,7 @@ const SeatPanel = {
         <button v-if="isBot" class="seat__tag" type="button"
           :aria-label="'Changer le type du bot ' + name"
           :title="'Changer le type du bot'"
-          @click="$emit('change-bot-type')">BOT {{ botType || 'smart' }}</button>
+          @click="$emit('change-bot-type')">BOT {{ (botType || 'smart').toUpperCase() }}</button>
       </div>
       <span v-if="!connected" class="seat__offline-note">déconnecté</span>
       <div class="seat__slot">
@@ -1244,7 +1244,8 @@ const App = {
     function playCard(card) {
       const s = snapshot.value;
       if (!s) return;
-      const isOurTurn = s.whose_turn === s.seat;
+      const hasPlayedThisTrick = Object.prototype.hasOwnProperty.call(s.current_trick || {}, s.seat);
+      const isOurTurn = s.whose_turn === s.seat && !hasPlayedThisTrick;
       if (isOurTurn) {
         // Our turn: play immediately (server-authoritative validation).
         pendingCard.value = null;

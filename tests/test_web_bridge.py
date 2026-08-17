@@ -874,6 +874,15 @@ def test_web_client_animates_each_new_trick_card() -> None:
         assert f"@keyframes trick-card-enter-{position}" in styles
 
 
+def test_web_client_queues_card_after_the_local_seat_has_played_this_trick() -> None:
+    """The trick winner can choose their next card during the visual pause."""
+    app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()
+
+    assert "const hasPlayedThisTrick = Object.prototype.hasOwnProperty.call(s.current_trick || {}, s.seat);" in app
+    assert "const isOurTurn = s.whose_turn === s.seat && !hasPlayedThisTrick;" in app
+    assert "// Not our turn: toggle queue." in app
+
+
 def test_web_client_keeps_bot_type_control_outside_the_nameplate() -> None:
     """Bot names retain the full nameplate width while their strategy remains selectable."""
     static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
