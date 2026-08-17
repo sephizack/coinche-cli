@@ -85,7 +85,12 @@ CI (`.github/workflows/ci.yml`) runs the same three checks on push/PR for Python
   starts the game and advances consecutive bot turns through `Game.submit_bid`
   and `Game.submit_card`; bots never bypass authoritative validation. The
   terminal exposes **F** and the web overlay exposes a matching button only
-  while `ClientState.can_fill_bots` is true.
+  while `ClientState.can_fill_bots` is true. The table's `bot_type` is the
+  default copied to each newly-created bot session.
+- **`SET_BOT_TYPE`** (client→server, `{"seat": str, "bot_type": str}`): changes
+  the strategy of one bot-held seat. The server validates both the type and the
+  target chair, then broadcasts `BOT_TYPE_CHANGED`; the web badge displays
+  `BOT <type>` and cycles through available strategies on click.
 - **Replace-a-bot join** (no new message type — a plain `JOIN` on an in-progress
   table that has bots). The exact inverse of `Table.replace_with_bot`: when a
   `JOIN` arrives for a running table and no disconnected seat matches for

@@ -96,7 +96,7 @@ class ClientLink:
         spectate: bool = False,
         suppress_discord_notification: bool = False,
         coinche_blocks_bidding: bool = True,
-        bot_type: str = "default",
+        bot_type: str = "smart",
     ) -> bool:
         payload = {"table_key": table_key, "player_name": player_name, "team_name": team_name}
         if seat is not None:
@@ -107,7 +107,7 @@ class ClientLink:
             payload["suppress_discord_notification"] = True
         if not coinche_blocks_bidding:
             payload["coinche_blocks_bidding"] = False
-        if bot_type != "default":
+        if bot_type != "smart":
             payload["bot_type"] = bot_type
         return await self._send(protocol.JOIN, payload)
 
@@ -119,6 +119,9 @@ class ClientLink:
 
     async def send_fill_bots(self) -> bool:
         return await self._send(protocol.FILL_BOTS, {})
+
+    async def send_set_bot_type(self, seat: str, bot_type: str) -> bool:
+        return await self._send(protocol.SET_BOT_TYPE, {"seat": seat, "bot_type": bot_type})
 
     async def send_leave(self) -> bool:
         return await self._send(protocol.LEAVE, {})

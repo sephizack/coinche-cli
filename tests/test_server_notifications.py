@@ -7,11 +7,39 @@ import json
 
 from coinche import protocol, server
 from coinche.cards import Seat
+from coinche.table import Table
 
 
 def test_table_key_pattern_allows_twenty_alphanumeric_characters():
     assert server.TABLE_KEY_PATTERN.fullmatch("A" * 20)
     assert not server.TABLE_KEY_PATTERN.fullmatch("A" * 21)
+
+
+def test_set_bot_type_changes_one_bot_and_broadcasts_confirmation() -> None:
+    class Writer:
+        def __init__(self) -> None:
+            self.written: list[bytes] = []
+
+        def write(self, data: bytes) -> None:
+            self.written.append(data)
+
+        async def drain(self) -> None:
+            return None
+
+    async def scenario() -> None:
+        writer = Writer()
+        table = Table("bots", bot_type="noob")
+        table.add_player("Alice", writer)
+        table.fill_with_bots()
+
+        await server._dispatch(table, Seat.N, protocol.SET_BOT_TYPE, {"seat": "E", "bot_type": "maestro"})
+
+        assert table.seats[Seat.E].bot_type == "maestro"
+        message_type, payload = protocol.decode(writer.written[-1])
+        assert message_type == protocol.BOT_TYPE_CHANGED
+        assert payload == {"seat": "E", "bot_type": "maestro"}
+
+    asyncio.run(scenario())
 
 
 def test_discord_table_notification_posts_expected_embed(monkeypatch) -> None:

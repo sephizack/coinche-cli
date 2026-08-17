@@ -141,6 +141,7 @@ def test_parse_accepts_a_registered_bot_type(monkeypatch) -> None:
         {"action": "rematch"},  # no required fields
         {"action": "lobby"},  # no required fields
         {"action": "fill_bots"},  # no required fields
+        {"action": "set_bot_type", "seat": "E", "bot_type": "noob"},
         {"action": "leave"},  # no required fields
     ],
 )
@@ -188,7 +189,7 @@ class FakeLink:
         spectate=False,
         suppress_discord_notification=False,
         coinche_blocks_bidding=True,
-        bot_type="default",
+        bot_type="smart",
     ) -> bool:
         self.calls.append(
             (
@@ -215,6 +216,10 @@ class FakeLink:
 
     async def send_fill_bots(self) -> bool:
         self.calls.append(("fill_bots",))
+        return True
+
+    async def send_set_bot_type(self, seat: str, bot_type: str) -> bool:
+        self.calls.append(("set_bot_type", seat, bot_type))
         return True
 
     async def send_leave(self) -> bool:
@@ -360,7 +365,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
                 await asyncio.sleep(0.01)
             assert ("bid", "bid", "♠", 90) in link.calls
             assert ("chat", "salut") in link.calls
-            assert ("join", "t1", "Zoe", None, None, False, True, True, "default") in link.calls
+            assert ("join", "t1", "Zoe", None, None, False, True, True, "smart") in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
             assert ("fill_bots",) in link.calls
@@ -371,7 +376,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
             frame = json.loads(await asyncio.wait_for(client.recv(), timeout=5))
             assert frame["type"] == "state"
             assert frame["snapshot"]["status_message"] == "En attente de joueurs (2/4)..."
-            assert frame["snapshot"]["available_bot_types"] == ["default", "maestro", "noob"]
+            assert frame["snapshot"]["available_bot_types"] == ["smart", "maestro", "noob"]
             await client.close()
         finally:
             await _stop(task)
@@ -499,9 +504,11 @@ def test_on_browser_message_dispatch_direct() -> None:
         server = WebOverlayServer(ClientState(), link, host=HOST, port=0)
         await server.on_browser_message({"action": "play", "card": "7♦"})
         await server.on_browser_message({"action": "bid", "bid_action": "pass"})
+        await server.on_browser_message({"action": "set_bot_type", "seat": "E", "bot_type": "maestro"})
         await server.on_browser_message({"action": "leave"})
         assert ("play", "7♦") in link.calls
         assert ("bid", "pass", None, None) in link.calls
+        assert ("set_bot_type", "E", "maestro") in link.calls
         assert ("leave",) in link.calls
 
     asyncio.run(scenario())

@@ -110,6 +110,26 @@ def test_lobby_update_refreshes_players_and_status():
     assert state.can_fill_bots is True
 
 
+def test_bot_types_are_projected_and_updated_per_seat():
+    state = ClientState()
+    apply_message(
+        state,
+        protocol.LOBBY_UPDATE,
+        {
+            "players": [
+                {"seat": "N", "name": "Alice", "is_bot": False},
+                {"seat": "E", "name": "Bot", "is_bot": True, "bot_type": "noob"},
+            ],
+            "seats_filled": 2,
+        },
+    )
+
+    apply_message(state, protocol.BOT_TYPE_CHANGED, {"seat": "E", "bot_type": "maestro"})
+
+    assert state.bot_types == {Seat.E: "maestro"}
+    assert snapshot_to_dict(state)["bot_types"] == {"E": "maestro"}
+
+
 def test_table_listing_stored_and_projected():
     """TABLE_LISTING feeds the web lobby: stored verbatim on the state and
     surfaced in the snapshot so the browser can render mini-tables."""

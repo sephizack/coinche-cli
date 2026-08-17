@@ -375,9 +375,18 @@ button {
   font-size: 0.6rem;
   text-transform: uppercase;
   color: var(--gold-soft);
+  background: transparent;
   border: 1px solid var(--gold-soft);
   border-radius: 4px;
   padding: 0 3px;
+  cursor: pointer;
+  font: inherit;
+}
+.seat__tag:hover,
+.seat__tag:focus-visible {
+  color: var(--felt-dark);
+  background: var(--gold-soft);
+  outline: none;
 }
 .seat--turn .seat__nameplate {
   box-shadow: var(--glow-gold);

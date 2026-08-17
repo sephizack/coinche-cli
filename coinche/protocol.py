@@ -25,8 +25,20 @@ LIST_TABLES = "list_tables"
 SUBSCRIBE_LOBBY = "subscribe_lobby"
 FILL_BOTS = "fill_bots"
 LEAVE = "leave"
+SET_BOT_TYPE = "set_bot_type"
 
-CLIENT_MESSAGE_TYPES = {JOIN, BID, PLAY_CARD, CHAT, REMATCH, LIST_TABLES, SUBSCRIBE_LOBBY, FILL_BOTS, LEAVE}
+CLIENT_MESSAGE_TYPES = {
+    JOIN,
+    BID,
+    PLAY_CARD,
+    CHAT,
+    REMATCH,
+    LIST_TABLES,
+    SUBSCRIBE_LOBBY,
+    FILL_BOTS,
+    LEAVE,
+    SET_BOT_TYPE,
+}
 
 # --- Server -> Client message types -------------------------------------------
 
@@ -49,6 +61,7 @@ CONNECTION_STATUS = "connection_status"
 TABLE_LISTING = "table_listing"
 LEFT = "left"
 TURN_TIMEOUT = "turn_timeout"
+BOT_TYPE_CHANGED = "bot_type_changed"
 ERROR = "error"
 
 SERVER_MESSAGE_TYPES = {
@@ -71,6 +84,7 @@ SERVER_MESSAGE_TYPES = {
     TABLE_LISTING,
     LEFT,
     TURN_TIMEOUT,
+    BOT_TYPE_CHANGED,
     ERROR,
     CHAT,  # chat is also broadcast server -> client
 }
@@ -97,6 +111,7 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
     SUBSCRIBE_LOBBY: set(),
     FILL_BOTS: set(),
     LEAVE: set(),
+    SET_BOT_TYPE: {"seat", "bot_type"},
 }
 # JOIN also accepts an optional "team_name" field (a free-text label, e.g. "A"/"B",
 # shared with a teammate to try to be seated on the same team, best-effort; see
@@ -110,7 +125,7 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
 # A creator can also set the optional boolean "suppress_discord_notification"
 # to keep a newly-created table out of the Discord notification channel. It
 # may also set ``coinche_blocks_bidding`` (defaults to true) and ``bot_type``
-# (currently only ``"default"``) for a newly-created table.
+# (``"smart"`` by default) for a newly-created table.
 
 _VALID_BID_ACTIONS = {"pass", "bid", "coinche", "surcoinche"}
 
@@ -180,5 +195,10 @@ def _validate_client_payload(msg_type: str, payload: dict) -> None:
         if not isinstance(payload["coinche_blocks_bidding"], bool):
             raise ProtocolError("coinche_blocks_bidding must be a boolean")
     if msg_type == JOIN and "bot_type" in payload:
+        if not isinstance(payload["bot_type"], str) or not is_supported_bot_type(payload["bot_type"]):
+            raise ProtocolError(f"Unknown bot_type: {payload['bot_type']!r}")
+    if msg_type == SET_BOT_TYPE:
+        if payload["seat"] not in {"N", "E", "S", "W"}:
+            raise ProtocolError(f"Unknown seat: {payload['seat']!r}")
         if not isinstance(payload["bot_type"], str) or not is_supported_bot_type(payload["bot_type"]):
             raise ProtocolError(f"Unknown bot_type: {payload['bot_type']!r}")

@@ -330,7 +330,9 @@ class WebOverlayServer:
         drops only this browser (BR-U2-3)."""
         self.clients.add(ws)
         try:
-            await ws.send(encode_state_frame(snapshot_to_dict(self.state)))
+            snapshot = snapshot_to_dict(self.state)
+            snapshot["available_bot_types"] = list(available_bot_types())
+            await ws.send(encode_state_frame(snapshot))
             while True:
                 raw = await ws.recv()
                 try:
@@ -375,7 +377,7 @@ class WebOverlayServer:
                 spectate=bool(msg.get("spectate")),
                 suppress_discord_notification=bool(msg.get("suppress_discord_notification")),
                 coinche_blocks_bidding=msg.get("coinche_blocks_bidding", True),
-                bot_type=msg.get("bot_type", "default"),
+                bot_type=msg.get("bot_type", "smart"),
             )
         elif action == "continue" and self.on_round_continue is not None:
             await self.on_round_continue()
@@ -385,6 +387,8 @@ class WebOverlayServer:
             await self.link.send_subscribe_lobby()
         elif action == "fill_bots":
             await self.link.send_fill_bots()
+        elif action == "set_bot_type":
+            await self.link.send_set_bot_type(msg["seat"], msg["bot_type"])
         elif action == "leave":
             await self.link.send_leave()
 

@@ -10,7 +10,7 @@ Frame shapes (see `domain-entities.md`):
 
 Browser -> client::
 
-    {"action": "play"|"bid"|"chat"|"join"|"continue"|"rematch"|"lobby"|"fill_bots"|"leave", ...fields}
+    {"action": "play"|"bid"|"chat"|"join"|"continue"|"rematch"|"lobby"|"fill_bots"|"set_bot_type"|"leave", ...fields}
 
 Client -> browser::
 
@@ -34,7 +34,7 @@ MAX_MESSAGE_BYTES = 64 * 1024
 # Anything outside this set is rejected at parse time (BR-U2-5) rather than
 # reaching `on_browser_message`.
 ALLOWED_ACTIONS: frozenset[str] = frozenset(
-    {"play", "bid", "chat", "join", "continue", "rematch", "lobby", "fill_bots", "leave"}
+    {"play", "bid", "chat", "join", "continue", "rematch", "lobby", "fill_bots", "set_bot_type", "leave"}
 )
 
 # Required fields per action (BR-U2-5): a frame missing any of these is rejected
@@ -50,6 +50,7 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "rematch": (),
     "lobby": (),
     "fill_bots": (),
+    "set_bot_type": ("seat", "bot_type"),
     "leave": (),
 }
 
@@ -103,6 +104,12 @@ def parse_browser_message(raw: str | bytes) -> dict:
         if not isinstance(decoded["coinche_blocks_bidding"], bool):
             raise WebProtocolError("coinche_blocks_bidding doit être un booléen.")
     if action == "join" and "bot_type" in decoded:
+        bot_type = decoded["bot_type"]
+        if not isinstance(bot_type, str) or not bot.is_supported_bot_type(bot_type):
+            raise WebProtocolError("Type de bot inconnu.")
+    if action == "set_bot_type":
+        if decoded["seat"] not in {"N", "E", "S", "W"}:
+            raise WebProtocolError("Siège de bot inconnu.")
         bot_type = decoded["bot_type"]
         if not isinstance(bot_type, str) or not bot.is_supported_bot_type(bot_type):
             raise WebProtocolError("Type de bot inconnu.")

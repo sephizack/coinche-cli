@@ -134,6 +134,7 @@ class ClientSession:
     connected: bool = True
     team_name: str | None = None
     is_bot: bool = False
+    bot_type: str | None = None
 
 
 @dataclass
@@ -158,7 +159,7 @@ class Table:
         table_key: str,
         target_score: int = rules.DEFAULT_TARGET_SCORE,
         coinche_blocks_bidding: bool = True,
-        bot_type: str = "default",
+        bot_type: str = "smart",
         trick_pause_seconds: float = 2.5,
         round_pause_seconds: float = 4.0,
         bot_think_seconds: float = 1.0,
@@ -351,6 +352,7 @@ class Table:
         session.connected = True
         session.is_bot = True
         session.team_name = None
+        session.bot_type = self.bot_type
         return session.name
 
     def bot_seats(self) -> list[Seat]:
@@ -387,7 +389,14 @@ class Table:
         session.connected = True
         session.is_bot = False
         session.team_name = team_name
+        session.bot_type = None
         return self.game.snapshot_for(seat)
+
+    def set_bot_type(self, seat: Seat, bot_type: str) -> None:
+        """Set the strategy used by an occupied server-controlled bot seat."""
+        session = self.seats[seat]
+        assert session is not None and session.is_bot
+        session.bot_type = bot_type
 
     def add_spectator(self, name: str, writer: asyncio.StreamWriter | None) -> str:
         """Register a seatless watcher and return the (possibly disambiguated) name.
@@ -430,6 +439,7 @@ class Table:
                     writer=None,
                     connected=True,
                     is_bot=True,
+                    bot_type=self.bot_type,
                 )
                 added.append(seat)
         if added:
@@ -504,7 +514,7 @@ def get_or_create_table(
     table_key: str,
     target_score: int = rules.DEFAULT_TARGET_SCORE,
     coinche_blocks_bidding: bool = True,
-    bot_type: str = "default",
+    bot_type: str = "smart",
     trick_pause_seconds: float = 2.5,
     round_pause_seconds: float = 4.0,
     bot_think_seconds: float = 1.0,

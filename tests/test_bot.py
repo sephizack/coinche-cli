@@ -50,12 +50,17 @@ def test_bot_entry_point_dispatches_to_the_requested_type(monkeypatch) -> None:
     assert choose_card(Game(), Seat.W, "test") == Card("7", "♠")
 
 
+def test_smart_is_the_public_name_of_the_default_strategy() -> None:
+    assert "smart" in available_bot_types()
+    assert "default" not in available_bot_types()
+
+
 def test_maestro_adds_one_trick_with_jack_nine_and_a_side_ace() -> None:
     game = Game()
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "A♥", "A♦", "A♣", "8♥", "7♦")
 
-    assert choose_bid(game, Seat.W, "default") == {"action": "bid", "trump": "♠", "points": 120}
+    assert choose_bid(game, Seat.W, "smart") == {"action": "bid", "trump": "♠", "points": 120}
     assert choose_bid(game, Seat.W, "maestro") == {"action": "bid", "trump": "♠", "points": 130}
 
 
@@ -64,7 +69,7 @@ def test_maestro_keeps_a_bid_without_firm_trump_control() -> None:
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "8♠", "A♥", "8♥", "7♦", "8♦", "7♣")
 
-    assert choose_bid(game, Seat.W, "maestro") == choose_bid(game, Seat.W, "default")
+    assert choose_bid(game, Seat.W, "maestro") == choose_bid(game, Seat.W, "smart")
 
 
 def test_noob_does_not_use_the_default_bot_fallback_opener() -> None:
@@ -72,7 +77,7 @@ def test_noob_does_not_use_the_default_bot_fallback_opener() -> None:
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "8♠", "A♥", "8♥", "7♦", "8♦", "7♣")
 
-    assert choose_bid(game, Seat.W, "default") == {"action": "bid", "trump": "♠", "points": 90}
+    assert choose_bid(game, Seat.W, "smart") == {"action": "bid", "trump": "♠", "points": 90}
     assert choose_bid(game, Seat.W, "noob") == {"action": "pass"}
 
 
@@ -122,7 +127,7 @@ def test_maestro_leads_low_to_draw_an_unseen_ten_from_ace_king_length() -> None:
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("A♥", "R♥", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣")
 
-    assert choose_card(game, Seat.W, "default") == Card("A", "♥")
+    assert choose_card(game, Seat.W, "smart") == Card("A", "♥")
     assert choose_card(game, Seat.W, "maestro") == Card("7", "♥")
 
 

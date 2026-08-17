@@ -102,9 +102,11 @@ another player creates a table or joins one, the list and team rosters
 update automatically.
 
 In the Web lobby, **Options de table** opens the settings for a new table:
-table name, Discord notification, bot type (`Par défaut` or `Maestro`), and
-whether a Coinche/Contre blocks later bids. The blocking rule is enabled by
-default. `Maestro` uses the same information-safe card play as the default bot
+table name, Discord notification, and the default bot type (`smart`) for newly created
+bots, as well as whether a Coinche/Contre blocks later bids. The blocking rule
+is enabled by default. Each bot keeps its own type; click its `BOT <type>`
+badge at the table to cycle through the available strategies. `Maestro` uses
+the same information-safe card play as the smart bot
 but announces one extra trick when it holds firm trump control. When disabled,
 a later valid bid cancels the Coinche and returns the contract multiplier to
 normal.

@@ -49,6 +49,9 @@ class ClientState:
     # (mirroring the lobby mini-tables). Empty for the terminal client, which
     # doesn't render bot badges around the table.
     bots: dict[Seat, bool] = field(default_factory=dict)
+    # Strategy type for each bot-held seat, displayed and controlled by the
+    # Web overlay. The table-level setting remains the default for new bots.
+    bot_types: dict[Seat, str] = field(default_factory=dict)
     team_of: dict[Seat, str] = field(default_factory=dict)
     hand: list[str] = field(default_factory=list)
     legal_cards: list[str] = field(default_factory=list)
@@ -209,6 +212,11 @@ def _bots_from_wire(entries: list[dict]) -> dict[Seat, bool]:
     `_players_summary`, which includes `is_bot`, so the flag is always present;
     `.get("is_bot", False)` is just defensive against an older/partial entry."""
     return {Seat(p["seat"]): bool(p.get("is_bot", False)) for p in entries}
+
+
+def _bot_types_from_wire(entries: list[dict]) -> dict[Seat, str]:
+    """Map bot-held seats to their selected strategy type from player entries."""
+    return {Seat(p["seat"]): p["bot_type"] for p in entries if p.get("is_bot") and isinstance(p.get("bot_type"), str)}
 
 
 def _team_names_from_wire(entries: list[dict]) -> dict[str, str]:
@@ -417,6 +425,7 @@ def _reset_to_lobby(state: ClientState) -> None:
     state.table_key = fresh.table_key
     state.players = fresh.players
     state.bots = fresh.bots
+    state.bot_types = fresh.bot_types
     state.team_of = fresh.team_of
     state.team_names = fresh.team_names
     state.hand = fresh.hand
@@ -495,6 +504,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.seat = Seat(payload["seat"])
         state.players = _players_from_wire(payload["players"])
         state.bots = _bots_from_wire(payload["players"])
+        state.bot_types = _bot_types_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({len(state.players)}/4)..."
@@ -514,6 +524,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.table_key = payload["table_key"]
         state.players = _players_from_wire(payload["players"])
         state.bots = _bots_from_wire(payload["players"])
+        state.bot_types = _bot_types_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.can_fill_bots = False
@@ -553,6 +564,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
     elif msg_type == protocol.LOBBY_UPDATE:
         state.players = _players_from_wire(payload["players"])
         state.bots = _bots_from_wire(payload["players"])
+        state.bot_types = _bot_types_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({payload['seats_filled']}/4)..."
@@ -565,6 +577,9 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         # render every table. The terminal picker consumes TABLE_LISTING in its
         # own loop and never reaches this reducer, so this only serves the web.
         state.tables = list(payload.get("tables", []))
+
+    elif msg_type == protocol.BOT_TYPE_CHANGED:
+        state.bot_types[Seat(payload["seat"])] = payload["bot_type"]
 
     elif msg_type == protocol.DEAL:
         state.can_fill_bots = False
@@ -786,6 +801,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         if payload.get("players"):
             state.players = _players_from_wire(payload["players"])
             state.bots = _bots_from_wire(payload["players"])
+            state.bot_types = _bot_types_from_wire(payload["players"])
             state.team_names = _team_names_from_wire(payload["players"])
         if state.seat not in state.players:
             state.players[state.seat] = state.players.get(state.seat, "Moi")
@@ -832,6 +848,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             if seat in state.players:
                 state.players[seat] = payload["name"]
             state.bots[seat] = False
+            state.bot_types.pop(seat, None)
         # A human just left and a bot took over this seat mid-game: the chair is
         # renamed to the bot's fresh identity (`bot_name`) and flagged as a bot,
         # so the felt relabels it and shows the bot badge. `name` still carries
@@ -841,6 +858,8 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             if bot_name and seat in state.players:
                 state.players[seat] = bot_name
             state.bots[seat] = True
+            if isinstance(payload.get("bot_type"), str):
+                state.bot_types[seat] = payload["bot_type"]
             return ApplyResult(action_requested=action_requested)
         # Trigger a short-lived join effect (like belote/rebelote) for
         # statuses that represent a human arriving at the table: bot_replaced,
@@ -911,6 +930,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "table_key": state.table_key,
         "players": {seat.value: name for seat, name in state.players.items()},
         "bots": {seat.value: is_bot for seat, is_bot in state.bots.items()},
+        "bot_types": {seat.value: bot_type for seat, bot_type in state.bot_types.items()},
         "team_of": {seat.value: team for seat, team in state.team_of.items()},
         "team_names": dict(state.team_names),
         "hand": list(state.hand),  # LOCAL seat only — never other hands

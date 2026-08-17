@@ -186,6 +186,7 @@ const SeatPanel = {
     isTurn: Boolean,
     isDealer: Boolean,
     isBot: Boolean,
+    botType: { type: String, default: null },
     connected: { type: Boolean, default: true },
     trump: { type: String, default: null },
   },
@@ -207,7 +208,10 @@ const SeatPanel = {
       <div class="seat__nameplate">
         <span class="seat__name">{{ name }}</span>
         <span v-if="isBot && isTurn" class="seat__turn-spinner" role="status" aria-label="Le bot joue"></span>
-        <span v-if="isBot" class="seat__tag">bot</span>
+        <button v-if="isBot" class="seat__tag" type="button"
+          :aria-label="'Changer le type du bot ' + name"
+          :title="'Changer le type du bot'"
+                @click="$emit('change-bot-type')">BOT {{ botType || 'smart' }}</button>
         <span v-if="isDealer" class="seat__badge">(D)</span>
       </div>
       <span v-if="!connected" class="seat__offline-note">déconnecté</span>
@@ -1058,6 +1062,7 @@ const App = {
       const marks = s.bid_marks || {};
       const conn = s.connection_status || {};
       const bots = s.bots || {};
+      const botTypes = s.bot_types || {};
       return Object.keys(players).map((seatId) => {
         return {
           seatId,
@@ -1069,6 +1074,7 @@ const App = {
           isTurn: s.whose_turn === seatId,
           isDealer: s.dealer_seat === seatId,
           isBot: bots[seatId] === true,
+          botType: botTypes[seatId] || null,
           connected: conn[seatId] !== false,
         };
       });
@@ -1260,6 +1266,14 @@ const App = {
       fillingBots.value = true;
       sendAction("fill_bots", {});
     }
+    function changeBotType(seatId) {
+      const s = snapshot.value;
+      const types = (s && s.available_bot_types) || [];
+      if (!types.length) return;
+      const current = (s.bot_types || {})[seatId] || "smart";
+      const next = types[(types.indexOf(current) + 1) % types.length];
+      sendAction("set_bot_type", { seat: seatId, bot_type: next });
+    }
     function leaveTable() {
       // Available before AND during a game. Pre-game the seat is freed; mid-game
       // the server hands the seat to a bot so the other players can finish, so
@@ -1414,13 +1428,13 @@ const App = {
     const lobbyLoaded = computed(() => snapshot.value !== null);
     const availableBotTypes = computed(() => {
       const types = snapshot.value && snapshot.value.available_bot_types;
-      return Array.isArray(types) && types.length ? types : ["default"];
+      return Array.isArray(types) && types.length ? types : ["smart"];
     });
     const tableOptionsOpen = ref(false);
     const tableOptions = reactive({
       name: "",
       suppressDiscordNotification: false,
-      botType: "default",
+      botType: "smart",
       coincheBlocksBidding: true,
     });
     const discordNotificationsEnabled = computed({
@@ -1472,7 +1486,7 @@ const App = {
       if (tableSettings) {
         if (tableSettings.suppressDiscordNotification) payload.suppress_discord_notification = true;
         if (!tableSettings.coincheBlocksBidding) payload.coinche_blocks_bidding = false;
-        if (tableSettings.botType !== "default") payload.bot_type = tableSettings.botType;
+        if (tableSettings.botType !== "smart") payload.bot_type = tableSettings.botType;
       }
       sendAction("join", payload);
     }
@@ -1635,6 +1649,7 @@ const App = {
       doRematch,
       continueRound,
       fillBots,
+      changeBotType,
       leaveTable,
       joinTable,
       disconnect,
@@ -1728,7 +1743,7 @@ const App = {
               <label>Type de bot
                 <select v-model="tableOptions.botType">
                   <option v-for="botType in availableBotTypes" :key="botType" :value="botType">
-                    {{ botType === "default" ? "Par défaut" : botType === "maestro" ? "Maestro - audacieux" : botType }}
+                    {{ botType === "smart" ? "Smart" : botType === "maestro" ? "Maestro - audacieux" : botType }}
                   </option>
                 </select>
               </label>
@@ -1919,8 +1934,10 @@ const App = {
                   :is-turn="s.isTurn"
                   :is-dealer="s.isDealer"
                   :is-bot="s.isBot"
+                  :bot-type="s.botType"
                   :connected="s.connected"
                   :trump="trumpSuit"
+                  @change-bot-type="changeBotType(s.seatId)"
                 ></seat-panel>
 
                 <!-- Trick center / current bid -->

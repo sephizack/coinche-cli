@@ -10,11 +10,15 @@ from coinche.bot_types.base import BotType
 from coinche.cards import Card, Seat
 from coinche.game import Game
 
-# Number of imperfect-information determinizations used by the default bot.
+# Number of imperfect-information determinizations used by the smart bot.
 # The server configures this explicit runtime value through ``--bot-samples``.
 MONTE_CARLO_SAMPLES = 100
 
-_BOT_TYPES: dict[str, Callable[[int], BotType]] = {"default": DefaultBot, "maestro": MaestroBot, "noob": NoobBot}
+_BOT_TYPES: dict[str, Callable[[int], BotType]] = {
+    "smart": DefaultBot,
+    "maestro": MaestroBot,
+    "noob": NoobBot,
+}
 
 
 def available_bot_types() -> tuple[str, ...]:
@@ -28,17 +32,17 @@ def is_supported_bot_type(bot_type: str) -> bool:
 
 
 def _get_bot(bot_type: str) -> BotType:
-    """Build the requested strategy, falling back to the default for unknown types."""
+    """Build the requested strategy, falling back to SmartBot for unknown types."""
     strategy_type = _BOT_TYPES.get(bot_type, DefaultBot)
     return strategy_type(MONTE_CARLO_SAMPLES)
 
 
-def choose_bid(game: Game, seat: Seat, bot_type: str = "default") -> dict:
+def choose_bid(game: Game, seat: Seat, bot_type: str = "smart") -> dict:
     """Choose an auction action using the table's configured bot strategy."""
     return _get_bot(bot_type).choose_bid(game, seat)
 
 
-def choose_card(game: Game, seat: Seat, bot_type: str = "default") -> Card:
+def choose_card(game: Game, seat: Seat, bot_type: str = "smart") -> Card:
     """Choose a card using the table's configured bot strategy."""
     return _get_bot(bot_type).choose_card(game, seat)
 

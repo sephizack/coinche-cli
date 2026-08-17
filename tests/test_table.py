@@ -36,17 +36,17 @@ def test_add_player_fills_seats_in_order():
 
 
 def test_table_passes_non_blocking_coinche_rule_to_games():
-    table = Table("abcd", coinche_blocks_bidding=False, bot_type="default")
+    table = Table("abcd", coinche_blocks_bidding=False, bot_type="smart")
     for name in ("Alice", "Bob", "Carol", "Dave"):
         table.add_player(name, FakeWriter())
 
     assert table.game is not None
     assert table.game.coinche_blocks_bidding is False
-    assert table.bot_type == "default"
+    assert table.bot_type == "smart"
 
 
 def test_fill_with_bots_occupies_open_seats_and_starts_game():
-    table = Table("abcd")
+    table = Table("abcd", bot_type="noob")
     table.add_player("Alice", FakeWriter())
 
     added = table.fill_with_bots()
@@ -55,9 +55,21 @@ def test_fill_with_bots_occupies_open_seats_and_starts_game():
     assert table.game is not None
     assert table.seats[Seat.N].is_bot is False
     assert all(table.seats[seat].is_bot for seat in added)
+    assert {table.seats[seat].bot_type for seat in added} == {"noob"}
     bot_names = [table.seats[seat].name for seat in added]
     assert all(name in BOT_NAMES for name in bot_names)
     assert len(set(bot_names)) == len(bot_names)
+
+
+def test_bot_type_is_held_by_each_bot_seat():
+    table = Table("abcd", bot_type="noob")
+    table.add_player("Alice", FakeWriter())
+    table.fill_with_bots()
+
+    table.set_bot_type(Seat.E, "maestro")
+
+    assert table.seats[Seat.E].bot_type == "maestro"
+    assert table.seats[Seat.S].bot_type == "noob"
 
 
 def test_bot_seats_lists_only_bot_held_seats_in_order():

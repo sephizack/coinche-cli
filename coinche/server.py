@@ -211,6 +211,7 @@ def _players_summary(table: Table) -> list[dict]:
             "name": session.name,
             "team_name": session.team_name,
             "is_bot": session.is_bot,
+            "bot_type": session.bot_type,
         }
         for seat, session in table.seats.items()
         if session is not None
@@ -780,6 +781,7 @@ async def _run_bot_turns(table: Table) -> None:
                 if session is None or not session.is_bot:
                     return
                 phase = game.phase
+                bot_type = session.bot_type or table.bot_type
                 target = table.bot_think_delay()
 
             # The Monte-Carlo decision is CPU-bound, so put it in a worker
@@ -788,9 +790,9 @@ async def _run_bot_turns(table: Table) -> None:
             started = time.monotonic()
             loop = asyncio.get_running_loop()
             if phase == "bidding":
-                bid_action = await loop.run_in_executor(None, choose_bid, game, seat, table.bot_type)
+                bid_action = await loop.run_in_executor(None, choose_bid, game, seat, bot_type)
             elif phase == "trick_play":
-                card = await loop.run_in_executor(None, choose_card, game, seat, table.bot_type)
+                card = await loop.run_in_executor(None, choose_card, game, seat, bot_type)
             else:
                 return
 
@@ -869,6 +871,24 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         assert table.game is not None
         await _request_turn(table, table.game.next_to_act)
         _schedule_bot_turns(table)
+        return
+
+    if msg_type == protocol.SET_BOT_TYPE:
+        target_seat = Seat(payload["seat"])
+        target = table.seats.get(target_seat)
+        if target is None or not target.is_bot:
+            await table.send_to(
+                seat,
+                protocol.ERROR,
+                {"code": protocol.MALFORMED_MESSAGE, "message": "Ce siège n'est pas occupé par un bot"},
+            )
+            return
+        table.set_bot_type(target_seat, payload["bot_type"])
+        logger.info("[%s] TYPE BOT %s -> %s", table.table_key, _seat_to_str(target_seat), payload["bot_type"])
+        await table.broadcast(
+            protocol.BOT_TYPE_CHANGED,
+            {"seat": _seat_to_str(target_seat), "bot_type": payload["bot_type"]},
+        )
         return
 
     game = table.game
@@ -965,7 +985,13 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
         # fresh bot identity now holding the seat, so clients relabel the chair.
         await table.broadcast(
             protocol.CONNECTION_STATUS,
-            {"seat": _seat_to_str(seat), "name": name, "bot_name": bot_name, "status": "replaced_by_bot"},
+            {
+                "seat": _seat_to_str(seat),
+                "name": name,
+                "bot_name": bot_name,
+                "bot_type": table.seats[seat].bot_type,
+                "status": "replaced_by_bot",
+            },
             exclude=seat,
         )
     else:
@@ -1143,7 +1169,7 @@ async def _resolve_join_inner(
     spectate = bool(payload.get("spectate"))
     suppress_discord_notification = payload.get("suppress_discord_notification", False)
     coinche_blocks_bidding = payload.get("coinche_blocks_bidding", True)
-    bot_type = payload.get("bot_type", "default")
+    bot_type = payload.get("bot_type", "smart")
     if not isinstance(bot_type, str) or not is_supported_bot_type(bot_type):
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "Type de bot inconnu.")
         return None
