@@ -376,7 +376,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
             frame = json.loads(await asyncio.wait_for(client.recv(), timeout=5))
             assert frame["type"] == "state"
             assert frame["snapshot"]["status_message"] == "En attente de joueurs (2/4)..."
-            assert frame["snapshot"]["available_bot_types"] == ["smart", "maestro", "noob"]
+            assert frame["snapshot"]["available_bot_types"] == ["smart", "maestro", "cloclo", "noob"]
             await client.close()
         finally:
             await _stop(task)

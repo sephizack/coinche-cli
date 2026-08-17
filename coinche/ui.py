@@ -891,7 +891,7 @@ def render_lobby(
     is_cursor = cursor_index == 0
     new_line = Text()
     new_line.append(" >> " if is_cursor else "    ", style="bold green")
-    new_line.append("Nouvelle table", "white" + (" bold" if is_cursor else ""))
+    new_line.append("Créer table", "white" + (" bold" if is_cursor else ""))
     rows.append(new_line)
 
     # --- Rows 1..N: existing tables ---------------------------------------

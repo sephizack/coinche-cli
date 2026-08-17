@@ -75,6 +75,16 @@ def test_cloclo_bids_its_own_strong_controlled_hand() -> None:
     assert action in game.bid_options_for(Seat.W)["legal_actions"]
 
 
+def test_cloclo_supports_partner_with_a_missing_trump_master() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣", "D♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+
+    assert choose_bid(game, Seat.E, "cloclo") == {"action": "bid", "trump": "♠", "points": 90}
+
+
 def test_cloclo_discards_the_cheapest_legal_card_when_partner_is_winning() -> None:
     game = Game()
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)

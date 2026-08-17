@@ -20,7 +20,7 @@ class NoobBot(DefaultBot):
             for bid in options["bid_history"]
             if bid.get("action") == "bid" and TEAM_OF[bid["seat"]] == TEAM_OF[seat]
         ]
-        if team_bids and random.randrange(5) == 0:
+        if team_bids and random.randrange(4) == 0:
             last_team_bid = team_bids[-1]
             same_trump_bids = [bid for bid in options["legal_actions"] if bid["trump"] == last_team_bid["trump"]]
             if same_trump_bids:

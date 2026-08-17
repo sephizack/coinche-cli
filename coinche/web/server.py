@@ -235,8 +235,7 @@ class WebOverlayServer:
                     self.on_ready()
                 except Exception:  # noqa: BLE001 — a UI callback fault must not break the server
                     logger.exception("Web overlay on_ready callback failed")
-            async with server:
-                await server.serve_forever()
+            await asyncio.Event().wait()
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 — deliberate error boundary (BR-U2-3)
@@ -250,6 +249,7 @@ class WebOverlayServer:
             self.clients.clear()
             if server is not None:
                 server.close()
+                await server.wait_closed()
 
     async def _on_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Parse one HTTP request: upgrade `/ws` to a WebSocket, otherwise serve
