@@ -355,12 +355,23 @@ def test_score_round_belote_bonus_credited_to_holder_on_failure():
     assert result["EW"]["total"] == 270
 
 
-def test_score_round_belote_helps_fulfil_contract():
+def test_score_round_belote_helps_fulfil_contract_unless_less_points():
     # 90 annoncés, 72 cartes + 20 belote NS = 92 points (vs 90 adversaires) :
     # la belote permet d'atteindre le contrat (92 >= 90) et de dépasser les adversaires (92 >= 90) -> réussi.
     captured = {"NS": 72, "EW": 90}
     bid = {"team": "NS", "trump": "♠", "points": 90}
     result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder="NS")
+    assert result["NS"]["contract_result"] == "failed"
+    assert result["NS"]["total"] == 20
+    assert result["EW"]["total"] == 250
+
+
+def test_score_round_belote_helps_fulfil_contract():
+    # 90 annoncés, 72 cartes + 20 belote NS = 92 points (vs 90 adversaires) :
+    # la belote permet d'atteindre le contrat (92 >= 90) et de dépasser les adversaires (92 >= 90) -> réussi.
+    captured = {"NS": 92, "EW": 70}
+    bid = {"team": "NS", "trump": "♠", "points": 110}
+    result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder="NS")
     assert result["NS"]["contract_result"] == "made"
-    assert result["NS"]["total"] == 180  # 70 (72 arrondi à 10) + 90 (demandé) + 20 (belote)
-    assert result["EW"]["total"] == 90  # 90 arrondi à 10
+    assert result["NS"]["total"] == 220
+    assert result["EW"]["total"] == 70

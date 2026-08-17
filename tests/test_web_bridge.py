@@ -8,7 +8,6 @@ The round-trip tests drive a real browser-side WebSocket against a live
 calls, so no game server socket is involved.
 """
 
-
 from __future__ import annotations
 
 import asyncio
