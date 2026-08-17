@@ -137,6 +137,38 @@ def test_cloclo_discards_the_cheapest_legal_card_when_partner_is_winning() -> No
     assert card in game.play_options_for(Seat.N)["legal_cards"]
 
 
+def test_cloclo_loads_points_when_partner_wins_in_fourth_position() -> None:
+    game = Game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+    assert game.round_state is not None
+    # Trick with 3 cards already played: S played A♥, W played 7♥, E played 8♥
+    game.round_state.current_trick = [(Seat.S, Card("A", "♥")), (Seat.W, Card("7", "♥")), (Seat.E, Card("8", "♥"))]
+    game.round_state.hands[Seat.N] = _cards("7♦", "10♦")
+    game.next_to_act = Seat.N
+
+    card = choose_card(game, Seat.N, "cloclo")
+
+    assert card == Card("10", "♦")
+    assert card in game.play_options_for(Seat.N)["legal_cards"]
+
+
+def test_cloclo_does_not_escalate_partner_support_in_loop() -> None:
+    game = Game()
+    game.submit_bid(Seat.W, "bid", trump="♦", points=80)
+    game.submit_bid(Seat.S, "bid", trump="♥", points=100)
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "bid", trump="♥", points=120)
+    game.submit_bid(Seat.W, "pass")
+
+    assert game.round_state is not None
+    game.round_state.hands[Seat.S] = _cards("V♥", "9♥", "8♥", "7♦", "8♦", "7♣", "8♣", "D♣")
+
+    assert choose_bid(game, Seat.S, "cloclo") == {"action": "pass"}
+
+
 def test_cloclo_calls_a_side_ace_behind_a_partner_master() -> None:
     game = _isolated_game()
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)

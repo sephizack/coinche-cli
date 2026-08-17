@@ -68,9 +68,9 @@ class ClocloBot(BotType):
         actions = [heuristic_action]
         if heuristic_action["action"] != "pass":
             actions.append({"action": "pass"})
-        if options["can_coinche"]:
+        if options["can_coinche"] and heuristic_action["action"] == "coinche":
             actions.append({"action": "coinche"})
-        if options["can_surcoinche"]:
+        if options["can_surcoinche"] and heuristic_action["action"] == "surcoinche":
             actions.append({"action": "surcoinche"})
         unique_actions = [action for index, action in enumerate(actions) if action not in actions[:index]]
         return self._choose_bid_by_rollout(game, seat, unique_actions, heuristic_action)
@@ -83,17 +83,28 @@ class ClocloBot(BotType):
         best_ceiling = ceilings[best_trump]
         current_bid = options["current_highest_bid"]
 
-        if current_bid is not None and current_bid["trump"] == best_trump:
+        if current_bid is not None and isinstance(current_bid["points"], int):
             current_points = current_bid["points"]
-            if options["can_surcoinche"] and current_bid["team"] == TEAM_OF[seat] and best_ceiling == rules.CAPOT:
-                return {"action": "surcoinche"}
-            if (
-                options["can_coinche"]
-                and current_bid["team"] != TEAM_OF[seat]
-                and isinstance(current_points, int)
-                and self._ceiling_rank(best_ceiling) >= current_points + 20
-            ):
-                return {"action": "coinche"}
+            if current_bid["trump"] == best_trump:
+                if options["can_surcoinche"] and current_bid["team"] == TEAM_OF[seat] and best_ceiling == rules.CAPOT:
+                    return {"action": "surcoinche"}
+                if (
+                    options["can_coinche"]
+                    and current_bid["team"] != TEAM_OF[seat]
+                    and self._ceiling_rank(best_ceiling) >= current_points + 20
+                ):
+                    return {"action": "coinche"}
+
+            # Defensive coinche on opponent contract
+            if options["can_coinche"] and current_bid["team"] != TEAM_OF[seat]:
+                opp_trump = current_bid["trump"]
+                opp_trump_ranks = {card.rank for card in hand if card.suit == opp_trump}
+                defensive_trumps = ("V" in opp_trump_ranks) + ("9" in opp_trump_ranks) + ("A" in opp_trump_ranks)
+                side_aces = sum(card.rank == "A" and card.suit != opp_trump for card in hand)
+                if defensive_trumps >= 2 and side_aces >= 2 and current_points >= 100:
+                    return {"action": "coinche"}
+                if defensive_trumps >= 1 and side_aces >= 3 and current_points >= 110:
+                    return {"action": "coinche"}
 
         partner_bid = next(
             (
@@ -104,9 +115,32 @@ class ClocloBot(BotType):
             None,
         )
         if partner_bid is not None:
-            support = self._support_bid(options, hand, partner_bid)
-            if support is not None:
-                return support
+            # Prevent infinite self-partner escalation spirals on the same trump
+            self_bids_on_suit = [
+                bid
+                for bid in options["bid_history"]
+                if bid.get("action") == "bid" and bid["seat"] == seat and bid["trump"] == partner_bid["trump"]
+            ]
+            opponent_intervened = False
+            if self_bids_on_suit:
+                last_self_bid_idx = options["bid_history"].index(self_bids_on_suit[-1])
+                opponent_intervened = any(
+                    bid.get("action") == "bid" and TEAM_OF[bid["seat"]] != TEAM_OF[seat]
+                    for bid in options["bid_history"][last_self_bid_idx:]
+                )
+            if not self_bids_on_suit or opponent_intervened:
+                # If our own independent suit is much stronger than supporting partner's weak suit, propose it
+                if (
+                    best_ceiling is not None
+                    and self._ceiling_rank(best_ceiling) >= (partner_bid["points"] + 30)
+                    and best_trump != partner_bid["trump"]
+                ):
+                    own_bid = self._highest_affordable_bid(options, best_trump, best_ceiling)
+                    if own_bid is not None:
+                        return own_bid
+                support = self._support_bid(options, hand, partner_bid)
+                if support is not None:
+                    return support
 
         if best_ceiling is not None:
             own_bid = self._highest_affordable_bid(options, best_trump, best_ceiling)
@@ -165,7 +199,11 @@ class ClocloBot(BotType):
             options = simulation.play_options_for(actor)
             trump = options["trump"]
             assert trump is not None
-            card = self._choose_tactical_card(simulation, actor, options["legal_cards"], trump)
+            trick = simulation.round_state.current_trick
+            if trick and rules.trick_winner(trick, trump) == PARTNER_OF[actor]:
+                card = self._partner_master_discard(simulation, actor, options["legal_cards"], trump)
+            else:
+                card = self._choose_tactical_card(simulation, actor, options["legal_cards"], trump)
             result = simulation.submit_card(actor, card)
             if result.get("round_complete"):
                 root_team = TEAM_OF[root_seat]
@@ -236,12 +274,8 @@ class ClocloBot(BotType):
         path: list[tuple[_SearchNode, Card]] = []
         result: dict | None = None
 
-        for ply in range(32):
+        for _ in range(32):
             actor = simulation.next_to_act
-            if ply:
-                actor_samples = _sample_hidden_hands(simulation, actor, 1)
-                if actor_samples:
-                    _apply_determinization(simulation, actor, actor_samples[0])
             options = simulation.play_options_for(actor)
             legal_cards: list[Card] = options["legal_cards"]
             if not legal_cards:
@@ -321,10 +355,18 @@ class ClocloBot(BotType):
         trick = game.round_state.current_trick
         if trick:
             led_suit = trick[0][1].suit
+            if rules.trick_winner(trick, trump, led_suit) == PARTNER_OF[seat]:
+                return self._partner_master_discard(game, seat, legal_cards, trump)
             winners = [
                 card for card in legal_cards if rules.trick_winner([*trick, (seat, card)], trump, led_suit) == seat
             ]
             if winners:
+                if len(trick) == 3:
+                    return min(winners, key=lambda card: self._winning_cost(card, trump))
+                hand = game.get_hand(seat)
+                masters = [card for card in winners if self._is_master(card, hand, game, trump)]
+                if masters:
+                    return min(masters, key=lambda card: self._winning_cost(card, trump))
                 return min(winners, key=lambda card: self._winning_cost(card, trump))
             return min(legal_cards, key=lambda card: self._discard_key(card, trump))
 
@@ -335,16 +377,25 @@ class ClocloBot(BotType):
         master_trumps = [card for card in masters if card.suit == trump]
         if is_declaring_team and master_trumps:
             return max(master_trumps, key=lambda card: rules.TRUMP_ORDER.index(card.rank))
+        if is_declaring_team:
+            trumps = [card for card in legal_cards if card.suit == trump]
+            if len(trumps) >= 2:
+                return max(trumps, key=lambda card: rules.TRUMP_ORDER.index(card.rank))
         side_masters = [card for card in masters if card.suit != trump]
         if side_masters:
             return max(side_masters, key=lambda card: rules.NONTRUMP_ORDER.index(card.rank))
-        if is_declaring_team:
-            trumps = [card for card in legal_cards if card.suit == trump]
-            if len(trumps) >= 3:
-                return max(trumps, key=lambda card: rules.TRUMP_ORDER.index(card.rank))
+
+        # Defending team on lead: avoid giving a cheap trump lead
+        if not is_declaring_team:
+            non_trumps = [card for card in legal_cards if card.suit != trump]
+            if non_trumps:
+                return min(non_trumps, key=lambda card: self._discard_key(card, trump))
+
         return min(legal_cards, key=lambda card: self._discard_key(card, trump))
 
     def _partner_master_discard(self, game: Game, seat: Seat, legal_cards: list[Card], trump: str) -> Card:
+        assert game.round_state is not None
+        trick = game.round_state.current_trick
         hand = game.get_hand(seat)
         direct_calls = [
             card
@@ -353,6 +404,15 @@ class ClocloBot(BotType):
         ]
         if direct_calls:
             return min(direct_calls, key=lambda card: self._discard_key(card, trump))
+        if len(trick) == 3:
+            return max(
+                legal_cards,
+                key=lambda card: (
+                    rules.card_points(card, trump),
+                    -int(card.suit == trump),
+                    -self._discard_key(card, trump)[2],
+                ),
+            )
         return min(legal_cards, key=lambda card: self._discard_key(card, trump))
 
     @classmethod
@@ -400,16 +460,21 @@ class ClocloBot(BotType):
         trump_cards = [card for card in hand if card.suit == trump]
         if len(trump_cards) == len(hand):
             return rules.CAPOT
-        if len(trump_cards) < 3:
+        if len(trump_cards) < 2:
             return None
 
         trump_ranks = {card.rank for card in trump_cards}
         side_aces = sum(card.rank == "A" and card.suit != trump for card in hand)
         side_tens = sum(card.rank == "10" and card.suit != trump for card in hand)
+        if len(trump_cards) == 2 and not ({"V", "9"}.issubset(trump_ranks) or ("V" in trump_ranks and side_aces >= 2)):
+            return None
+
         strength = sum(rules.card_points(card, trump) for card in trump_cards)
         strength += side_aces * 8 + side_tens * 2 + (len(trump_cards) - 2) * 3
         strength += 8 if "V" in trump_ranks else 0
         strength += 6 if "9" in trump_ranks else 0
+        if {"R", "D"}.issubset(trump_ranks):
+            strength += 4
 
         if strength < 39:
             return None
