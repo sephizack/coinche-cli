@@ -64,6 +64,31 @@ def test_cloclo_implements_the_bot_type_directly() -> None:
     assert ClocloBot.__bases__ == (BotType,)
 
 
+def test_cloclo_does_not_delegate_to_default_bot(monkeypatch) -> None:
+    from coinche.bot_types.default import DefaultBot
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("Cloclo must not delegate to DefaultBot")
+
+    monkeypatch.setattr(DefaultBot, "choose_bid", fail_if_called)
+    monkeypatch.setattr(DefaultBot, "choose_card", fail_if_called)
+
+    bid_game = Game()
+    assert bid_game.round_state is not None
+    bid_game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "A♥", "A♦", "A♣", "8♥", "7♦")
+    assert choose_bid(bid_game, Seat.W, "cloclo") == {"action": "bid", "trump": "♠", "points": 140}
+
+    card_game = Game()
+    assert card_game.round_state is not None
+    card_game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    card_game.submit_bid(Seat.S, "pass")
+    card_game.submit_bid(Seat.E, "pass")
+    card_game.submit_bid(Seat.N, "pass")
+    card_game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "A♥", "A♦", "A♣", "8♥", "7♦")
+    card = choose_card(card_game, Seat.W, "cloclo")
+    assert card in card_game.play_options_for(Seat.W)["legal_cards"]
+
+
 def test_cloclo_bids_its_own_strong_controlled_hand() -> None:
     game = Game()
     assert game.round_state is not None
