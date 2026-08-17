@@ -1100,6 +1100,9 @@ button {
 /* =========================================================================
    Chat panel
    ========================================================================= */
+.chat-scrim {
+  display: none;
+}
 .chat-panel {
   flex: 0 0 320px;
   display: flex;
@@ -2168,6 +2171,13 @@ body > .lobby {
    Responsive: tablet (>=600) chat becomes an overlay toggle
    ========================================================================= */
 @media (max-width: 1023px) {
+  .chat-scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 64;
+    background: rgba(3, 18, 12, 0.35);
+  }
   .chat-panel {
     position: absolute;
     top: 0;
@@ -2175,6 +2185,10 @@ body > .lobby {
     bottom: 0;
     flex-basis: min(360px, 88%);
     box-shadow: var(--shadow-panel);
+  }
+  .chat-scrim--overlay {
+    position: fixed;
+    z-index: 79;
   }
 }
 

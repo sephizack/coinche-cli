@@ -1992,6 +1992,7 @@ const App = {
         </main>
 
         <!-- Chat -->
+        <div v-if="chatOpen" class="chat-scrim" aria-hidden="true" @click="toggleChat"></div>
         <chat-panel
           v-if="chatOpen"
           :messages="snapshot.chat_messages"
@@ -2015,6 +2016,8 @@ const App = {
 
     <!-- Result screens replace the table subtree, but discussion remains a
          live table action: keep the same component available above them. -->
+        <div v-if="chatOpen && (flags.round_over_screen || flags.game_over)" class="chat-scrim chat-scrim--overlay"
+          aria-hidden="true" @click="toggleChat"></div>
     <chat-panel
       v-if="chatOpen && (flags.round_over_screen || flags.game_over)"
       class="chat-panel--overlay"

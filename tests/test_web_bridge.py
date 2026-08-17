@@ -732,6 +732,18 @@ def test_web_client_shows_final_round_recap_before_game_over() -> None:
     assert "humanMessages(messages, previousMessages)" in app
 
 
+def test_web_client_closes_overlay_chat_on_outside_click() -> None:
+    """The mobile chat overlay has a backdrop that dismisses it on tap."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert 'class="chat-scrim" aria-hidden="true" @click="toggleChat"' in app
+    assert 'class="chat-scrim chat-scrim--overlay"' in app
+    assert ".chat-scrim {\n  display: none;" in styles
+    assert "@media (max-width: 1023px) {\n  .chat-scrim {" in styles
+
+
 def test_web_client_separates_system_announcements_from_human_chat() -> None:
     static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
     app = (static_dir / "app.js").read_text()
