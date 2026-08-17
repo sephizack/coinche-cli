@@ -8,6 +8,7 @@ The round-trip tests drive a real browser-side WebSocket against a live
 calls, so no game server socket is involved.
 """
 
+
 from __future__ import annotations
 
 import asyncio
@@ -189,7 +190,7 @@ class FakeLink:
         spectate=False,
         suppress_discord_notification=False,
         coinche_blocks_bidding=True,
-        bot_type="smart",
+        bot_type=bot.DEFAULT_BOT_TYPE,
     ) -> bool:
         self.calls.append(
             (
@@ -365,7 +366,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
                 await asyncio.sleep(0.01)
             assert ("bid", "bid", "♠", 90) in link.calls
             assert ("chat", "salut") in link.calls
-            assert ("join", "t1", "Zoe", None, None, False, True, True, "smart") in link.calls
+            assert ("join", "t1", "Zoe", None, None, False, True, True, bot.DEFAULT_BOT_TYPE) in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
             assert ("fill_bots",) in link.calls
@@ -376,7 +377,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
             frame = json.loads(await asyncio.wait_for(client.recv(), timeout=5))
             assert frame["type"] == "state"
             assert frame["snapshot"]["status_message"] == "En attente de joueurs (2/4)..."
-            assert frame["snapshot"]["available_bot_types"] == ["smart", "maestro", "cloclo", "noob"]
+            assert frame["snapshot"]["available_bot_types"] == [bot.DEFAULT_BOT_TYPE, "maestro", "cloclo", "noob"]
             await client.close()
         finally:
             await _stop(task)

@@ -25,6 +25,7 @@ import pytest
 
 from coinche import protocol, server
 from coinche import table as table_module
+from coinche.bot import DEFAULT_BOT_TYPE
 from coinche.table import BOT_NAMES
 
 HOST = "127.0.0.1"
@@ -124,14 +125,14 @@ def test_join_creation_options_configure_the_new_table() -> None:
                     "table_key": "rules01",
                     "player_name": "Alice",
                     "coinche_blocks_bidding": False,
-                    "bot_type": "smart",
+                    "bot_type": DEFAULT_BOT_TYPE,
                 },
             )
             await _read_until(reader, protocol.JOINED)
 
             table = table_module.TABLES["rules01"]
             assert table.coinche_blocks_bidding is False
-            assert table.bot_type == "smart"
+            assert table.bot_type == DEFAULT_BOT_TYPE
         finally:
             if writer is not None:
                 writer.close()

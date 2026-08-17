@@ -10,7 +10,7 @@ from coinche.bot_types.base import BotType
 from coinche.cards import Card, Seat
 from coinche.game import Game
 
-# Number of imperfect-information determinizations used by the smart bot.
+# Number of imperfect-information determinizations used by the bot.
 # The server configures this explicit runtime value through ``--bot-samples``.
 MONTE_CARLO_SAMPLES = 100
 
@@ -35,7 +35,7 @@ def is_supported_bot_type(bot_type: str) -> bool:
 
 
 def _get_bot(bot_type: str) -> BotType:
-    """Build the requested strategy, falling back to SmartBot for unknown types."""
+    """Build the requested strategy, falling back to the default bot for unknown types."""
     strategy_type = _BOT_TYPES.get(bot_type, DefaultBot)
     return strategy_type(MONTE_CARLO_SAMPLES)
 

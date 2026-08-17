@@ -102,11 +102,11 @@ another player creates a table or joins one, the list and team rosters
 update automatically.
 
 In the Web lobby, **Options de table** opens the settings for a new table:
-table name, Discord notification, and the default bot type (`smart`) for newly created
+table name, Discord notification, and the default bot type for newly created
 bots, as well as whether a Coinche/Contre blocks later bids. The blocking rule
 is enabled by default. Each bot keeps its own type; click its `BOT <type>`
 badge at the table to cycle through the available strategies. `Maestro` uses
-the same information-safe card play as the smart bot
+the same information-safe card play as the bot
 but announces one extra trick when it holds firm trump control. `Cloclo` is an
 offensive AI opponent: with the Jack, 9, and two side aces it announces one
 more trick than Maestro, then preserves points when its team is already winning

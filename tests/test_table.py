@@ -6,6 +6,7 @@ import asyncio
 
 import pytest
 
+from coinche.bot import DEFAULT_BOT_TYPE
 import coinche.table as table_mod
 from coinche.game import Seat
 from coinche.table import BOT_NAMES, GameInProgressError, NameTakenError, Table, TableFullError
@@ -36,13 +37,13 @@ def test_add_player_fills_seats_in_order():
 
 
 def test_table_passes_non_blocking_coinche_rule_to_games():
-    table = Table("abcd", coinche_blocks_bidding=False, bot_type="smart")
+    table = Table("abcd", coinche_blocks_bidding=False, bot_type=DEFAULT_BOT_TYPE)
     for name in ("Alice", "Bob", "Carol", "Dave"):
         table.add_player(name, FakeWriter())
 
     assert table.game is not None
     assert table.game.coinche_blocks_bidding is False
-    assert table.bot_type == "smart"
+    assert table.bot_type == DEFAULT_BOT_TYPE
 
 
 def test_fill_with_bots_occupies_open_seats_and_starts_game():

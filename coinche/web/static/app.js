@@ -214,7 +214,7 @@ const SeatPanel = {
         <button v-if="isBot" class="seat__tag" type="button"
           :aria-label="'Changer le type du bot ' + name"
           :title="'Changer le type du bot'"
-          @click="$emit('change-bot-type')">BOT {{ (botType || 'smart') }}</button>
+          @click="$emit('change-bot-type')">BOT {{ (botType || 'toto') }}</button>
       </div>
       <span v-if="!connected" class="seat__offline-note">déconnecté</span>
       <div class="seat__slot">
@@ -1281,7 +1281,7 @@ const App = {
       const s = snapshot.value;
       const types = (s && s.available_bot_types) || [];
       if (!types.length) return;
-      const current = (s.bot_types || {})[seatId] || "smart";
+      const current = (s.bot_types || {})[seatId] || "toto";
       const next = types[(types.indexOf(current) + 1) % types.length];
       sendAction("set_bot_type", { seat: seatId, bot_type: next });
     }
@@ -1439,13 +1439,13 @@ const App = {
     const lobbyLoaded = computed(() => snapshot.value !== null);
     const availableBotTypes = computed(() => {
       const types = snapshot.value && snapshot.value.available_bot_types;
-      return Array.isArray(types) && types.length ? types : ["smart"];
+      return Array.isArray(types) && types.length ? types : ["toto"];
     });
     const tableOptionsOpen = ref(false);
     const tableOptions = reactive({
       name: "",
       suppressDiscordNotification: false,
-      botType: "smart",
+      botType: "toto",
       coincheBlocksBidding: true,
     });
     const discordNotificationsEnabled = computed({
@@ -1497,7 +1497,7 @@ const App = {
       if (tableSettings) {
         if (tableSettings.suppressDiscordNotification) payload.suppress_discord_notification = true;
         if (!tableSettings.coincheBlocksBidding) payload.coinche_blocks_bidding = false;
-        if (tableSettings.botType !== "smart") payload.bot_type = tableSettings.botType;
+        if (tableSettings.botType !== "toto") payload.bot_type = tableSettings.botType;
       }
       sendAction("join", payload);
     }
@@ -1760,7 +1760,7 @@ const App = {
               <label>Type de bot
                 <select v-model="tableOptions.botType">
                   <option v-for="botType in availableBotTypes" :key="botType" :value="botType">
-                    {{ botType === "smart" ? "Smart" : botType === "maestro" ? "Maestro - audacieux" : botType === "cloclo" ? "Cloclo - IA offensive" : botType }}
+                    {{ botType === "toto" ? "Toto" : botType === "maestro" ? "Maestro - audacieux" : botType === "cloclo" ? "Cloclo - IA offensive" : botType }}
                   </option>
                 </select>
               </label>
