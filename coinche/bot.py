@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from coinche.bot_types import DefaultBot, MaestroBot, NoobBot
+from coinche.bot_types import ClocloBot, DefaultBot, MaestroBot, NoobBot
 from coinche.bot_types import default as _default
 from coinche.bot_types.base import BotType
 from coinche.cards import Card, Seat
@@ -17,6 +17,7 @@ MONTE_CARLO_SAMPLES = 100
 _BOT_TYPES: dict[str, Callable[[int], BotType]] = {
     "smart": DefaultBot,
     "maestro": MaestroBot,
+    "cloclo": ClocloBot,
     "noob": NoobBot,
 }
 

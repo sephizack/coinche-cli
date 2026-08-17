@@ -2276,11 +2276,12 @@ body > .lobby {
     min-height: 44px;
   }
   .chat-panel {
-    flex-basis: 100%;
+    flex-basis: 85%;
+    width: 85%;
     border-left: none;
   }
   .chat-panel.chat-panel--overlay {
-    width: 100%;
+    width: 85%;
   }
   /* Bid panel becomes a bottom sheet. */
   .scrim {

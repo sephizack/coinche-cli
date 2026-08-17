@@ -23,6 +23,7 @@ from coinche.bot import (
     choose_card,
     configure_samples,
 )
+from coinche.bot_types import BotType, ClocloBot
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, Game
 
@@ -53,6 +54,42 @@ def test_bot_entry_point_dispatches_to_the_requested_type(monkeypatch) -> None:
 def test_smart_is_the_public_name_of_the_default_strategy() -> None:
     assert "smart" in available_bot_types()
     assert "default" not in available_bot_types()
+
+
+def test_cloclo_is_an_available_strategy() -> None:
+    assert "cloclo" in available_bot_types()
+
+
+def test_cloclo_implements_the_bot_type_directly() -> None:
+    assert ClocloBot.__bases__ == (BotType,)
+
+
+def test_cloclo_bids_its_own_strong_controlled_hand() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "A♥", "A♦", "A♣", "8♥", "7♦")
+
+    action = choose_bid(game, Seat.W, "cloclo")
+
+    assert action == {"action": "bid", "trump": "♠", "points": 140}
+    assert action in game.bid_options_for(Seat.W)["legal_actions"]
+
+
+def test_cloclo_discards_the_cheapest_legal_card_when_partner_is_winning() -> None:
+    game = Game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+    assert game.round_state is not None
+    game.round_state.current_trick = [(Seat.S, Card("A", "♥"))]
+    game.round_state.hands[Seat.N] = _cards("7♦", "A♣")
+    game.next_to_act = Seat.N
+
+    card = choose_card(game, Seat.N, "cloclo")
+
+    assert card == Card("7", "♦")
+    assert card in game.play_options_for(Seat.N)["legal_cards"]
 
 
 def test_maestro_adds_one_trick_with_jack_nine_and_a_side_ace() -> None:

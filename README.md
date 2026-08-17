@@ -107,7 +107,10 @@ bots, as well as whether a Coinche/Contre blocks later bids. The blocking rule
 is enabled by default. Each bot keeps its own type; click its `BOT <type>`
 badge at the table to cycle through the available strategies. `Maestro` uses
 the same information-safe card play as the smart bot
-but announces one extra trick when it holds firm trump control. When disabled,
+but announces one extra trick when it holds firm trump control. `Cloclo` is an
+offensive AI opponent: with the Jack, 9, and two side aces it announces one
+more trick than Maestro, then preserves points when its team is already winning
+a trick. When disabled,
 a later valid bid cancels the Coinche and returns the contract multiplier to
 normal.
 

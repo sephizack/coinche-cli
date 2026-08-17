@@ -214,7 +214,7 @@ const SeatPanel = {
         <button v-if="isBot" class="seat__tag" type="button"
           :aria-label="'Changer le type du bot ' + name"
           :title="'Changer le type du bot'"
-          @click="$emit('change-bot-type')">BOT {{ (botType || 'smart').toUpperCase() }}</button>
+          @click="$emit('change-bot-type')">BOT {{ (botType || 'smart') }}</button>
       </div>
       <span v-if="!connected" class="seat__offline-note">déconnecté</span>
       <div class="seat__slot">
@@ -1760,7 +1760,7 @@ const App = {
               <label>Type de bot
                 <select v-model="tableOptions.botType">
                   <option v-for="botType in availableBotTypes" :key="botType" :value="botType">
-                    {{ botType === "smart" ? "Smart" : botType === "maestro" ? "Maestro - audacieux" : botType }}
+                    {{ botType === "smart" ? "Smart" : botType === "maestro" ? "Maestro - audacieux" : botType === "cloclo" ? "Cloclo - IA offensive" : botType }}
                   </option>
                 </select>
               </label>

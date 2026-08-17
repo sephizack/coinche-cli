@@ -32,6 +32,10 @@ class NoobBot(DefaultBot):
             rules.ALLOWED_TRUMPS,
             key=lambda trump: _ceiling_value(opening_ceilings[trump]),
         )
+        if options["can_coinche"] and random.randrange(12) == 0:
+            return {"action": "coinche"}
+        if options["can_surcoinche"] and random.randrange(6) == 0:
+            return {"action": "surcoinche"}
         return _try_open_suit(hand, best_trump, opening_ceilings, options, seat) or {"action": "pass"}
 
     def choose_card(self, game: Game, seat: Seat) -> Card:
