@@ -766,7 +766,35 @@ def _auction_card_weights(game: Game) -> dict[Seat, dict[Card, float]]:
             for card in build_deck():
                 if card.suit == standing["trump"] and card.rank in {"V", "9", "A", "10"}:
                     weights[bidder][card] *= 0.90
+    _apply_play_signal_weights(game, weights)
     return weights
+
+
+def _apply_play_signal_weights(game: Game, weights: dict[Seat, dict[Card, float]]) -> None:
+    """Apply a direct-call convention observed in public partner-winning discards.
+
+    A low non-trump discard behind a partner's winning card can call the Ace
+    of that discarded suit. This is soft evidence only: a player may discard
+    for other reasons, so it never overrides void-suit constraints.
+    """
+    assert game.round_state is not None
+    trump = game.round_state.trump
+    if trump is None:
+        return
+    tricks = [entry["trick"] for entry in game.round_state.trick_history]
+    if game.round_state.current_trick:
+        tricks.append(game.round_state.current_trick)
+    for trick in tricks:
+        led_suit = trick[0][1].suit
+        for index, (seat, card) in enumerate(trick[1:], start=1):
+            if (
+                card.suit != led_suit
+                and card.suit != trump
+                and card.rank not in {"A", "10"}
+                and rules.trick_winner(trick[:index], trump, led_suit) == PARTNER_OF[seat]
+            ):
+                weights[seat][Card("A", card.suit)] *= 1.35
+                weights[seat][Card("10", card.suit)] *= 1.10
 
 
 def _card_seat_weight(card: Card, seat: Seat, auction_weights: dict[Seat, dict[Card, float]]) -> float:

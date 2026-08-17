@@ -9,8 +9,10 @@ from collections import Counter
 import pytest
 
 import coinche.bot as bot
+import coinche.bot_types.cloclo as cloclo
 import coinche.bot_types.noob as noob
 from coinche import server
+from coinche.benchmark import run_cloclo_benchmark
 from coinche.bot import (
     _auction_card_weights,
     _known_void_suits,
@@ -30,6 +32,14 @@ from coinche.game import TEAM_OF, Game
 
 def _cards(*values: str):
     return [Card(value[:-1], value[-1]) for value in values]
+
+
+def _isolated_game() -> Game:
+    random_state = random.getstate()
+    try:
+        return Game()
+    finally:
+        random.setstate(random_state)
 
 
 def test_bot_entry_point_dispatches_to_the_requested_type(monkeypatch) -> None:
@@ -127,6 +137,76 @@ def test_cloclo_discards_the_cheapest_legal_card_when_partner_is_winning() -> No
     assert card in game.play_options_for(Seat.N)["legal_cards"]
 
 
+def test_cloclo_calls_a_side_ace_behind_a_partner_master() -> None:
+    game = _isolated_game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+    assert game.round_state is not None
+    game.round_state.current_trick = [(Seat.S, Card("A", "♥"))]
+    game.round_state.hands[Seat.N] = _cards("8♦", "A♦", "7♣")
+    game.next_to_act = Seat.N
+
+    assert ClocloBot(sample_count=1).choose_card(game, Seat.N) == Card("8", "♦")
+
+
+def test_cloclo_evaluates_cards_with_its_configured_sample_count(monkeypatch) -> None:
+    game = _isolated_game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("7♠", "A♥")
+    samples_seen: list[tuple[Seat, int]] = []
+
+    def sample_hidden_hands(game: Game, seat: Seat, sample_count: int) -> list[dict[Seat, list[Card]]]:
+        samples_seen.append((seat, sample_count))
+        return []
+
+    monkeypatch.setattr(cloclo, "_sample_hidden_hands", sample_hidden_hands)
+
+    assert ClocloBot(sample_count=7).choose_card(game, Seat.W) == Card("A", "♥")
+    assert samples_seen == [(Seat.W, 7)]
+
+
+def test_cloclo_card_choice_does_not_depend_on_any_real_hidden_hand() -> None:
+    game = _isolated_game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+    assert game.round_state is not None
+
+    altered = copy.deepcopy(game)
+    assert altered.round_state is not None
+    hidden_seats = [Seat.N, Seat.E, Seat.S]
+    hidden_hands = [list(game.round_state.hands[seat]) for seat in hidden_seats]
+    hidden_dealt_hands = [list(game.round_state.dealt_hands[seat]) for seat in hidden_seats]
+    for target, hand, dealt_hand in zip(
+        hidden_seats,
+        hidden_hands[1:] + hidden_hands[:1],
+        hidden_dealt_hands[1:] + hidden_dealt_hands[:1],
+        strict=True,
+    ):
+        altered.round_state.hands[target] = hand
+        altered.round_state.dealt_hands[target] = dealt_hand
+
+    cloclo_bot = ClocloBot(sample_count=5)
+    assert cloclo_bot.choose_card(game, Seat.W) == cloclo_bot.choose_card(altered, Seat.W)
+
+
+def test_cloclo_benchmark_is_reproducible_with_alternating_teams() -> None:
+    first = run_cloclo_benchmark(deals=2, sample_count=1, seed=4)
+    second = run_cloclo_benchmark(deals=2, sample_count=1, seed=4)
+
+    assert first == second
+    assert first.deals == 2
+    assert 0 <= first.cloclo_win_rate <= 1
+    assert len(first.confidence_interval) == 2
+
+
 def test_maestro_adds_one_trick_with_jack_nine_and_a_side_ace() -> None:
     game = Game()
     assert game.round_state is not None
@@ -167,6 +247,7 @@ def test_noob_keeps_its_regular_bid_logic_when_random_raise_does_not_trigger(mon
     game = Game()
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "8♠", "A♥", "8♥", "7♦", "8♦", "7♣")
+    game.round_state.hands[Seat.E] = _cards("7♠", "8♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣")
     game.submit_bid(Seat.W, "bid", trump="♥", points=80)
     game.submit_bid(Seat.S, "pass")
     monkeypatch.setattr(noob.random, "randrange", lambda stop: 1)
@@ -1166,6 +1247,21 @@ def test_determinization_uses_an_earlier_bid_not_just_the_final_contract() -> No
     holders = Counter(other for hands in samples for other, hand in hands.items() if Card("V", "♥") in hand)
     assert holders[Seat.W] > holders[Seat.S]
     assert holders[Seat.W] > holders[Seat.E]
+
+
+def test_determinization_treats_a_partner_winning_discard_as_a_soft_direct_call() -> None:
+    game = _isolated_game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [
+        (Seat.N, Card("A", "♥")),
+        (Seat.E, Card("7", "♥")),
+        (Seat.S, Card("7", "♦")),
+    ]
+
+    weights = _auction_card_weights(game)
+
+    assert weights[Seat.S][Card("A", "♦")] > weights[Seat.E][Card("A", "♦")]
 
 
 def _play_round(source: Game, optimize_ew: bool) -> int:

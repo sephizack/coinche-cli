@@ -2,10 +2,41 @@
 
 from __future__ import annotations
 
+import copy
+import math
+import random
+from dataclasses import dataclass, field
+from functools import wraps
+
 from coinche import rules
 from coinche.bot_types.base import BotType
+from coinche.bot_types.default import _apply_determinization, _sample_hidden_hands
 from coinche.cards import Card, Seat
 from coinche.game import PARTNER_OF, TEAM_OF, Game
+
+
+@dataclass
+class _SearchAction:
+    visits: int = 0
+    total_value: int = 0
+
+
+@dataclass
+class _SearchNode:
+    visits: int = 0
+    actions: dict[Card, _SearchAction] = field(default_factory=dict)
+
+
+def _without_global_random_side_effects(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        random_state = random.getstate()
+        try:
+            return function(*args, **kwargs)
+        finally:
+            random.setstate(random_state)
+
+    return wrapped
 
 
 class ClocloBot(BotType):
@@ -15,6 +46,36 @@ class ClocloBot(BotType):
         self.sample_count = sample_count
 
     def choose_bid(self, game: Game, seat: Seat) -> dict:
+        heuristic_action = self._choose_heuristic_bid(game, seat)
+        options = game.bid_options_for(seat)
+        if options["current_highest_bid"] is None and heuristic_action["action"] == "pass":
+            return heuristic_action
+        partner_bid = next(
+            (
+                bid
+                for bid in reversed(options["bid_history"])
+                if bid.get("action") == "bid" and bid["seat"] == PARTNER_OF[seat]
+            ),
+            None,
+        )
+        if (
+            heuristic_action["action"] == "bid"
+            and partner_bid is not None
+            and heuristic_action["trump"] == partner_bid["trump"]
+        ):
+            return heuristic_action
+
+        actions = [heuristic_action]
+        if heuristic_action["action"] != "pass":
+            actions.append({"action": "pass"})
+        if options["can_coinche"]:
+            actions.append({"action": "coinche"})
+        if options["can_surcoinche"]:
+            actions.append({"action": "surcoinche"})
+        unique_actions = [action for index, action in enumerate(actions) if action not in actions[:index]]
+        return self._choose_bid_by_rollout(game, seat, unique_actions, heuristic_action)
+
+    def _choose_heuristic_bid(self, game: Game, seat: Seat) -> dict:
         options = game.bid_options_for(seat)
         hand = game.get_hand(seat)
         ceilings = {trump: self._bid_ceiling(hand, trump) for trump in rules.ALLOWED_TRUMPS}
@@ -53,6 +114,79 @@ class ClocloBot(BotType):
                 return own_bid
         return {"action": "pass"}
 
+    def _choose_bid_by_rollout(
+        self,
+        game: Game,
+        seat: Seat,
+        actions: list[dict],
+        heuristic_action: dict,
+    ) -> dict:
+        sample_budget = max(4, min(16, self.sample_count // 8))
+        samples = _sample_hidden_hands(game, seat, sample_budget)
+        if not samples:
+            return heuristic_action
+        values = {index: 0 for index in range(len(actions))}
+        for hidden_hands in samples:
+            for index, action in enumerate(actions):
+                values[index] += self._bid_rollout_value(game, seat, action, hidden_hands)
+        best_index = max(
+            range(len(actions)),
+            key=lambda index: (
+                values[index],
+                actions[index] == heuristic_action,
+                actions[index]["action"] != "pass",
+            ),
+        )
+        return actions[best_index]
+
+    @_without_global_random_side_effects
+    def _bid_rollout_value(
+        self,
+        game: Game,
+        root_seat: Seat,
+        action: dict,
+        hidden_hands: dict[Seat, list[Card]],
+    ) -> int:
+        simulation = copy.deepcopy(game)
+        self._apply_bidding_determinization(simulation, root_seat, hidden_hands)
+        result = simulation.submit_bid(root_seat, **action)
+        for _ in range(32):
+            if simulation.phase != "bidding":
+                break
+            if result.get("outcome") == "redeal":
+                return 0
+            actor = simulation.next_to_act
+            result = simulation.submit_bid(actor, **self._choose_heuristic_bid(simulation, actor))
+        if simulation.phase == "bidding":
+            raise RuntimeError("Bid rollout did not close the auction")
+
+        for _ in range(32):
+            actor = simulation.next_to_act
+            options = simulation.play_options_for(actor)
+            trump = options["trump"]
+            assert trump is not None
+            card = self._choose_tactical_card(simulation, actor, options["legal_cards"], trump)
+            result = simulation.submit_card(actor, card)
+            if result.get("round_complete"):
+                root_team = TEAM_OF[root_seat]
+                opposing_team = "EW" if root_team == "NS" else "NS"
+                score = result["round_score"]
+                return score[root_team]["total"] - score[opposing_team]["total"]
+        raise RuntimeError("Bid rollout did not complete the round")
+
+    @staticmethod
+    def _apply_bidding_determinization(
+        game: Game,
+        root_seat: Seat,
+        hidden_hands: dict[Seat, list[Card]],
+    ) -> None:
+        assert game.round_state is not None
+        round_state = game.round_state
+        for seat, hand in hidden_hands.items():
+            if seat != root_seat:
+                round_state.hands[seat] = list(hand)
+        round_state.dealt_hands = {seat: list(hand) for seat, hand in round_state.hands.items()}
+
     def choose_card(self, game: Game, seat: Seat) -> Card:
         assert game.round_state is not None
         options = game.play_options_for(seat)
@@ -60,9 +194,131 @@ class ClocloBot(BotType):
         trump = options["trump"]
         trick = game.round_state.current_trick
         assert trump is not None
+        if len(legal_cards) == 1:
+            return legal_cards[0]
         if trick and rules.trick_winner(trick, trump) == PARTNER_OF[seat]:
-            return min(legal_cards, key=lambda card: self._discard_key(card, trump))
+            return self._partner_master_discard(game, seat, legal_cards, trump)
 
+        tactical_card = self._choose_tactical_card(game, seat, legal_cards, trump)
+        samples = _sample_hidden_hands(game, seat, self.sample_count)
+        if not samples:
+            return tactical_card
+
+        nodes: dict[tuple, _SearchNode] = {}
+        for hidden_hands in samples:
+            self._search_determinization(game, seat, hidden_hands, nodes)
+
+        root = nodes.get(self._information_key(game, seat))
+        if root is None:
+            return tactical_card
+        return max(
+            legal_cards,
+            key=lambda card: (
+                self._action_average(root.actions.get(card)),
+                root.actions.get(card, _SearchAction()).visits,
+                card == tactical_card,
+                -rules.card_points(card, trump),
+                -self._discard_key(card, trump)[2],
+                card.suit,
+            ),
+        )
+
+    @_without_global_random_side_effects
+    def _search_determinization(
+        self,
+        game: Game,
+        root_seat: Seat,
+        hidden_hands: dict[Seat, list[Card]],
+        nodes: dict[tuple, _SearchNode],
+    ) -> None:
+        simulation = copy.deepcopy(game)
+        _apply_determinization(simulation, root_seat, hidden_hands)
+        path: list[tuple[_SearchNode, Card]] = []
+        result: dict | None = None
+
+        for ply in range(32):
+            actor = simulation.next_to_act
+            if ply:
+                actor_samples = _sample_hidden_hands(simulation, actor, 1)
+                if actor_samples:
+                    _apply_determinization(simulation, actor, actor_samples[0])
+            options = simulation.play_options_for(actor)
+            legal_cards: list[Card] = options["legal_cards"]
+            if not legal_cards:
+                raise RuntimeError("Information-set search reached a seat without a legal card")
+            key = self._information_key(simulation, actor)
+            node = nodes.setdefault(key, _SearchNode())
+            card = self._select_search_card(node, legal_cards, actor, TEAM_OF[root_seat])
+            path.append((node, card))
+            result = simulation.submit_card(actor, card)
+            if result.get("round_complete"):
+                break
+        if result is None or not result.get("round_complete"):
+            raise RuntimeError("Information-set search did not complete the round")
+
+        root_team = TEAM_OF[root_seat]
+        opposing_team = "EW" if root_team == "NS" else "NS"
+        score = result["round_score"]
+        value = score[root_team]["total"] - score[opposing_team]["total"]
+        for node, card in path:
+            node.visits += 1
+            action = node.actions.setdefault(card, _SearchAction())
+            action.visits += 1
+            action.total_value += value
+
+    @staticmethod
+    def _action_average(action: _SearchAction | None) -> float:
+        if action is None or action.visits == 0:
+            return float("-inf")
+        return action.total_value / action.visits
+
+    @classmethod
+    def _select_search_card(
+        cls,
+        node: _SearchNode,
+        legal_cards: list[Card],
+        actor: Seat,
+        root_team: str,
+    ) -> Card:
+        unvisited = sorted((card for card in legal_cards if card not in node.actions), key=str)
+        if unvisited:
+            return unvisited[0]
+        actor_is_root_team = TEAM_OF[actor] == root_team
+        exploration = math.sqrt(math.log(node.visits + 1))
+        return max(
+            legal_cards,
+            key=lambda card: (
+                (1 if actor_is_root_team else -1) * cls._action_average(node.actions[card])
+                + 40 * exploration / math.sqrt(node.actions[card].visits),
+                str(card),
+            ),
+        )
+
+    @staticmethod
+    def _information_key(game: Game, seat: Seat) -> tuple:
+        assert game.round_state is not None
+        round_state = game.round_state
+        history = tuple(
+            tuple((played_seat.value, str(card)) for played_seat, card in trick["trick"])
+            for trick in round_state.trick_history
+        )
+        current_trick = tuple((played_seat.value, str(card)) for played_seat, card in round_state.current_trick)
+        bid_history = (
+            () if game.bid_state is None else tuple(tuple(sorted(entry.items())) for entry in game.bid_state.history)
+        )
+        return (
+            seat.value,
+            tuple(sorted(str(card) for card in game.get_hand(seat))),
+            round_state.trump,
+            history,
+            current_trick,
+            bid_history,
+            tuple(sorted(round_state.captured_points.items())),
+        )
+
+    def _choose_tactical_card(self, game: Game, seat: Seat, legal_cards: list[Card], trump: str) -> Card:
+        assert game.round_state is not None
+        trick = game.round_state.current_trick
         if trick:
             led_suit = trick[0][1].suit
             winners = [
@@ -86,6 +342,17 @@ class ClocloBot(BotType):
             trumps = [card for card in legal_cards if card.suit == trump]
             if len(trumps) >= 3:
                 return max(trumps, key=lambda card: rules.TRUMP_ORDER.index(card.rank))
+        return min(legal_cards, key=lambda card: self._discard_key(card, trump))
+
+    def _partner_master_discard(self, game: Game, seat: Seat, legal_cards: list[Card], trump: str) -> Card:
+        hand = game.get_hand(seat)
+        direct_calls = [
+            card
+            for card in legal_cards
+            if card.suit != trump and card.rank not in {"A", "10"} and Card("A", card.suit) in hand
+        ]
+        if direct_calls:
+            return min(direct_calls, key=lambda card: self._discard_key(card, trump))
         return min(legal_cards, key=lambda card: self._discard_key(card, trump))
 
     @classmethod
