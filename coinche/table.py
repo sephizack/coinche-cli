@@ -205,6 +205,8 @@ class Table:
         # rejected. They receive every `broadcast` but never a per-seat `send_to`.
         self.spectators: dict[str, SpectatorSession] = {}
         self.game: Game | None = None
+        self.discord_message_id: str | None = None
+        self.is_closed: bool = False
 
     def bot_think_delay(self) -> float:
         """Return a human-like delay before one bot decision.
@@ -572,11 +574,13 @@ async def cancel_background_tasks(table: Table, include_turn_timer: bool = True)
         cancel_turn_timer(table)
 
 
-async def remove_table(table_key: str) -> None:
+async def remove_table(table_key: str) -> Table | None:
     """Drop an abandoned table and finish its background tasks."""
     table = TABLES.pop(table_key, None)
     if table is not None:
+        table.is_closed = True
         await cancel_background_tasks(table)
+    return table
 
 
 LOBBY_SUBSCRIBERS: set[asyncio.StreamWriter] = set()

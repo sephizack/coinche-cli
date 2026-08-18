@@ -56,6 +56,7 @@ DISCORD_NOTIF_CHANNEL_POST_URL = os.environ.get("DISCORD_NOTIF_CHANNEL_POST_URL"
 COINCHE_PUBLIC_URL = os.environ.get("COINCHE_PUBLIC_URL", "").rstrip("/")
 _DISCORD_WEBHOOK_TIMEOUT_SECONDS = 5.0
 _DISCORD_TABLE_CREATED_COLOR = 0x57F287
+_DISCORD_TABLE_CLOSED_COLOR = 0x95A5A6
 
 
 def _table_join_url(table_key: str, preferred_seat: Seat) -> str | None:
@@ -75,18 +76,27 @@ def _table_spectate_url(table_key: str) -> str | None:
 
 
 def _webhook_url_with_components(webhook_url: str) -> str:
-    """Enable non-interactive components on a standard Discord webhook."""
+    """Enable non-interactive components on a standard Discord webhook and wait for response."""
     parsed = urllib.parse.urlsplit(webhook_url)
     query = [
         (key, value)
         for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-        if key != "with_components"
+        if key not in ("with_components", "wait")
     ]
     query.append(("with_components", "true"))
+    query.append(("wait", "true"))
     return urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query)))
 
 
-def _post_discord_table_created(webhook_url: str, table_key: str, player_name: str, creator_seat: Seat) -> None:
+def _webhook_message_url(webhook_url: str, message_id: str) -> str:
+    """Return the Discord webhook endpoint URL for updating a specific message."""
+    parsed = urllib.parse.urlsplit(webhook_url)
+    base_path = parsed.path.rstrip("/")
+    new_path = f"{base_path}/messages/{message_id}"
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, new_path, "", ""))
+
+
+def _post_discord_table_created(webhook_url: str, table_key: str, player_name: str, creator_seat: Seat) -> str | None:
     """Post a best-effort Discord notification without exposing the webhook URL."""
     description = f"La table **{table_key}** vient d'etre creee par **{player_name}**."
     teammate_url = _table_join_url(table_key, PARTNER_OF[creator_seat])
@@ -140,18 +150,74 @@ def _post_discord_table_created(webhook_url: str, table_key: str, player_name: s
     )
     try:
         with urllib.request.urlopen(request, timeout=_DISCORD_WEBHOOK_TIMEOUT_SECONDS) as response:
-            if response.status != 204:
-                logger.warning("[%s] Notification Discord rejetee (HTTP %s)", table_key, response.status)
+            if response.status in (200, 204):
+                if response.status == 200:
+                    data = json.loads(response.read().decode("utf-8"))
+                    msg_id = data.get("id")
+                    if isinstance(msg_id, str):
+                        return msg_id
+                return None
+            logger.warning("[%s] Notification Discord rejetee (HTTP %s)", table_key, response.status)
     except (OSError, ValueError) as exc:
         logger.warning("[%s] Echec de la notification Discord: %s", table_key, exc)
+    return None
 
 
-async def _notify_discord_table_created(webhook_url: str, table_key: str, player_name: str, creator_seat: Seat) -> None:
+def _patch_discord_table_closed(webhook_url: str, table_key: str, message_id: str) -> None:
+    """Update a Discord notification to indicate that the table is closed and remove components."""
+    body = {
+        "embeds": [
+            {
+                "title": f"🔒 [Fermée] Table {table_key}",
+                "color": _DISCORD_TABLE_CLOSED_COLOR,
+                "description": f"La table **{table_key}** est fermée.",
+            }
+        ],
+        "components": [],
+    }
+    request = urllib.request.Request(
+        _webhook_message_url(webhook_url, message_id),
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "coinche-cli"},
+        method="PATCH",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=_DISCORD_WEBHOOK_TIMEOUT_SECONDS) as response:
+            if response.status not in (200, 204):
+                logger.warning("[%s] Mise a jour Discord rejetee (HTTP %s)", table_key, response.status)
+    except (OSError, ValueError) as exc:
+        logger.warning("[%s] Echec de la mise a jour Discord: %s", table_key, exc)
+
+
+async def _notify_discord_table_created(webhook_url: str, table: Table, player_name: str, creator_seat: Seat) -> None:
     """Run the blocking webhook call away from the game server's event loop."""
     try:
-        await asyncio.to_thread(_post_discord_table_created, webhook_url, table_key, player_name, creator_seat)
+        msg_id = await asyncio.to_thread(
+            _post_discord_table_created, webhook_url, table.table_key, player_name, creator_seat
+        )
+        if msg_id:
+            table.discord_message_id = msg_id
+            if table.is_closed or table.table_key not in TABLES:
+                await _notify_discord_table_closed(webhook_url, table.table_key, msg_id)
     except Exception:  # noqa: BLE001 - a webhook failure must never affect a game session
-        logger.exception("[%s] Echec inattendu de la notification Discord", table_key)
+        logger.exception("[%s] Echec inattendu de la notification Discord", table.table_key)
+
+
+async def _notify_discord_table_closed(webhook_url: str, table_key: str, message_id: str) -> None:
+    """Run the blocking webhook patch call away from the game server's event loop."""
+    try:
+        await asyncio.to_thread(_patch_discord_table_closed, webhook_url, table_key, message_id)
+    except Exception:  # noqa: BLE001 - a webhook failure must never affect a game session
+        logger.exception("[%s] Echec inattendu de la mise a jour Discord", table_key)
+
+
+async def _remove_table_and_notify(table: Table) -> None:
+    """Drop a table and update its Discord notification if one exists."""
+    await remove_table(table.table_key)
+    if DISCORD_NOTIF_CHANNEL_POST_URL and table.discord_message_id:
+        asyncio.create_task(
+            _notify_discord_table_closed(DISCORD_NOTIF_CHANNEL_POST_URL, table.table_key, table.discord_message_id)
+        )
 
 
 def _seat_to_str(seat: Seat) -> str:
@@ -418,7 +484,7 @@ async def _kick_timed_out_player(table: Table, seat: Seat, writer: asyncio.Strea
     if writer is not None:
         writer.close()
     if not table.has_humans():
-        await remove_table(table.table_key)
+        await _remove_table_and_notify(table)
         logger.info("[%s] table abandonnee (plus aucun joueur humain) -> supprimee", table.table_key)
         await notify_lobby_subscribers()
         return
@@ -1016,7 +1082,7 @@ async def _handle_leave(table: Table, seat: Seat, writer: asyncio.StreamWriter) 
     # audience of nobody.
     removed = not table.has_humans()
     if removed:
-        await remove_table(table.table_key)
+        await _remove_table_and_notify(table)
         logger.info("[%s] table abandonnee (plus aucun joueur humain) -> supprimee", table.table_key)
 
     # Confirm the departure to the leaver and immediately start streaming lobby
@@ -1078,7 +1144,7 @@ async def _handle_spectator_leave(table: Table, spectator_name: str, writer: asy
     logger.info("[%s] DEPART SPECTATEUR %s", table.table_key, spectator_name)
 
     if not table.has_humans() and not table.spectators:
-        await remove_table(table.table_key)
+        await _remove_table_and_notify(table)
         logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
 
     LOBBY_SUBSCRIBERS.add(writer)
@@ -1323,9 +1389,7 @@ async def _resolve_join_inner(
             return None
 
         if table_was_created and DISCORD_NOTIF_CHANNEL_POST_URL and not suppress_discord_notification:
-            asyncio.create_task(
-                _notify_discord_table_created(DISCORD_NOTIF_CHANNEL_POST_URL, table_key, player_name, seat)
-            )
+            asyncio.create_task(_notify_discord_table_created(DISCORD_NOTIF_CHANNEL_POST_URL, table, player_name, seat))
         logger.info(
             "[%s] CONNEXION %s (%s)%s",
             table_key,
@@ -1458,7 +1522,7 @@ async def handle_connection(
                 table.remove_spectator(spectator_name)
                 logger.info("[%s] DEPART SPECTATEUR %s", table.table_key, spectator_name)
                 if not table.has_humans() and not table.spectators:
-                    await remove_table(table.table_key)
+                    await _remove_table_and_notify(table)
                     logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
                 await notify_lobby_subscribers()
         elif table is not None and seat is not None:
@@ -1471,7 +1535,7 @@ async def handle_connection(
                         {"players": players, "seats_filled": len(players), "waiting_for": 4 - len(players)},
                     )
                     if not table.has_humans() and not table.spectators:
-                        await remove_table(table.table_key)
+                        await _remove_table_and_notify(table)
                         logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
                     await notify_lobby_subscribers()
                 else:
