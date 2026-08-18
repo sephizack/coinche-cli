@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import copy
+import math
 import random
+from dataclasses import dataclass, field
 
 from coinche import rules
 from coinche.cards import Card, Seat, build_deck
@@ -941,23 +943,120 @@ def _apply_determinization(game: Game, seat: Seat, hidden_hands: dict[Seat, list
                 break
 
 
-def _rollout_score(game: Game, seat: Seat, card: Card, hidden_hands: dict[Seat, list[Card]]) -> int:
-    simulation = copy.deepcopy(game)
-    _apply_determinization(simulation, seat, hidden_hands)
-    result = simulation.submit_card(seat, card)
+@dataclass
+class _SearchAction:
+    visits: int = 0
+    total_value: int = 0
 
-    for _ in range(31):
-        if result.get("round_complete"):
+
+@dataclass
+class _SearchNode:
+    visits: int = 0
+    actions: dict[Card, _SearchAction] = field(default_factory=dict)
+
+
+def _action_average(action: _SearchAction | None) -> float:
+    if action is None or action.visits == 0:
+        return float("-inf")
+    return action.total_value / action.visits
+
+
+def _select_search_card(
+    node: _SearchNode,
+    legal_cards: list[Card],
+    actor: Seat,
+    root_team: str,
+) -> Card:
+    unvisited = sorted((card for card in legal_cards if card not in node.actions), key=str)
+    if unvisited:
+        return unvisited[0]
+    actor_is_root_team = TEAM_OF[actor] == root_team
+    exploration = math.sqrt(math.log(node.visits + 1))
+    return max(
+        legal_cards,
+        key=lambda card: (
+            (1 if actor_is_root_team else -1) * _action_average(node.actions[card])
+            + 40.0 * exploration / math.sqrt(node.actions[card].visits),
+            str(card),
+        ),
+    )
+
+
+def _information_key(game: Game, seat: Seat) -> tuple:
+    assert game.round_state is not None
+    round_state = game.round_state
+    history = tuple(
+        tuple((played_seat.value, str(card)) for played_seat, card in trick["trick"])
+        for trick in round_state.trick_history
+    )
+    current_trick = tuple((played_seat.value, str(card)) for played_seat, card in round_state.current_trick)
+    bid_history = (
+        () if game.bid_state is None else tuple(tuple(sorted(entry.items())) for entry in game.bid_state.history)
+    )
+    return (
+        seat.value,
+        tuple(sorted(str(card) for card in game.get_hand(seat))),
+        round_state.trump,
+        history,
+        current_trick,
+        bid_history,
+        tuple(sorted(round_state.captured_points.items())),
+    )
+
+
+def _search_determinization(
+    game: Game,
+    root_seat: Seat,
+    hidden_hands: dict[Seat, list[Card]],
+    nodes: dict[tuple, _SearchNode],
+) -> None:
+    simulation = copy.deepcopy(game)
+    _apply_determinization(simulation, root_seat, hidden_hands)
+    path: list[tuple[_SearchNode, Card]] = []
+    result: dict | None = None
+    in_tree = True
+
+    for _ in range(32):
+        if simulation.round_state is None:
             break
         actor = simulation.next_to_act
-        result = simulation.submit_card(actor, _select_tactical_card_for_simulation(simulation, actor))
-    if not result.get("round_complete"):
-        raise RuntimeError("Bot rollout did not complete the round")
+        options = simulation.play_options_for(actor)
+        legal_cards: list[Card] = options["legal_cards"]
+        if not legal_cards:
+            break
 
-    team = TEAM_OF[seat]
-    opponents = "EW" if team == "NS" else "NS"
-    round_score = result["round_score"]
-    return round_score[team]["total"] - round_score[opponents]["total"]
+        if in_tree:
+            key = _information_key(simulation, actor)
+            node = nodes.setdefault(key, _SearchNode())
+            unvisited = sorted((card for card in legal_cards if card not in node.actions), key=str)
+            if unvisited:
+                tactical = _select_tactical_card_for_simulation(simulation, actor)
+                card = tactical if tactical in unvisited else unvisited[0]
+                path.append((node, card))
+                in_tree = False
+            else:
+                card = _select_search_card(node, legal_cards, actor, TEAM_OF[root_seat])
+                path.append((node, card))
+        else:
+            card = _select_tactical_card_for_simulation(simulation, actor)
+
+        result = simulation.submit_card(actor, card)
+        if result.get("round_complete"):
+            break
+
+    if result is None or not result.get("round_complete"):
+        raise RuntimeError("Information-set search did not complete the round")
+
+    root_team = TEAM_OF[root_seat]
+    opposing_team = "EW" if root_team == "NS" else "NS"
+    score = result["round_score"]
+    value = score[root_team]["total"] - score[opposing_team]["total"]
+    for node, card in path:
+        node.visits += 1
+        action = node.actions.setdefault(card, _SearchAction())
+        action.visits += 1
+        action.total_value += value
+
 
 
 def _team_auction_supports_trump(game: Game, seat: Seat, trump: str) -> bool:
@@ -1089,21 +1188,25 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
             if any(requested_trick_ace) and not any(card.suit == trump for _, card in trick):
                 return requested_trick_ace[0]
 
-    # Default to Monte-Carlo simulation
+    # Information-set Monte-Carlo tree search
     samples = _sample_hidden_hands(game, seat, MONTE_CARLO_SAMPLES if sample_count is None else sample_count)
-    if not samples:
-        return _select_tactical_card_for_simulation(game, seat)
-
-    scores = {card: 0 for card in legal_cards}
-    for hidden_hands in samples:
-        for card in legal_cards:
-            scores[card] += _rollout_score(game, seat, card, hidden_hands)
-
     tactical = _select_tactical_card_for_simulation(game, seat)
+    if not samples:
+        return tactical
+
+    nodes: dict[tuple, _SearchNode] = {}
+    for hidden_hands in samples:
+        _search_determinization(game, seat, hidden_hands, nodes)
+
+    root = nodes.get(_information_key(game, seat))
+    if root is None:
+        return tactical
+
     return max(
         legal_cards,
         key=lambda card: (
-            scores[card],
+            _action_average(root.actions.get(card)),
+            root.actions.get(card, _SearchAction()).visits,
             card == tactical,
             tuple(-value for value in _discard_key(card, options["trump"])),
         ),

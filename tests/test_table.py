@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from coinche.bot import DEFAULT_BOT_TYPE
 import coinche.table as table_mod
+from coinche.bot import DEFAULT_BOT_TYPE
 from coinche.game import Seat
 from coinche.table import BOT_NAMES, GameInProgressError, NameTakenError, Table, TableFullError
 

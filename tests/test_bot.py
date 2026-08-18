@@ -185,6 +185,30 @@ def test_cloclo_calls_a_side_ace_behind_a_partner_master() -> None:
     assert ClocloBot(sample_count=1).choose_card(game, Seat.N) == Card("8", "♦")
 
 
+def test_default_bot_evaluates_cards_with_its_configured_sample_count(monkeypatch) -> None:
+    from coinche.bot_types.default import DefaultBot
+
+    game = _isolated_game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+    assert game.round_state is not None
+    game.round_state.current_trick = [(Seat.S, Card("7", "♦"))]
+    game.round_state.hands[Seat.W] = _cards("7♠", "8♠")
+    samples_seen: list[tuple[Seat, int]] = []
+
+    def sample_hidden_hands(game: Game, seat: Seat, sample_count: int) -> list[dict[Seat, list[Card]]]:
+        samples_seen.append((seat, sample_count))
+        return []
+
+    monkeypatch.setattr("coinche.bot_types.default._sample_hidden_hands", sample_hidden_hands)
+
+    card = DefaultBot(sample_count=9).choose_card(game, Seat.W)
+    assert card in game.play_options_for(Seat.W)["legal_cards"]
+    assert samples_seen == [(Seat.W, 9)]
+
+
 def test_cloclo_evaluates_cards_with_its_configured_sample_count(monkeypatch) -> None:
     game = _isolated_game()
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)

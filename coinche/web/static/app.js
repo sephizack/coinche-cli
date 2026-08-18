@@ -214,7 +214,7 @@ const SeatPanel = {
         <button v-if="isBot" class="seat__tag" type="button"
           :aria-label="'Changer le type du bot ' + name"
           :title="'Changer le type du bot'"
-          @click="$emit('change-bot-type')">BOT {{ (botType || 'toto') }}</button>
+          @click="$emit('change-bot-type')">BOT {{ (botType || 'toto') }} 🔄</button>
       </div>
       <span v-if="!connected" class="seat__offline-note">déconnecté</span>
       <div class="seat__slot">

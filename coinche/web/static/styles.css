@@ -380,13 +380,12 @@ button {
 /* Bot strategy control beneath the nameplate, mirroring the lobby's .seatchip__tag. */
 .seat__tag {
   font: inherit;
-  font-size: 0.6rem;
-  text-transform: uppercase;
+  font-size: 0.7rem;
   color: var(--gold-soft);
   background: transparent;
   border: 1px solid var(--gold-soft);
   border-radius: 4px;
-  padding: 0 3px;
+  padding: 5px;
   cursor: pointer;
 }
 .seat__tag:hover,

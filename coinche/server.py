@@ -35,7 +35,14 @@ from coinche.table import (
     remove_table,
     tables_listing,
 )
-from coinche.timeouts import DEFAULT_GLOBAL_KICK_TIMEOUT_SECONDS, DEFAULT_TURN_TIMEOUT_SECONDS, validate_timeout_order
+from coinche.timeouts import (
+    DEFAULT_BOT_THINK_SECONDS,
+    DEFAULT_GLOBAL_KICK_TIMEOUT_SECONDS,
+    DEFAULT_ROUND_PAUSE_SECONDS,
+    DEFAULT_TRICK_PAUSE_SECONDS,
+    DEFAULT_TURN_TIMEOUT_SECONDS,
+    validate_timeout_order,
+)
 
 TABLE_KEY_PATTERN = re.compile(rf"^[A-Za-z0-9]{{{protocol.TABLE_KEY_MIN_LENGTH},{protocol.TABLE_KEY_MAX_LENGTH}}}$")
 
@@ -1361,9 +1368,9 @@ async def handle_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
     target_score: int,
-    trick_pause_seconds: float = 2.5,
-    round_pause_seconds: float = 4.0,
-    bot_think_seconds: float = 1.0,
+    trick_pause_seconds: float = DEFAULT_TRICK_PAUSE_SECONDS,
+    round_pause_seconds: float = DEFAULT_ROUND_PAUSE_SECONDS,
+    bot_think_seconds: float = DEFAULT_BOT_THINK_SECONDS,
     turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
 ) -> None:
     table: Table | None = None
@@ -1500,23 +1507,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--trick-pause",
         type=float,
-        default=2.5,
-        help="Seconds to pause after each completed trick so players can see the last card played (default: 2.5)",
+        default=DEFAULT_TRICK_PAUSE_SECONDS,
+        help=(
+            "Seconds to pause after each completed trick so players can see the last card played "
+            f"(default: {DEFAULT_TRICK_PAUSE_SECONDS})"
+        ),
     )
     parser.add_argument(
         "--round-pause",
         type=float,
-        default=4.0,
+        default=DEFAULT_ROUND_PAUSE_SECONDS,
         help=(
             "Seconds to pause after each completed round (manche) so players can read the "
-            "end-of-round score recap before the next deal starts (default: 4.0)"
+            f"end-of-round score recap before the next deal starts (default: {DEFAULT_ROUND_PAUSE_SECONDS})"
         ),
     )
     parser.add_argument(
         "--bot-think",
         type=float,
-        default=1.0,
-        help="Minimum seconds each bot waits before bidding or playing; up to one random extra second (default: 1.0)",
+        default=DEFAULT_BOT_THINK_SECONDS,
+        help=(
+            "Minimum seconds each bot waits before bidding or playing; up to one random extra second "
+            f"(default: {DEFAULT_BOT_THINK_SECONDS})"
+        ),
     )
     parser.add_argument(
         "--turn-timeout",

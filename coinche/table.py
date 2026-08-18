@@ -11,7 +11,12 @@ from pathlib import Path
 from coinche import protocol, rules
 from coinche.bot import DEFAULT_BOT_TYPE
 from coinche.game import PARTNER_OF, Game, Seat
-from coinche.timeouts import DEFAULT_TURN_TIMEOUT_SECONDS
+from coinche.timeouts import (
+    DEFAULT_BOT_THINK_SECONDS,
+    DEFAULT_ROUND_PAUSE_SECONDS,
+    DEFAULT_TRICK_PAUSE_SECONDS,
+    DEFAULT_TURN_TIMEOUT_SECONDS,
+)
 
 SEAT_ORDER: tuple[Seat, ...] = (Seat.N, Seat.E, Seat.S, Seat.W)
 
@@ -161,9 +166,9 @@ class Table:
         target_score: int = rules.DEFAULT_TARGET_SCORE,
         coinche_blocks_bidding: bool = True,
         bot_type: str = DEFAULT_BOT_TYPE,
-        trick_pause_seconds: float = 2.5,
-        round_pause_seconds: float = 4.0,
-        bot_think_seconds: float = 1.0,
+        trick_pause_seconds: float = DEFAULT_TRICK_PAUSE_SECONDS,
+        round_pause_seconds: float = DEFAULT_ROUND_PAUSE_SECONDS,
+        bot_think_seconds: float = DEFAULT_BOT_THINK_SECONDS,
         turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
     ) -> None:
         self.table_key = table_key
@@ -516,9 +521,9 @@ def get_or_create_table(
     target_score: int = rules.DEFAULT_TARGET_SCORE,
     coinche_blocks_bidding: bool = True,
     bot_type: str = DEFAULT_BOT_TYPE,
-    trick_pause_seconds: float = 2.5,
-    round_pause_seconds: float = 4.0,
-    bot_think_seconds: float = 1.0,
+    trick_pause_seconds: float = DEFAULT_TRICK_PAUSE_SECONDS,
+    round_pause_seconds: float = DEFAULT_ROUND_PAUSE_SECONDS,
+    bot_think_seconds: float = DEFAULT_BOT_THINK_SECONDS,
     turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
 ) -> Table:
     """Lazily create (on first join) or return the existing table for `table_key`."""
