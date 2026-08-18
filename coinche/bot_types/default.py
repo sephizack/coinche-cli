@@ -666,7 +666,12 @@ def _select_tactical_card_for_simulation(game: Game, seat: Seat) -> Card:
     current_winner = rules.trick_winner(trick, trump, led_suit)
     if current_winner == PARTNER_OF[seat]:
         if len(trick) == 3:
-            return max(legal_cards, key=lambda card: (rules.card_points(card, trump), -_card_strength(card, trump)))
+            non_trumps = [card for card in legal_cards if card.suit != trump]
+            if non_trumps:
+                return max(
+                    non_trumps,
+                    key=lambda card: (rules.card_points(card, trump), -_card_strength(card, trump)),
+                )
         return _best_discard(legal_cards, hand, trump)
 
     winners = [card for card in legal_cards if rules.trick_winner([*trick, (seat, card)], trump, led_suit) == seat]
@@ -1179,8 +1184,11 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
             return opening_card
 
     if game.round_state.current_trick:
-        # If the partner is winning the trick, discard a low card to develop the hand.
         trick = game.round_state.current_trick
+        if len(trick) == 3 and trump is not None:
+            return _select_tactical_card_for_simulation(game, seat)
+
+        # If the partner is winning the trick, discard a low card to develop the hand.
         led_suit = trick[0][1].suit
         if led_suit != trump:
             requested_trick_ace = [card for card in legal_cards if card.rank == "A" and card.suit == led_suit]

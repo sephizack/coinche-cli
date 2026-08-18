@@ -645,6 +645,65 @@ def test_bot_discards_low_when_partner_is_winning() -> None:
     assert choose_card(game, Seat.S) == Card("7", "♣")
 
 
+def test_default_bot_cuts_with_lowest_trump_when_fourth_in_trick() -> None:
+    # N (opponent) leads A♥, E (partner) plays 7♥, S (opponent) plays 8♥.
+    # W is 4th in trick; N is winning. W holds V♠ (boss trump) and 7♠ (lowest trump).
+    # Since W is last in trick, cutting with 7♠ is guaranteed to win the trick
+    # without wasting the master Valet.
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.W
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [
+        (Seat.N, Card("A", "♥")),
+        (Seat.E, Card("7", "♥")),
+        (Seat.S, Card("8", "♥")),
+    ]
+    game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "8♦")
+
+    assert choose_card(game, Seat.W) == Card("7", "♠")
+
+
+def test_default_bot_overcuts_with_lowest_winning_trump_when_fourth_in_trick() -> None:
+    # N leads A♥, E plays 7♥, S cuts with 10♠.
+    # W is 4th in trick; S is winning with 10♠.
+    # W holds 7♠, 9♠, V♠. 7♠ cannot beat 10♠, but 9♠ and V♠ both can.
+    # W must overcut with 9♠ rather than wasting the Valet.
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.W
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [
+        (Seat.N, Card("A", "♥")),
+        (Seat.E, Card("7", "♥")),
+        (Seat.S, Card("10", "♠")),
+    ]
+    game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "8♦")
+
+    assert choose_card(game, Seat.W) == Card("9", "♠")
+
+
+def test_default_bot_loads_non_trump_points_when_partner_wins_in_fourth_position() -> None:
+    # E (partner) plays A♥, S plays 7♥, N plays 8♥. E is winning the trick.
+    # W is 4th in trick and holds 10♦, 7♦, and V♠ (trump).
+    # W should load the non-trump 10♦ on partner's trick without wasting V♠.
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.W
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [
+        (Seat.E, Card("A", "♥")),
+        (Seat.S, Card("7", "♥")),
+        (Seat.N, Card("8", "♥")),
+    ]
+    game.round_state.hands[Seat.W] = _cards("V♠", "10♦", "7♦")
+
+    assert choose_card(game, Seat.W) == Card("10", "♦")
+
+
 def test_discard_shortens_the_shortest_side_suit() -> None:
     # Opponent (N) is winning with a card S cannot beat, so S discards. Both 7♦
     # and 7♣ are worth zero points, but ♦ is a singleton while ♣ is longer:
