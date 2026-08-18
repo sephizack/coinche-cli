@@ -137,7 +137,7 @@ def test_discord_table_closed_patches_expected_embed(monkeypatch) -> None:
     request = captured["request"]
     assert isinstance(request, server.urllib.request.Request)
     assert request.get_method() == "PATCH"
-    assert request.full_url == "https://discord.example/webhook/messages/msg_42"
+    assert request.full_url == "https://discord.example/webhook/messages/msg_42?with_components=true"
     assert captured["timeout"] == server._DISCORD_WEBHOOK_TIMEOUT_SECONDS
     body = json.loads(request.data)
     assert body["embeds"] == [

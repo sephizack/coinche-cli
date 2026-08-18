@@ -93,7 +93,13 @@ def _webhook_message_url(webhook_url: str, message_id: str) -> str:
     parsed = urllib.parse.urlsplit(webhook_url)
     base_path = parsed.path.rstrip("/")
     new_path = f"{base_path}/messages/{message_id}"
-    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, new_path, "", ""))
+    query = [
+        (key, value)
+        for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        if key not in ("with_components", "wait")
+    ]
+    query.append(("with_components", "true"))
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, new_path, urllib.parse.urlencode(query), ""))
 
 
 def _post_discord_table_created(webhook_url: str, table_key: str, player_name: str, creator_seat: Seat) -> str | None:

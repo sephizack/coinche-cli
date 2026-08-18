@@ -795,6 +795,17 @@ const App = {
       const name = lobby.name.trim();
       if (!pending || !name) return;
 
+      const tableList = snap.tables || [];
+      const tableExists = tableList.some(
+        (t) => t.table_key && t.table_key.toLowerCase() === pending.tableKey.toLowerCase()
+      );
+      if (!tableExists) {
+        clearPendingJoin();
+        pendingJoinSent = true;
+        showToast(`La table ${pending.tableKey} est fermée ou n'existe plus.`, "error", 6000);
+        return;
+      }
+
       pendingJoinSent = true;
       clearPendingJoin();
       const payload = { table_key: pending.tableKey, player_name: name };
@@ -1608,6 +1619,8 @@ const App = {
       bidEffectKey,
       beloteEffect,
       beloteEffectKey,
+      joinEffect,
+      joinEffectKey,
       redealEffect,
       redealEffectKey,
       bidAnnouncement,

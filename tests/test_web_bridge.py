@@ -827,6 +827,8 @@ def test_web_client_animates_join_effect_on_human_arrival() -> None:
 
     assert "const joinEffect = ref(null);" in app
     assert "const joinEffectKey = ref(0);" in app
+    assert "joinEffect," in app
+    assert "joinEffectKey," in app
     assert "snap.join_effect_seq > (prev.join_effect_seq || 0)" in app
     assert "joinEffectKey.value += 1" in app
     assert "joinEffect.value = snap.join_effect_name" in app

@@ -442,6 +442,9 @@ def _reset_to_lobby(state: ClientState) -> None:
     state.bid_effect_level = fresh.bid_effect_level
     state.belote_effect = fresh.belote_effect
     state.belote_effect_seq = fresh.belote_effect_seq
+    state.join_effect_name = fresh.join_effect_name
+    state.join_effect_seq = fresh.join_effect_seq
+    state.redeal_effect_seq = fresh.redeal_effect_seq
     state.current_bid_trump = fresh.current_bid_trump
     state.current_bid_points = fresh.current_bid_points
     state.current_bid_seat = fresh.current_bid_seat
