@@ -234,6 +234,9 @@ def _player_label(table: Table, seat: Seat) -> str:
     """Human-readable "Name (seat/TEAM)" label for game-log lines."""
     session = table.seats.get(seat)
     name = session.name if session is not None else "?"
+    if session is not None and session.is_bot:
+        bot_type = session.bot_type or table.bot_type
+        return f"{name} ({_seat_to_str(seat)}/{TEAM_OF[seat]}) (bot: {bot_type})"
     return f"{name} ({_seat_to_str(seat)}/{TEAM_OF[seat]})"
 
 

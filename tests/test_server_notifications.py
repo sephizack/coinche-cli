@@ -244,3 +244,15 @@ def test_notify_discord_table_created_stores_message_id_and_handles_fast_close(m
         assert closed_notifications == [("https://discord.example", "already_closed", "msg_fast_123")]
 
     asyncio.run(scenario())
+
+
+def test_player_label_includes_bot_indicator_and_type() -> None:
+    table = Table("labeltest", bot_type="toto")
+    table.add_player("Alice", None)
+    table.fill_with_bots()
+    table.set_bot_type(Seat.E, "cloclo")
+
+    assert server._player_label(table, Seat.N) == "Alice (N/NS)"
+    assert server._player_label(table, Seat.E) == f"{table.seats[Seat.E].name} (E/EW) (bot: cloclo)"
+    assert server._player_label(table, Seat.S) == f"{table.seats[Seat.S].name} (S/NS) (bot: toto)"
+    assert server._player_label(table, Seat.W) == f"{table.seats[Seat.W].name} (W/EW) (bot: toto)"

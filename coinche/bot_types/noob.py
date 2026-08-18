@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 
 from coinche import rules
-from coinche.bot_types.default import DefaultBot, _ceiling_value, _opening_ceiling, _try_open_suit
+from coinche.bot_types.default import DefaultBot, _ceiling_value, _legal_bids_up_to, _opening_ceiling
 from coinche.cards import Card, Seat
 from coinche.game import TEAM_OF, Game
 
@@ -36,7 +36,28 @@ class NoobBot(DefaultBot):
             return {"action": "coinche"}
         if options["can_surcoinche"] and random.randrange(6) == 0:
             return {"action": "surcoinche"}
-        return _try_open_suit(hand, best_trump, opening_ceilings, options, seat) or {"action": "pass"}
+
+        maximum_for_hand = opening_ceilings[best_trump]
+        if maximum_for_hand:
+            if isinstance(maximum_for_hand, int):
+                troll_level = 0
+                for _i in range(3):
+                    if random.randrange(5) == 0:
+                        troll_level += 1
+                maximum_for_hand = int(maximum_for_hand) + rules.BID_STEP
+            legal_for_suit = (
+                [] if maximum_for_hand is None else _legal_bids_up_to(options, best_trump, maximum_for_hand)
+            )
+            if legal_for_suit:
+                choice = legal_for_suit[-1]
+                return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
+
+        # if no bid, randomly bid a random trump
+        if random.randrange(4) == 0 and options["current_highest_bid"] is None:
+            random_trump = random.choice(rules.ALLOWED_TRUMPS)
+            return {"action": "bid", "trump": random_trump, "points": 80}
+
+        return {"action": "pass"}
 
     def choose_card(self, game: Game, seat: Seat) -> Card:
         return random.choice(game.play_options_for(seat)["legal_cards"])
