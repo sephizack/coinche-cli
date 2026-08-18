@@ -1058,7 +1058,6 @@ def _search_determinization(
         action.total_value += value
 
 
-
 def _team_auction_supports_trump(game: Game, seat: Seat, trump: str) -> bool:
     """Return True when the declaring team's auction signals confidence in *trump*.
 
