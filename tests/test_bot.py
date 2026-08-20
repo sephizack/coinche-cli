@@ -825,7 +825,6 @@ def test_default_bot_loads_highest_value_when_void_and_only_trumps_remain() -> N
     assert _select_tactical_card_for_simulation(game, Seat.S) == Card("A", "♠")
 
 
-
 def test_partner_winning_discard_requires_bot_to_be_void_in_led_suit() -> None:
     game = Game()
     assert game.round_state is not None
