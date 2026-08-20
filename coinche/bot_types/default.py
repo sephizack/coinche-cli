@@ -582,40 +582,54 @@ def _defender_trump_lead_is_wasteful(game: Game, seat: Seat, trump: str) -> bool
     return not (holds_master and _opponents_may_hold_trump(game, seat, trump))
 
 
-def _discard_points_when_partner_wins(game: Game, hand: list[Card], legal_cards: list[Card], trump: str) -> Card:
+def _discard_points_when_partner_wins(game: Game, hand: list[Card], legal_cards: list[Card], trump: str) -> Card | None:
     """Load points onto a trick already secured by the partner."""
     assert game.round_state is not None
-    discardable_cards = [card for card in legal_cards if card.suit != trump and not _is_master(card, hand, game, trump)]
-    if discardable_cards:
+    print("_discard_points_when_partner_wins")
+    # If we have only trumps, discard the lowest one
+    trumps = [card for card in legal_cards if card.suit == trump]
+    if len(trumps) == len(legal_cards):
+        return min(legal_cards, key=lambda card: (rules.card_points(card, trump)))
+
+    non_master_cards = [card for card in legal_cards if card.suit != trump and not _is_master(card, hand, game, trump)]
+    if non_master_cards:
         return max(
-            discardable_cards,
-            key=lambda card: (rules.card_points(card, trump), -_card_strength(card, trump)),
+            non_master_cards,
+            key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)),
         )
 
-    masters = [card for card in legal_cards if _is_master(card, hand, game, trump)]
-    if masters:
-        non_trump_masters = [card for card in masters if card.suit != trump]
-        candidates = non_trump_masters or masters
-        known_cards = set(hand)
-        for completed_trick in game.round_state.trick_history:
-            known_cards.update(card for _, card in completed_trick["trick"])
-        known_cards.update(card for _, card in game.round_state.current_trick)
-        unseen_by_suit = {
-            suit: sum(card.suit == suit and card not in known_cards for card in build_deck())
-            for suit in rules.ALLOWED_TRUMPS
-        }
-        return min(
-            candidates,
-            key=lambda card: (
-                unseen_by_suit[card.suit],
-                -rules.card_points(card, trump),
-                -_card_strength(card, trump),
-                card.suit,
-            ),
-        )
+    # We have to discard a master, but we can still choose the least useful one.
+    non_trump_masters = [card for card in legal_cards if _is_master(card, hand, game, trump) and card.suit != trump]
+    if non_trump_masters:
+        return _find_least_useful_card(game, legal_cards, hand, trump)
+    return None
 
-    return max(legal_cards, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
-
+def _find_least_useful_card(game: Game, allowed_cards: list[Card], hand: list[Card], trump: str) -> Card:
+    assert game.round_state is not None
+    known_cards = set(hand)
+    for completed_trick in game.round_state.trick_history:
+        known_cards.update(card for _, card in completed_trick["trick"])
+    known_cards.update(card for _, card in game.round_state.current_trick)
+    unseen_by_suit = {
+        suit: sum(card.suit == suit and card not in known_cards for card in build_deck())
+        for suit in rules.ALLOWED_TRUMPS
+    }
+    
+    print(f"_find_least_useful_card")
+    print(f"unseen_by_suit: {unseen_by_suit}")
+    print(f"allowed_cards: {allowed_cards}")
+    result = min(
+        allowed_cards,
+        key=lambda card: (
+            0 if card.suit == trump else 1,
+            0 if _is_master(card, hand, game, trump) else 1,
+            rules.card_points(card, trump),
+            _card_strength(card, trump),
+            unseen_by_suit[card.suit],
+        ),
+    )
+    print(f"least useful card: {result}")
+    return result
 
 def _is_partner_winning_trick(game: Game, seat: Seat) -> bool:
     """Whether a void player can safely load points onto the partner's trick."""
@@ -626,7 +640,8 @@ def _is_partner_winning_trick(game: Game, seat: Seat) -> bool:
 
     led_suit = trick[0][1].suit
     hand = game.get_hand(seat)
-    if rules.trick_winner(trick, trump, led_suit) != PARTNER_OF[seat]:
+    current_winner_seat = rules.trick_winner(trick, trump, led_suit)
+    if current_winner_seat != PARTNER_OF[seat]:
         return False
     if len(trick) == 3:
         return True
@@ -644,6 +659,29 @@ def _is_partner_winning_trick(game: Game, seat: Seat) -> bool:
         trump not in voids[opponent] for opponent in remaining_opponents
     )
     return not opponents_can_ruff
+
+
+def _choose_discard_when_void(
+    game: Game,
+    seat: Seat,
+    hand: list[Card],
+    legal_cards: list[Card],
+    trump: str,
+) -> Card | None:
+    """Choose a discard when the acting seat cannot follow the led suit."""
+    print("_choose_discard_when_void")
+    if _is_partner_winning_trick(game, seat):
+        return _discard_points_when_partner_wins(game, hand, legal_cards, trump)
+    print("partner not winning_trick")
+    trumps = [card for card in legal_cards if card.suit == trump]
+    if trumps:
+        return min(trumps, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
+    print("no trump left")
+    # Discard the least useful non-trump card, if any. If all legal cards are trump, the bot
+    non_trump_cards = [card for card in legal_cards if card.suit != trump]
+    if non_trump_cards:
+        return _find_least_useful_card(game, non_trump_cards, hand, trump)
+    return None
 
 
 def _select_tactical_card_for_simulation(game: Game, seat: Seat) -> Card:
@@ -731,13 +769,12 @@ def _select_tactical_card_for_simulation(game: Game, seat: Seat) -> Card:
 
     hand = game.get_hand(seat)
     led_suit = trick[0][1].suit
+
     need_to_discard = not any(card.suit == led_suit for card in hand)
     if need_to_discard:
-        if _is_partner_winning_trick(game, seat):
-            return _discard_points_when_partner_wins(game, hand, legal_cards, trump)
-        else:
-            return _best_discard(legal_cards, hand, trump)
-
+        discard = _choose_discard_when_void(game, seat, hand, legal_cards, trump)
+        if discard is not None:
+            return discard
     winners = [card for card in legal_cards if rules.trick_winner([*trick, (seat, card)], trump, led_suit) == seat]
     if winners:
         return min(winners, key=lambda card: (_card_strength(card, trump), rules.card_points(card, trump)))
@@ -1242,21 +1279,25 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
         return legal_cards[0]
 
     trump = options["trump"]
-    if not game.round_state.current_trick and trump is not None:
+    assert trump is not None
+    if not game.round_state.current_trick:
         opening_card, legal_cards = _choose_opening_card(game, seat, legal_cards, trump)
         if opening_card is not None:
             return opening_card
-
+    print("coucou")
     if game.round_state.current_trick:
         trick = game.round_state.current_trick
-        if len(trick) == 3 and trump is not None:
-            return _select_tactical_card_for_simulation(game, seat)
-
-        # If the partner is winning the trick, discard a low card to develop the hand.
         led_suit = trick[0][1].suit
-        if led_suit != trump:
+        hand = game.get_hand(seat)
+        need_to_discard = not any(card.suit == led_suit for card in hand)
+        if need_to_discard:
+            discard = _choose_discard_when_void(game, seat, hand, legal_cards, trump)
+            if discard is not None:
+                return discard
+        elif led_suit != trump:
+            # Play ace when we have it and no ruff
             requested_trick_ace = [card for card in legal_cards if card.rank == "A" and card.suit == led_suit]
-            if any(requested_trick_ace) and not any(card.suit == trump for _, card in trick):
+            if any(requested_trick_ace):
                 return requested_trick_ace[0]
 
     # Information-set Monte-Carlo tree search
