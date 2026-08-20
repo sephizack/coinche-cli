@@ -16,6 +16,8 @@ from coinche.benchmark import run_cloclo_benchmark
 from coinche.bot import (
     DEFAULT_BOT_TYPE,
     _auction_card_weights,
+    _choose_discard_when_void,
+    _find_least_useful_card,
     _is_partner_winning_trick,
     _known_void_suits,
     _sample_hidden_hands,
@@ -42,6 +44,27 @@ def _isolated_game() -> Game:
         return Game()
     finally:
         random.setstate(random_state)
+
+
+def _void_discard_scenario(
+    seat: Seat,
+    trick: list[tuple[Seat, Card]],
+    hand: list[Card],
+    *,
+    trump: str = "♠",
+    trick_history: list[dict] | None = None,
+) -> tuple[Game, list[Card]]:
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = seat
+    game.round_state.trump = trump
+    game.round_state.current_trick = trick
+    game.round_state.trick_history = trick_history or []
+    game.round_state.hands[seat] = hand
+    legal_cards = game.play_options_for(seat)["legal_cards"]
+    assert not any(card.suit == trick[0][1].suit for card in hand)
+    return game, legal_cards
 
 
 def test_bot_entry_point_dispatches_to_the_requested_type(monkeypatch) -> None:
@@ -184,6 +207,7 @@ def test_cloclo_calls_a_side_ace_behind_a_partner_master() -> None:
     game.next_to_act = Seat.N
 
     assert ClocloBot(sample_count=1).choose_card(game, Seat.N) == Card("8", "♦")
+
 
 def test_cloclo_evaluates_cards_with_its_configured_sample_count(monkeypatch) -> None:
     game = _isolated_game()
@@ -755,6 +779,185 @@ def test_default_bot_loads_non_trump_points_when_partner_wins_in_fourth_position
     game.round_state.hands[Seat.W] = _cards("V♠", "10♦", "7♦")
 
     assert choose_card(game, Seat.W) == Card("10", "♦")
+
+
+def test_choose_discard_when_void_loads_points_on_partner_win_in_fourth_position() -> None:
+    hand = _cards("V♠", "10♦", "7♦")
+    game, legal_cards = _void_discard_scenario(
+        Seat.W,
+        [(Seat.E, Card("A", "♥")), (Seat.S, Card("7", "♥")), (Seat.N, Card("8", "♥"))],
+        hand,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.W, hand, legal_cards, "♠")
+
+    assert chosen == Card("10", "♦")
+    assert chosen in legal_cards
+
+
+def test_choose_discard_when_void_loads_points_on_partner_master_trump() -> None:
+    hand = _cards("10♦", "7♣")
+    game, legal_cards = _void_discard_scenario(
+        Seat.S,
+        [(Seat.N, Card("V", "♠")), (Seat.W, Card("7", "♠"))],
+        hand,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.S, hand, legal_cards, "♠")
+
+    assert chosen == Card("10", "♦")
+    assert chosen in legal_cards
+
+
+def test_choose_discard_when_void_spares_a_side_master_when_partner_wins() -> None:
+    hand = _cards("A♦", "R♣")
+    game, legal_cards = _void_discard_scenario(
+        Seat.W,
+        [(Seat.E, Card("V", "♠")), (Seat.S, Card("7", "♠")), (Seat.N, Card("8", "♠"))],
+        hand,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.W, hand, legal_cards, "♠")
+
+    assert chosen == Card("R", "♣")
+    assert chosen in legal_cards
+
+
+def test_choose_discard_when_void_uses_cheapest_trump_when_partner_wins_and_only_trumps_remain() -> None:
+    hand = _cards("A♠", "10♠")
+    game, legal_cards = _void_discard_scenario(
+        Seat.W,
+        [(Seat.E, Card("A", "♥")), (Seat.S, Card("7", "♥")), (Seat.N, Card("8", "♥"))],
+        hand,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.W, hand, legal_cards, "♠")
+
+    assert chosen == Card("10", "♠")
+    assert chosen in legal_cards
+
+
+def test_choose_discard_when_void_cuts_with_lowest_trump_when_opponent_wins() -> None:
+    hand = _cards("V♠", "7♠", "8♦")
+    game, legal_cards = _void_discard_scenario(
+        Seat.W,
+        [(Seat.N, Card("A", "♥")), (Seat.E, Card("7", "♥")), (Seat.S, Card("8", "♥"))],
+        hand,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.W, hand, legal_cards, "♠")
+
+    assert chosen == Card("7", "♠")
+    assert chosen in legal_cards
+
+
+def test_choose_discard_when_void_uses_lowest_legal_overtrump() -> None:
+    hand = _cards("V♠", "9♠", "7♠", "8♦")
+    game, legal_cards = _void_discard_scenario(
+        Seat.W,
+        [(Seat.N, Card("A", "♥")), (Seat.E, Card("7", "♥")), (Seat.S, Card("10", "♠"))],
+        hand,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.W, hand, legal_cards, "♠")
+
+    assert legal_cards == _cards("V♠", "9♠")
+    assert chosen == Card("9", "♠")
+
+
+def test_choose_discard_when_void_cuts_to_protect_partner_from_remaining_opponent() -> None:
+    hand = _cards("9♠", "7♠", "10♦")
+    game, legal_cards = _void_discard_scenario(
+        Seat.S,
+        [(Seat.N, Card("A", "♥")), (Seat.W, Card("7", "♥"))],
+        hand,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.S, hand, legal_cards, "♠")
+
+    assert chosen == Card("7", "♠")
+    assert chosen in legal_cards
+
+
+def test_choose_discard_when_void_throws_non_master_when_no_trump_is_available() -> None:
+    hand = _cards("A♦", "7♣")
+    game, legal_cards = _void_discard_scenario(
+        Seat.S,
+        [(Seat.E, Card("A", "♥")), (Seat.W, Card("7", "♥"))],
+        hand,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.S, hand, legal_cards, "♠")
+
+    assert chosen == Card("7", "♣")
+    assert chosen in legal_cards
+
+
+def test_choose_discard_when_void_breaks_master_tie_with_fewest_unseen_cards() -> None:
+    history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("R", "♦")),
+                (Seat.E, Card("D", "♦")),
+                (Seat.S, Card("8", "♦")),
+                (Seat.W, Card("7", "♦")),
+            ],
+        }
+    ]
+    hand = _cards("A♦", "A♣")
+    game, legal_cards = _void_discard_scenario(
+        Seat.S,
+        [(Seat.E, Card("A", "♥")), (Seat.W, Card("7", "♥"))],
+        hand,
+        trick_history=history,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.S, hand, legal_cards, "♠")
+
+    assert chosen == Card("A", "♦")
+    assert chosen in legal_cards
+
+
+def test_find_least_useful_card_preserves_trump_when_side_card_is_available() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    hand = _cards("7♠", "8♦")
+    game.round_state.hands[Seat.W] = hand
+
+    assert _find_least_useful_card(game, hand, hand, "♠") == Card("8", "♦")
+
+
+def test_find_least_useful_card_preserves_master_when_non_master_is_available() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    hand = _cards("A♦", "7♣")
+    game.round_state.hands[Seat.W] = hand
+
+    assert _find_least_useful_card(game, hand, hand, "♠") == Card("7", "♣")
+
+
+def test_find_least_useful_card_uses_fewest_unseen_cards_to_break_master_tie() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("R", "♦")),
+                (Seat.E, Card("D", "♦")),
+                (Seat.S, Card("8", "♦")),
+                (Seat.W, Card("7", "♦")),
+            ],
+        }
+    ]
+    hand = _cards("A♦", "A♣")
+    game.round_state.hands[Seat.S] = hand
+
+    assert _find_least_useful_card(game, hand, hand, "♠") == Card("A", "♦")
 
 
 def test_default_bot_discards_master_from_least_likely_side_suit_when_partner_wins() -> None:
@@ -1504,32 +1707,32 @@ def _play_round(source: Game, optimize_ew: bool) -> int:
     raise AssertionError("round did not complete")
 
 
-# def test_monte_carlo_team_outscores_greedy_play_across_deals(monkeypatch) -> None:
-#     # Aggregate over several deals rather than a single fixed one: the Monte
-#     # Carlo advantage is a statistical property, and any one deal can swing the
-#     # other way. Summing EW's differential over a fixed seed range keeps the
-#     # test deterministic while asserting the property that actually matters.
-#     # A small sample budget preserves that comparison without replaying a full
-#     # production-strength search for every EW turn in eight complete deals.
-#     monkeypatch.setattr(bot, "MONTE_CARLO_SAMPLES", 10)
-#     monte_carlo_total = 0
-#     greedy_total = 0
-#     for seed in range(8):
-#         random_state = random.getstate()
-#         try:
-#             random.seed(seed)
-#             game = Game(target_score=99999)
-#         finally:
-#             random.setstate(random_state)
-#         game.submit_bid(Seat.W, "bid", trump="♠", points=80)
-#         game.submit_bid(Seat.S, "pass")
-#         game.submit_bid(Seat.E, "pass")
-#         game.submit_bid(Seat.N, "pass")
+def test_monte_carlo_team_outscores_greedy_play_across_deals(monkeypatch) -> None:
+    # Aggregate over several deals rather than a single fixed one: the Monte
+    # Carlo advantage is a statistical property, and any one deal can swing the
+    # other way. Summing EW's differential over a fixed seed range keeps the
+    # test deterministic while asserting the property that actually matters.
+    # A small sample budget preserves that comparison without replaying a full
+    # production-strength search for every EW turn in eight complete deals.
+    monkeypatch.setattr(bot, "MONTE_CARLO_SAMPLES", 10)
+    monte_carlo_total = 0
+    greedy_total = 0
+    for seed in range(8):
+        random_state = random.getstate()
+        try:
+            random.seed(seed)
+            game = Game(target_score=99999)
+        finally:
+            random.setstate(random_state)
+        game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+        game.submit_bid(Seat.S, "pass")
+        game.submit_bid(Seat.E, "pass")
+        game.submit_bid(Seat.N, "pass")
 
-#         monte_carlo_total += _play_round(game, optimize_ew=True)
-#         greedy_total += _play_round(game, optimize_ew=False)
+        monte_carlo_total += _play_round(game, optimize_ew=True)
+        greedy_total += _play_round(game, optimize_ew=False)
 
-#     assert monte_carlo_total > greedy_total
+    assert monte_carlo_total > greedy_total
 
 
 def test_configure_samples_sets_a_positive_explicit_value() -> None:

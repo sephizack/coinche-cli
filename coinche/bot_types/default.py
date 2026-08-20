@@ -589,7 +589,7 @@ def _discard_points_when_partner_wins(game: Game, hand: list[Card], legal_cards:
     # If we have only trumps, discard the lowest one
     trumps = [card for card in legal_cards if card.suit == trump]
     if len(trumps) == len(legal_cards):
-        return min(legal_cards, key=lambda card: (rules.card_points(card, trump)))
+        return min(legal_cards, key=lambda card: rules.card_points(card, trump))
 
     non_master_cards = [card for card in legal_cards if card.suit != trump and not _is_master(card, hand, game, trump)]
     if non_master_cards:
@@ -604,7 +604,9 @@ def _discard_points_when_partner_wins(game: Game, hand: list[Card], legal_cards:
         return _find_least_useful_card(game, legal_cards, hand, trump)
     return None
 
+
 def _find_least_useful_card(game: Game, allowed_cards: list[Card], hand: list[Card], trump: str) -> Card:
+    """Discard non-trumps and non-masters before spending protected cards."""
     assert game.round_state is not None
     known_cards = set(hand)
     for completed_trick in game.round_state.trick_history:
@@ -614,15 +616,15 @@ def _find_least_useful_card(game: Game, allowed_cards: list[Card], hand: list[Ca
         suit: sum(card.suit == suit and card not in known_cards for card in build_deck())
         for suit in rules.ALLOWED_TRUMPS
     }
-    
-    print(f"_find_least_useful_card")
+
+    print("_find_least_useful_card")
     print(f"unseen_by_suit: {unseen_by_suit}")
     print(f"allowed_cards: {allowed_cards}")
     result = min(
         allowed_cards,
         key=lambda card: (
-            0 if card.suit == trump else 1,
-            0 if _is_master(card, hand, game, trump) else 1,
+            card.suit == trump,
+            _is_master(card, hand, game, trump),
             rules.card_points(card, trump),
             _card_strength(card, trump),
             unseen_by_suit[card.suit],
@@ -630,6 +632,7 @@ def _find_least_useful_card(game: Game, allowed_cards: list[Card], hand: list[Ca
     )
     print(f"least useful card: {result}")
     return result
+
 
 def _is_partner_winning_trick(game: Game, seat: Seat) -> bool:
     """Whether a void player can safely load points onto the partner's trick."""
