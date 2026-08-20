@@ -251,9 +251,9 @@ def test_score_round_opponent_has_more_points_with_belote_fails_contract():
     assert result["EW"]["total"] == 240  # 160 (pool) + 80 (demandé)
 
 
-def test_score_round_98_faits_sur_100_arrondi_a_5_valide_le_contrat():
-    # 100 annoncés, 98 faits : arrondi à 5 près -> 100, donc contrat réussi.
-    # Le score marqué garde l'arrondi à 10 : 98 -> 100 réalisés + 100 demandés.
+def test_score_round_98_faits_sur_100_arrondi_a_10_valide_le_contrat():
+    # 100 annoncés, 98 faits : arrondi à la dizaine -> 100, donc contrat réussi.
+    # Le score marqué donne 100 réalisés + 100 demandés.
     captured = {"NS": 98, "EW": 64}
     bid = {"team": "NS", "trump": "♠", "points": 100}
     result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder=None)
@@ -262,11 +262,20 @@ def test_score_round_98_faits_sur_100_arrondi_a_5_valide_le_contrat():
 
 
 def test_score_round_93_faits_sur_100_reste_chute():
-    # 93 faits sur 100 : arrondi à 5 -> 95, toujours < 100 -> chuté.
+    # 93 faits sur 100 : arrondi à la dizaine -> 90, toujours < 100 -> chuté.
     captured = {"NS": 93, "EW": 69}
     bid = {"team": "NS", "trump": "♠", "points": 100}
     result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder=None)
     assert result["NS"]["contract_result"] == "failed"
+
+
+def test_score_round_96_faits_avec_belote_valide_120():
+    # 120 annoncés, 96 cartes + 20 de belote = 116, arrondis à 120.
+    captured = {"NS": 96, "EW": 66}
+    bid = {"team": "NS", "trump": "♠", "points": 120}
+    result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder="NS")
+    assert result["NS"]["contract_result"] == "made"
+    assert result["NS"]["total"] == 240  # 100 réalisés + 120 demandés + 20 de belote
 
 
 def test_score_round_contract_failed_defenders_get_pool_plus_bid():

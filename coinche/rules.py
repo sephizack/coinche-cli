@@ -283,10 +283,9 @@ def score_round(
     `round_to_nearest_ten`); the +20 belote bonus is added after rounding.
 
     Contrat réussi ou chuté : les points faits par les preneurs (cartes +
-    belote éventuelle) sont arrondis à 5 près (`round_to_nearest_five`) avant
-    d'être comparés au contrat annoncé. Ainsi 98 faits sur 100 annoncés valide
-    le contrat (98 -> 100). Cet arrondi à 5 ne sert qu'à décider de la réussite
-    du contrat ; le score marqué reste calculé sur l'arrondi à 10.
+    belote éventuelle) sont arrondis à la dizaine avant d'être comparés au
+    contrat annoncé. Ainsi 96 faits avec belote sur 120 annoncés valide le
+    contrat (96 + 20 -> 120).
     """
     attacking_team = bid["team"]
     defending_team = "EW" if attacking_team == "NS" else "NS"
@@ -311,12 +310,12 @@ def score_round(
         attacking_points = captured_points_by_team.get(attacking_team, 0)
         defending_points = captured_points_by_team.get(defending_team, 0)
         # Les points faits (cartes + belote éventuelle des preneurs) sont
-        # arrondis à 5 près avant d'être comparés au contrat : 98 sur 100
-        # annoncés vaut donc contrat réussi (98 -> 100).
+        # arrondis à la dizaine avant d'être comparés au contrat : 96 avec
+        # belote sur 120 annoncés vaut donc contrat réussi (96 + 20 -> 120).
         # De plus, si l'adversaire a fait plus de points à la fin de la manche
         # (cartes + belote éventuelle), le contrat est quand même perdu (chuté).
         contract_made = (
-            round_to_nearest_five(attacking_points + attacker_belote) >= bid["points"]
+            round_to_nearest_ten(attacking_points + attacker_belote) >= bid["points"]
             and attacking_points >= defending_points
         )
 
