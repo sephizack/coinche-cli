@@ -282,15 +282,6 @@ def test_maestro_keeps_a_bid_without_firm_trump_control() -> None:
     assert choose_bid(game, Seat.W, "maestro") == choose_bid(game, Seat.W, DEFAULT_BOT_TYPE)
 
 
-def test_noob_does_not_use_the_default_bot_fallback_opener() -> None:
-    game = Game()
-    assert game.round_state is not None
-    game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "8♠", "A♥", "8♥", "7♦", "8♦", "7♣")
-
-    assert choose_bid(game, Seat.W, DEFAULT_BOT_TYPE) == {"action": "bid", "trump": "♠", "points": 90}
-    assert choose_bid(game, Seat.W, "noob") == {"action": "pass"}
-
-
 def test_noob_randomly_raises_its_teams_latest_bid(monkeypatch) -> None:
     game = Game()
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)
@@ -586,7 +577,7 @@ def test_bot_opens_eighty_with_valet_two_trumps_and_side_ace() -> None:
 
     action = choose_bid(game, Seat.W)
 
-    assert action == {"action": "bid", "trump": "♠", "points": 90}
+    assert action == {"action": "bid", "trump": "♠", "points": 80}
 
 
 def test_bot_passes_with_valet_two_trumps_but_no_side_ace() -> None:

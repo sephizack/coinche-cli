@@ -64,8 +64,11 @@ class MaestroBot(DefaultBot):
         trump_ranks = {card.rank for card in hand if card.suit == trump}
         trump_count = sum(card.suit == trump for card in hand)
         side_aces = sum(card.rank == "A" and card.suit != trump for card in hand)
-        has_controlled_ace = {"V", "9"}.issubset(trump_ranks) and side_aces > 0
+        has_34 = {"V", "9"}.issubset(trump_ranks)
+        has_controlled_ace = has_34 and side_aces > 0
 
+        if not has_34:
+            return action
         if not has_controlled_ace and trump_count < 4:
             return action
 

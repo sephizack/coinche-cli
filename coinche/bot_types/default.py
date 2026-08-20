@@ -411,7 +411,11 @@ def _choose_normal_bid(
     if options["current_highest_bid"] is None:
         fallback_trump = _forced_opener_trump(hand)
         if fallback_trump is not None:
-            legal_for_suit = _legal_bids_up_to(options, fallback_trump, rules.BID_MIN + rules.BID_STEP)
+            trump_ranks = {card.rank for card in hand if card.suit == fallback_trump}
+            openner_bid = rules.BID_MIN
+            if "V" in trump_ranks and "9" in trump_ranks:
+                openner_bid += rules.BID_STEP
+            legal_for_suit = _legal_bids_up_to(options, fallback_trump, openner_bid)
             if legal_for_suit:
                 choice = legal_for_suit[-1]
                 return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
