@@ -582,6 +582,70 @@ def _defender_trump_lead_is_wasteful(game: Game, seat: Seat, trump: str) -> bool
     return not (holds_master and _opponents_may_hold_trump(game, seat, trump))
 
 
+def _discard_points_when_partner_wins(game: Game, hand: list[Card], legal_cards: list[Card], trump: str) -> Card:
+    """Load points onto a trick already secured by the partner."""
+    assert game.round_state is not None
+    discardable_cards = [card for card in legal_cards if card.suit != trump and not _is_master(card, hand, game, trump)]
+    if discardable_cards:
+        return max(
+            discardable_cards,
+            key=lambda card: (rules.card_points(card, trump), -_card_strength(card, trump)),
+        )
+
+    masters = [card for card in legal_cards if _is_master(card, hand, game, trump)]
+    if masters:
+        non_trump_masters = [card for card in masters if card.suit != trump]
+        candidates = non_trump_masters or masters
+        known_cards = set(hand)
+        for completed_trick in game.round_state.trick_history:
+            known_cards.update(card for _, card in completed_trick["trick"])
+        known_cards.update(card for _, card in game.round_state.current_trick)
+        unseen_by_suit = {
+            suit: sum(card.suit == suit and card not in known_cards for card in build_deck())
+            for suit in rules.ALLOWED_TRUMPS
+        }
+        return min(
+            candidates,
+            key=lambda card: (
+                unseen_by_suit[card.suit],
+                -rules.card_points(card, trump),
+                -_card_strength(card, trump),
+                card.suit,
+            ),
+        )
+
+    return max(legal_cards, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
+
+
+def _is_partner_winning_trick(game: Game, seat: Seat) -> bool:
+    """Whether a void player can safely load points onto the partner's trick."""
+    assert game.round_state is not None
+    trick = game.round_state.current_trick
+    trump = game.round_state.trump
+    assert trick and trump is not None
+
+    led_suit = trick[0][1].suit
+    hand = game.get_hand(seat)
+    if rules.trick_winner(trick, trump, led_suit) != PARTNER_OF[seat]:
+        return False
+    if len(trick) == 3:
+        return True
+
+    partner_card = next(card for played_seat, card in trick if played_seat == PARTNER_OF[seat])
+    if not _is_master(partner_card, hand, game, trump):
+        return False
+    if partner_card.suit == trump:
+        return True
+
+    played_seats = {played_seat for played_seat, _ in trick}
+    remaining_opponents = [other for other in Seat if other not in played_seats and other != seat]
+    voids = _known_void_suits(game.round_state)
+    opponents_can_ruff = _outstanding_trumps(game, seat, trump) > 0 and any(
+        trump not in voids[opponent] for opponent in remaining_opponents
+    )
+    return not opponents_can_ruff
+
+
 def _select_tactical_card_for_simulation(game: Game, seat: Seat) -> Card:
     """Choose a team-oriented card for one simulated world.
 
@@ -667,16 +731,12 @@ def _select_tactical_card_for_simulation(game: Game, seat: Seat) -> Card:
 
     hand = game.get_hand(seat)
     led_suit = trick[0][1].suit
-    current_winner = rules.trick_winner(trick, trump, led_suit)
-    if current_winner == PARTNER_OF[seat]:
-        if len(trick) == 3:
-            non_trumps = [card for card in legal_cards if card.suit != trump]
-            if non_trumps:
-                return max(
-                    non_trumps,
-                    key=lambda card: (rules.card_points(card, trump), -_card_strength(card, trump)),
-                )
-        return _best_discard(legal_cards, hand, trump)
+    need_to_discard = not any(card.suit == led_suit for card in hand)
+    if need_to_discard:
+        if _is_partner_winning_trick(game, seat):
+            return _discard_points_when_partner_wins(game, hand, legal_cards, trump)
+        else:
+            return _best_discard(legal_cards, hand, trump)
 
     winners = [card for card in legal_cards if rules.trick_winner([*trick, (seat, card)], trump, led_suit) == seat]
     if winners:

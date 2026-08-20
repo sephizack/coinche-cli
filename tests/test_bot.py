@@ -16,6 +16,7 @@ from coinche.benchmark import run_cloclo_benchmark
 from coinche.bot import (
     DEFAULT_BOT_TYPE,
     _auction_card_weights,
+    _is_partner_winning_trick,
     _known_void_suits,
     _sample_hidden_hands,
     _select_tactical_card_for_simulation,
@@ -636,6 +637,92 @@ def test_bot_discards_low_when_partner_is_winning() -> None:
     assert choose_card(game, Seat.S) == Card("7", "♣")
 
 
+def test_default_bot_loads_points_when_partner_leads_master_trump() -> None:
+    # N (partner) leads V♠ (master trump), W (opponent) plays 7♠.
+    # S is 3rd in trick, holding 10♦ (10 pts, non-master) and 7♣ (0 pts).
+    # Since V♠ is master trump and cannot be beaten, N is guaranteed to win.
+    # S should discard the big card 10♦ on partner's trick.
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("V", "♠")), (Seat.W, Card("7", "♠"))]
+    game.round_state.hands[Seat.S] = _cards("10♦", "7♣")
+
+    assert choose_card(game, Seat.S) == Card("10", "♦")
+
+
+def test_default_bot_loads_points_when_partner_leads_master_and_no_trumps_remain() -> None:
+    # N (partner) leads A♥ (master), W (opponent) plays 7♥.
+    # All trumps (♠) have already been played.
+    # S is 3rd in trick, holding 10♦ (10 pts, non-master) and 7♣ (0 pts).
+    # Since no opponent holds any trump and A♥ is master, N is guaranteed to win.
+    # S should discard 10♦ to load points.
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    # All 8 trumps in trick history
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.E, Card("9", "♠")),
+                (Seat.S, Card("A", "♠")),
+                (Seat.W, Card("10", "♠")),
+            ],
+        },
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("R", "♠")),
+                (Seat.E, Card("D", "♠")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.W, Card("7", "♠")),
+            ],
+        },
+    ]
+    game.round_state.current_trick = [(Seat.N, Card("A", "♥")), (Seat.W, Card("7", "♥"))]
+    game.round_state.hands[Seat.S] = _cards("10♦", "7♣")
+
+    assert choose_card(game, Seat.S) == Card("10", "♦")
+
+
+def test_default_bot_discards_junk_when_partner_leads_non_master_trump() -> None:
+    # N (partner) leads 8♠ (trump), W (opponent) plays 7♠.
+    # V♠ and 9♠ are still outstanding. E is 4th in trick and could overtrump.
+    # S is 3rd, holding 10♦ (10 pts) and 7♣ (0 pts).
+    # Since partner is NOT guaranteed to win, S must discard junk (7♣) to avoid losing points.
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("8", "♠")), (Seat.W, Card("7", "♠"))]
+    game.round_state.hands[Seat.S] = _cards("10♦", "7♣")
+
+    assert choose_card(game, Seat.S) == Card("7", "♣")
+
+
+def test_default_bot_discards_junk_when_partner_leads_side_master_but_opponents_have_trumps() -> None:
+    # N (partner) leads A♥ (master of ♥), W (opponent) plays 7♥.
+    # Trumps (♠) are still outstanding in opponents' hands. E is 4th and could cut.
+    # S holds 10♦ (10 pts) and 7♣ (0 pts).
+    # Since E could ruff, partner is NOT guaranteed to win; S discards junk 7♣.
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("A", "♥")), (Seat.W, Card("7", "♥"))]
+    game.round_state.hands[Seat.S] = _cards("10♦", "7♣")
+
+    assert choose_card(game, Seat.S) == Card("7", "♣")
+
+
 def test_default_bot_cuts_with_lowest_trump_when_fourth_in_trick() -> None:
     # N (opponent) leads A♥, E (partner) plays 7♥, S (opponent) plays 8♥.
     # W is 4th in trick; N is winning. W holds V♠ (boss trump) and 7♠ (lowest trump).
@@ -693,6 +780,62 @@ def test_default_bot_loads_non_trump_points_when_partner_wins_in_fourth_position
     game.round_state.hands[Seat.W] = _cards("V♠", "10♦", "7♦")
 
     assert choose_card(game, Seat.W) == Card("10", "♦")
+
+
+def test_default_bot_discards_master_from_least_likely_side_suit_when_partner_wins() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("R", "♦")),
+                (Seat.E, Card("D", "♦")),
+                (Seat.S, Card("8", "♦")),
+                (Seat.W, Card("7", "♦")),
+            ],
+        }
+    ]
+    game.round_state.current_trick = [
+        (Seat.N, Card("A", "♥")),
+        (Seat.W, Card("7", "♥")),
+        (Seat.E, Card("8", "♥")),
+    ]
+    game.round_state.hands[Seat.S] = _cards("A♦", "A♣", "9♠")
+
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("A", "♦")
+
+
+def test_default_bot_loads_highest_value_when_void_and_only_trumps_remain() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [
+        (Seat.N, Card("A", "♥")),
+        (Seat.W, Card("7", "♥")),
+        (Seat.E, Card("8", "♥")),
+    ]
+    game.round_state.hands[Seat.S] = _cards("A♠", "10♠")
+
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("A", "♠")
+
+
+
+def test_partner_winning_discard_requires_bot_to_be_void_in_led_suit() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("A", "♥")), (Seat.W, Card("7", "♥"))]
+    game.round_state.hands[Seat.S] = _cards("10♥", "10♦")
+
+    assert not _is_partner_winning_trick(game, Seat.S)
 
 
 def test_discard_shortens_the_shortest_side_suit() -> None:
