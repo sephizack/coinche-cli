@@ -366,7 +366,7 @@ def _try_open_suit(
     return None
 
 
-_COINCHE_THRESHOLDS: list[tuple[int, int]] = [(100, 80), (120, 65), (140, 50), (rules.BID_MAX, 40)]
+_COINCHE_THRESHOLDS: list[tuple[int, int]] = [(100, 85), (120, 70), (140, 60), (rules.BID_MAX, 50)]
 _COINCHE_CAPOT_STRENGTH = 30
 _SURCOINCHE_THRESHOLDS: list[tuple[int, int]] = [(100, 105), (120, 120), (140, 130), (rules.BID_MAX, 145)]
 _SURCOINCHE_CAPOT_STRENGTH = 145
@@ -376,14 +376,15 @@ def _should_counter(
     action: str,
     current: dict,
     strengths: dict[str, int],
+    strength_offset: int = 0,
 ) -> bool:
     """Return True if the bot should coinche or surcoinche the standing bid."""
     if current["points"] == rules.CAPOT:
         capot_strength = _COINCHE_CAPOT_STRENGTH if action == "coinche" else _SURCOINCHE_CAPOT_STRENGTH
-        return strengths[current["trump"]] >= capot_strength
+        return strengths[current["trump"]] >= capot_strength + strength_offset
     thresholds = _COINCHE_THRESHOLDS if action == "coinche" else _SURCOINCHE_THRESHOLDS
     required = next(r for max_pts, r in thresholds if current["points"] <= max_pts)
-    return strengths[current["trump"]] >= required
+    return strengths[current["trump"]] >= required + strength_offset
 
 
 def _choose_normal_bid(
@@ -428,11 +429,21 @@ def _choose_normal_bid(
     return {"action": "pass"}
 
 
-def _choose_counter_action(options: dict, current: dict | None, strengths: dict[str, int]) -> dict | None:
+def _choose_counter_action(
+    hand: list[Card],
+    options: dict,
+    current: dict | None,
+    strengths: dict[str, int],
+) -> dict | None:
     """Choose Coinche or Surcoinche without displacing a normal Capot rebid."""
     if current is None:
         return None
-    if options["can_coinche"] and _should_counter("coinche", current, strengths):
+    coinche_strength_offset = 0
+    trumps = {card.rank for card in hand if card.suit == current["trump"]}
+    if "R" in trumps or "D" in trumps:
+        # We know opponent cannot have belote so we can be more aggressive in countering
+        coinche_strength_offset = -10
+    if options["can_coinche"] and _should_counter("coinche", current, strengths, coinche_strength_offset):
         return {"action": "coinche"}
     if options["can_surcoinche"] and _should_counter("surcoinche", current, strengths):
         return {"action": "surcoinche"}
@@ -459,7 +470,9 @@ def choose_bid(game: Game, seat: Seat) -> dict:
             key=lambda trump: (_ceiling_value(opening_ceilings[trump]), strengths[trump]),
         )
 
-    counter_action = _choose_counter_action(options, current, strengths)
+    counter_action = None
+    if current:
+        counter_action = _choose_counter_action(hand, options, current, strengths)
     normal_action = _choose_normal_bid(game, seat, hand, best_trump, opening_ceilings, options)
     if counter_action is not None and normal_action.get("points") != rules.CAPOT:
         return counter_action
@@ -548,7 +561,7 @@ def _opponents_may_hold_trump(game: Game, seat: Seat, trump: str) -> bool:
 def _opponent_may_ruff_suit(game: Game, seat: Seat, suit: str, trump: str) -> bool:
     """Whether public information says a defender could cut a lead in `suit`."""
     assert game.round_state is not None
-    if suit == trump:
+    if suit == trump or _outstanding_trumps(game, seat, trump) <= 0:
         return False
     voids = _known_void_suits(game.round_state)
     return any(
@@ -585,7 +598,6 @@ def _defender_trump_lead_is_wasteful(game: Game, seat: Seat, trump: str) -> bool
 def _discard_points_when_partner_wins(game: Game, hand: list[Card], legal_cards: list[Card], trump: str) -> Card | None:
     """Load points onto a trick already secured by the partner."""
     assert game.round_state is not None
-    print("_discard_points_when_partner_wins")
     # If we have only trumps, discard the lowest one
     trumps = [card for card in legal_cards if card.suit == trump]
     if len(trumps) == len(legal_cards):
@@ -617,9 +629,6 @@ def _find_least_useful_card(game: Game, allowed_cards: list[Card], hand: list[Ca
         for suit in rules.ALLOWED_TRUMPS
     }
 
-    print("_find_least_useful_card")
-    print(f"unseen_by_suit: {unseen_by_suit}")
-    print(f"allowed_cards: {allowed_cards}")
     result = min(
         allowed_cards,
         key=lambda card: (
@@ -630,7 +639,6 @@ def _find_least_useful_card(game: Game, allowed_cards: list[Card], hand: list[Ca
             unseen_by_suit[card.suit],
         ),
     )
-    print(f"least useful card: {result}")
     return result
 
 
@@ -643,6 +651,8 @@ def _is_partner_winning_trick(game: Game, seat: Seat) -> bool:
 
     led_suit = trick[0][1].suit
     hand = game.get_hand(seat)
+    if any(card.suit == led_suit for card in hand):
+        return False
     current_winner_seat = rules.trick_winner(trick, trump, led_suit)
     if current_winner_seat != PARTNER_OF[seat]:
         return False
@@ -658,10 +668,17 @@ def _is_partner_winning_trick(game: Game, seat: Seat) -> bool:
     played_seats = {played_seat for played_seat, _ in trick}
     remaining_opponents = [other for other in Seat if other not in played_seats and other != seat]
     voids = _known_void_suits(game.round_state)
-    opponents_can_ruff = _outstanding_trumps(game, seat, trump) > 0 and any(
-        trump not in voids[opponent] for opponent in remaining_opponents
+    suit_was_previously_played = any(
+        card.suit == led_suit
+        for completed_trick in game.round_state.trick_history
+        for _, card in completed_trick["trick"]
     )
-    return not opponents_can_ruff
+    opponents_likely_to_ruff = (
+        suit_was_previously_played
+        and _outstanding_trumps(game, seat, trump) > 0
+        and any(trump not in voids[opponent] for opponent in remaining_opponents)
+    )
+    return not opponents_likely_to_ruff
 
 
 def _choose_discard_when_void(
@@ -672,15 +689,17 @@ def _choose_discard_when_void(
     trump: str,
 ) -> Card | None:
     """Choose a discard when the acting seat cannot follow the led suit."""
-    print("_choose_discard_when_void")
     if _is_partner_winning_trick(game, seat):
         return _discard_points_when_partner_wins(game, hand, legal_cards, trump)
-    print("partner not winning_trick")
     trumps = [card for card in legal_cards if card.suit == trump]
-    if trumps:
+    assert game.round_state is not None
+    trick = game.round_state.current_trick
+    led_suit = trick[0][1].suit
+    winning_trumps = [card for card in trumps if rules.trick_winner([*trick, (seat, card)], trump, led_suit) == seat]
+    if winning_trumps:
+        return min(winning_trumps, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
+    if trumps and len(trumps) == len(legal_cards):
         return min(trumps, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
-    print("no trump left")
-    # Discard the least useful non-trump card, if any. If all legal cards are trump, the bot
     non_trump_cards = [card for card in legal_cards if card.suit != trump]
     if non_trump_cards:
         return _find_least_useful_card(game, non_trump_cards, hand, trump)
@@ -956,12 +975,19 @@ def _sample_hidden_hands(game: Game, seat: Seat, sample_count: int) -> list[dict
 
     voids = _known_void_suits(round_state)
     auction_weights = _auction_card_weights(game)
+    forced_holders: dict[Card, Seat] = {}
+    if round_state.belote_announced > 0 and round_state.belote_seat is not None and round_state.trump is not None:
+        for rank in ("R", "D"):
+            belote_card = Card(rank, round_state.trump)
+            if belote_card in unseen:
+                forced_holders[belote_card] = round_state.belote_seat
+
     rng = random.Random(_public_seed(game, seat))
     samples: list[dict[Seat, list[Card]]] = []
     for _ in range(sample_count):
-        assignment = _weighted_deal(unseen, opponents, counts, voids, auction_weights, rng)
+        assignment = _weighted_deal(unseen, opponents, counts, voids, auction_weights, rng, forced_holders)
         if assignment is None:
-            assignment = _fallback_deal(unseen, opponents, counts, rng)
+            return []
         samples.append(assignment)
     return samples
 
@@ -973,35 +999,63 @@ def _weighted_deal(
     voids: dict[Seat, set[str]],
     auction_weights: dict[Seat, dict[Card, float]],
     rng: random.Random,
+    forced_holders: dict[Card, Seat] | None = None,
 ) -> dict[Seat, list[Card]] | None:
-    """Deal cards one at a time, weighted by the public auction and known voids.
-
-    Constrained-scarce cards (a suit only a few seats can legally hold) are
-    placed first so a greedy honour bias cannot paint a void seat into a corner
-    and force a failed deal. Returns None if no legal placement exists for some
-    card, letting the caller fall back to an unbiased split.
-    """
+    """Deal cards by public weights while satisfying every known constraint."""
+    forced_holders = forced_holders or {}
     remaining = {other: counts[other] for other in opponents}
+    hands: dict[Seat, list[Card]] = {other: [] for other in opponents}
 
     def eligible(card: Card) -> list[Seat]:
-        return [other for other in opponents if remaining[other] > 0 and card.suit not in voids[other]]
+        forced_holder = forced_holders.get(card)
+        return [
+            other
+            for other in opponents
+            if remaining[other] > 0
+            and card.suit not in voids[other]
+            and (forced_holder is None or forced_holder == other)
+        ]
+
+    def candidate_order(card: Card) -> list[Seat]:
+        candidates = eligible(card)
+        ordered: list[Seat] = []
+        while candidates:
+            weights = [_card_seat_weight(card, other, auction_weights) for other in candidates]
+            chosen = _weighted_choice(candidates, weights, rng)
+            ordered.append(chosen)
+            candidates.remove(chosen)
+        return ordered
+
+    def can_complete(cards: list[Card]) -> bool:
+        if any(not eligible(card) for card in cards):
+            return False
+        for other in opponents:
+            available = sum(
+                card.suit not in voids[other] and forced_holders.get(card) in (None, other) for card in cards
+            )
+            if available < remaining[other]:
+                return False
+        return True
 
     order = list(unseen)
     rng.shuffle(order)
-    # Fewest eligible seats first: hardest-to-place cards claim a seat before
-    # the honour bias skews the easy ones.
     order.sort(key=lambda card: len(eligible(card)))
 
-    hands: dict[Seat, list[Card]] = {other: [] for other in opponents}
-    for card in order:
-        takers = [other for other in eligible(card) if remaining[other] > 0]
-        if not takers:
-            return None
-        weights = [_card_seat_weight(card, other, auction_weights) for other in takers]
-        chosen = _weighted_choice(takers, weights, rng)
-        hands[chosen].append(card)
-        remaining[chosen] -= 1
-    return hands
+    def assign(index: int) -> bool:
+        if index == len(order):
+            return all(count == 0 for count in remaining.values())
+
+        card = order[index]
+        for chosen in candidate_order(card):
+            hands[chosen].append(card)
+            remaining[chosen] -= 1
+            if can_complete(order[index + 1 :]) and assign(index + 1):
+                return True
+            remaining[chosen] += 1
+            hands[chosen].pop()
+        return False
+
+    return hands if assign(0) else None
 
 
 def _weighted_choice(seats: list[Seat], weights: list[float], rng: random.Random) -> Seat:
@@ -1013,23 +1067,6 @@ def _weighted_choice(seats: list[Seat], weights: list[float], rng: random.Random
         if threshold < cumulative:
             return seats[i]
     return seats[-1]
-
-
-def _fallback_deal(
-    unseen: list[Card],
-    opponents: list[Seat],
-    counts: dict[Seat, int],
-    rng: random.Random,
-) -> dict[Seat, list[Card]]:
-    """Unbiased split ignoring voids; used only when a constrained deal can't be built."""
-    shuffled = list(unseen)
-    rng.shuffle(shuffled)
-    assignment: dict[Seat, list[Card]] = {}
-    offset = 0
-    for other in opponents:
-        assignment[other] = list(shuffled[offset : offset + counts[other]])
-        offset += counts[other]
-    return assignment
 
 
 def _apply_determinization(game: Game, seat: Seat, hidden_hands: dict[Seat, list[Card]]) -> None:
@@ -1218,18 +1255,24 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
             if partner_might_have_trumps and nine_has_not_fallen and _team_auction_supports_trump(game, seat, trump):
                 return worst_trump, legal_cards
 
-    # Jouer les As hors atout. Le choix doit rester déterministe pour une même
-    # information publique : on encaisse l'As de la couleur latérale la plus
-    # courte en main (pour créer une chicane et pouvoir couper ensuite), en
-    # départageant par la force de la couleur afin d'éviter tout aléa global.
-    owned_non_trump_aces = [card for card in legal_cards if card.rank == "A" and card.suit != trump]
-    if owned_non_trump_aces:
+    # Encaisser d'abord un As sûr. Un As exposé à la coupe attend tant qu'une
+    # couleur latérale sûre peut être développée, mais si toutes les sorties
+    # hors atout sont exposées, il faut prendre le risque plutôt que différer
+    # l'As indéfiniment. Le choix reste déterministe pour une même information.
+    non_trump_cards = [card for card in legal_cards if card.suit != trump]
+    safe_non_trump_cards = [
+        card for card in non_trump_cards if not _opponent_may_ruff_suit(game, seat, card.suit, trump)
+    ]
+    owned_non_trump_aces = [card for card in non_trump_cards if card.rank == "A"]
+    aces_to_cash = [card for card in safe_non_trump_cards if card.rank == "A"]
+    if not aces_to_cash and not safe_non_trump_cards:
+        aces_to_cash = owned_non_trump_aces
+    if aces_to_cash:
         suit_length = {
-            suit: sum(1 for card in own_hand if card.suit == suit)
-            for suit in {ace.suit for ace in owned_non_trump_aces}
+            suit: sum(1 for card in own_hand if card.suit == suit) for suit in {ace.suit for ace in aces_to_cash}
         }
         chosen_ace = min(
-            owned_non_trump_aces,
+            aces_to_cash,
             key=lambda ace: (suit_length[ace.suit], ace.suit),
         )
         return chosen_ace, legal_cards
@@ -1256,9 +1299,8 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
                 legal_cards,
             )
     # tenter une couleur jamais jouée si possible
-    never_played_suits = {
-        card.suit for card in legal_cards if card.suit != trump and not _has_been_played(card, game.round_state)
-    }
+    played_suits = {played.suit for cards in _played_cards_by_seat(game.round_state).values() for played in cards}
+    never_played_suits = {card.suit for card in legal_cards if card.suit != trump and card.suit not in played_suits}
     if never_played_suits:
         return min(
             (card for card in legal_cards if card.suit in never_played_suits),
@@ -1287,7 +1329,7 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
         opening_card, legal_cards = _choose_opening_card(game, seat, legal_cards, trump)
         if opening_card is not None:
             return opening_card
-    print("coucou")
+
     if game.round_state.current_trick:
         trick = game.round_state.current_trick
         led_suit = trick[0][1].suit

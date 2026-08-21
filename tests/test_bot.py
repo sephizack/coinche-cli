@@ -20,17 +20,19 @@ from coinche.bot import (
     _find_least_useful_card,
     _is_partner_winning_trick,
     _known_void_suits,
+    _opponent_may_ruff_suit,
     _sample_hidden_hands,
     _select_tactical_card_for_simulation,
     _support_ceiling,
     _team_auction_supports_trump,
+    _weighted_deal,
     available_bot_types,
     choose_bid,
     choose_card,
     configure_samples,
 )
 from coinche.bot_types import BotType, ClocloBot
-from coinche.cards import Card, Seat
+from coinche.cards import Card, Seat, build_deck
 from coinche.game import TEAM_OF, Game
 
 
@@ -516,11 +518,12 @@ def test_bot_passes_with_a_weak_hand() -> None:
     [
         (100, _cards("7♠", "8♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣"), {"action": "pass"}),
         (100, _cards("V♠", "9♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣"), {"action": "pass"}),
-        (100, _cards("V♠", "9♠", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "coinche"}),
+        (100, _cards("V♠", "9♠", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "pass"}),
         (120, _cards("V♠", "9♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣"), {"action": "pass"}),
         (120, _cards("V♠", "9♠", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "coinche"}),
         (140, _cards("V♠", "9♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣"), {"action": "coinche"}),
-        (140, _cards("V♠", "9♦", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "coinche"}),
+        (140, _cards("V♠", "9♦", "7♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "pass"}),
+        (140, _cards("V♠", "9♦", "D♠", "A♥", "7♥", "8♦", "7♣", "D♣"), {"action": "coinche"}),
         (160, _cards("V♠", "9♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣"), {"action": "coinche"}),
         ("capot", _cards("V♠", "9♠", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣"), {"action": "coinche"}),
         ("capot", _cards("V♠", "9♥", "7♥", "8♥", "7♦", "8♦", "7♣", "8♣"), {"action": "coinche"}),
@@ -706,20 +709,35 @@ def test_default_bot_discards_junk_when_partner_leads_non_master_trump() -> None
     assert choose_card(game, Seat.S) == Card("7", "♣")
 
 
-def test_default_bot_discards_junk_when_partner_leads_side_master_but_opponents_have_trumps() -> None:
+def test_default_bot_loads_points_when_partner_first_leads_side_master() -> None:
     # N (partner) leads A♥ (master of ♥), W (opponent) plays 7♥.
-    # Trumps (♠) are still outstanding in opponents' hands. E is 4th and could cut.
+    # Trumps (♠) are still outstanding in opponents' hands. E is 4th and could cut,
+    # but this is the first ♥ lead, so the bot accepts the ruff risk.
     # S holds 10♦ (10 pts) and 7♣ (0 pts).
-    # Since E could ruff, partner is NOT guaranteed to win; S discards junk 7♣.
     game = Game()
     assert game.round_state is not None
     game.phase = "trick_play"
     game.next_to_act = Seat.S
     game.round_state.trump = "♠"
     game.round_state.current_trick = [(Seat.N, Card("A", "♥")), (Seat.W, Card("7", "♥"))]
-    game.round_state.hands[Seat.S] = _cards("10♦", "7♣")
+    game.round_state.hands[Seat.S] = _cards("A♦", "10♦", "7♣")
 
     assert choose_card(game, Seat.S) == Card("7", "♣")
+
+def test_default_bot_loads_points_when_partner_first_leads_side_master_second_case() -> None:
+    # N (partner) leads A♥ (master of ♥), W (opponent) plays 7♥.
+    # Trumps (♠) are still outstanding in opponents' hands. E is 4th and could cut,
+    # but this is the first ♥ lead, so the bot accepts the ruff risk.
+    # S holds 10♦ (10 pts) and 7♣ (0 pts).
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("A", "♥")), (Seat.W, Card("7", "♥"))]
+    game.round_state.hands[Seat.S] = _cards("A♣", "10♦", "7♣")
+
+    assert choose_card(game, Seat.S) == Card("10", "♦")
 
 
 def test_default_bot_cuts_with_lowest_trump_when_fourth_in_trick() -> None:
@@ -880,7 +898,19 @@ def test_choose_discard_when_void_uses_lowest_legal_overtrump() -> None:
     assert chosen == Card("9", "♠")
 
 
-def test_choose_discard_when_void_cuts_to_protect_partner_from_remaining_opponent() -> None:
+def test_choose_card_discards_instead_of_undertrumping_when_overtrump_is_impossible() -> None:
+    hand = _cards("9♠", "7♦")
+    game, legal_cards = _void_discard_scenario(
+        Seat.S,
+        [(Seat.N, Card("A", "♥")), (Seat.E, Card("V", "♠"))],
+        hand,
+    )
+
+    assert legal_cards == hand
+    assert choose_card(game, Seat.S) == Card("7", "♦")
+
+
+def test_choose_discard_when_void_loads_points_on_first_suit_lead() -> None:
     hand = _cards("9♠", "7♠", "10♦")
     game, legal_cards = _void_discard_scenario(
         Seat.S,
@@ -890,7 +920,7 @@ def test_choose_discard_when_void_cuts_to_protect_partner_from_remaining_opponen
 
     chosen = _choose_discard_when_void(game, Seat.S, hand, legal_cards, "♠")
 
-    assert chosen == Card("7", "♠")
+    assert chosen == Card("10", "♦")
     assert chosen in legal_cards
 
 
@@ -1030,10 +1060,21 @@ def test_partner_winning_discard_requires_bot_to_be_void_in_led_suit() -> None:
     assert not _is_partner_winning_trick(game, Seat.S)
 
 
+def test_partner_winning_discard_accepts_first_suit_lead_risk() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("A", "♥")), (Seat.W, Card("7", "♥"))]
+    game.round_state.hands[Seat.S] = _cards("10♦")
+
+    assert _is_partner_winning_trick(game, Seat.S)
+
+
 def test_discard_shortens_the_shortest_side_suit() -> None:
-    # Opponent (N) is winning with a card S cannot beat, so S discards. Both 7♦
-    # and 7♣ are worth zero points, but ♦ is a singleton while ♣ is longer:
-    # throwing the singleton ♦ makes S void there and able to ruff ♦ next time.
+    # Partner N leads an Ace of a side suit for the first time. S accepts the
+    # chance that W can ruff and loads the strongest discard onto the trick.
     game = Game()
     assert game.round_state is not None
     game.round_state.trump = "♠"
@@ -1042,7 +1083,7 @@ def test_discard_shortens_the_shortest_side_suit() -> None:
     game.round_state.current_trick = [(Seat.N, Card("A", "♥"))]
     game.round_state.hands[Seat.S] = _cards("7♦", "7♣", "8♣", "9♣")
 
-    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("7", "♣")
+    assert _select_tactical_card_for_simulation(game, Seat.S) == Card("9", "♣")
 
 
 def test_bot_cashes_the_requested_suit_ace_when_no_trump_is_in_the_trick() -> None:
@@ -1574,6 +1615,119 @@ def test_declarer_keeps_a_master_that_a_known_defender_can_ruff() -> None:
     assert _select_tactical_card_for_simulation(game, Seat.S) == Card("7", "♣")
 
 
+def test_choose_card_keeps_an_ace_that_a_known_defender_can_ruff() -> None:
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.W,
+            "trick": [
+                (Seat.N, Card("7", "♥")),
+                (Seat.W, Card("7", "♠")),
+                (Seat.S, Card("8", "♥")),
+                (Seat.E, Card("7", "♦")),
+            ],
+            "points_won": 0,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("A♥", "7♣", "8♦")
+
+    assert choose_card(game, Seat.S) == Card("7", "♣")
+
+
+def test_choose_card_risks_a_ruffable_ace_when_every_side_card_is_exposed() -> None:
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.W,
+            "trick": [
+                (Seat.N, Card("7", "♥")),
+                (Seat.W, Card("7", "♠")),
+                (Seat.S, Card("8", "♥")),
+                (Seat.E, Card("7", "♦")),
+            ],
+            "points_won": 0,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("A♥", "10♥")
+
+    assert choose_card(game, Seat.S) == Card("A", "♥")
+
+
+def test_opponent_cannot_ruff_when_all_trumps_are_visible() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.W,
+            "trick": [
+                (Seat.N, Card("7", "♥")),
+                (Seat.W, Card("7", "♠")),
+                (Seat.S, Card("8", "♥")),
+                (Seat.E, Card("7", "♦")),
+            ],
+        },
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.E, Card("9", "♠")),
+                (Seat.S, Card("A", "♠")),
+                (Seat.W, Card("10", "♠")),
+            ],
+        },
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("R", "♠")),
+                (Seat.E, Card("D", "♠")),
+                (Seat.S, Card("7", "♣")),
+                (Seat.W, Card("8", "♠")),
+            ],
+        },
+    ]
+    game.round_state.hands[Seat.S] = _cards("A♥", "10♥")
+
+    assert not _opponent_may_ruff_suit(game, Seat.S, "♥", "♠")
+
+
+def test_choose_card_opens_a_suit_that_has_not_been_played() -> None:
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("A", "♥")),
+                (Seat.E, Card("R", "♥")),
+                (Seat.S, Card("8", "♥")),
+                (Seat.W, Card("D", "♥")),
+            ],
+            "points_won": 29,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("7♥", "10♣")
+
+    assert choose_card(game, Seat.S) == Card("10", "♣")
+
+
 def test_defender_on_lead_does_not_open_a_trump_without_the_master() -> None:
     # EW took the contract; S is defending and on lead holding a lone 9♠ trump
     # (not the master, since the ♠ Valet is unseen). Opening trump only helps the
@@ -1662,6 +1816,39 @@ def test_discard_behind_a_played_trump_does_not_imply_a_trump_void() -> None:
 
     assert "♥" in voids[Seat.W]
     assert "♠" not in voids[Seat.W]
+
+
+def test_weighted_deal_backtracks_without_violating_known_voids() -> None:
+    opponents = [Seat.N, Seat.E, Seat.S]
+    counts = {seat: 2 for seat in opponents}
+    voids = {
+        Seat.N: {"♣"},
+        Seat.E: {"♦"},
+        Seat.S: {"♥"},
+    }
+    unseen = _cards("7♥", "8♥", "7♦", "8♦", "7♣", "8♣")
+    weights = {seat: {card: 1.0 for card in build_deck()} for seat in Seat}
+
+    assignment = _weighted_deal(unseen, opponents, counts, voids, weights, random.Random(0))
+
+    assert assignment is not None
+    assert all(card.suit not in voids[seat] for seat, hand in assignment.items() for card in hand)
+
+
+def test_determinization_keeps_unplayed_belote_card_with_announced_holder() -> None:
+    game = _isolated_game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("R", "♠"))]
+    game.round_state.hands[Seat.E] = _cards("7♥", "8♥", "9♥", "10♥", "7♦", "8♦", "9♦", "10♦")
+    game.round_state.belote_announced = 1
+    game.round_state.belote_seat = Seat.N
+    game.round_state.belote_holder = "NS"
+
+    samples = _sample_hidden_hands(game, Seat.E, 100)
+
+    assert len(samples) == 100
+    assert all(Card("D", "♠") in sample[Seat.N] for sample in samples)
 
 
 def test_determinization_uses_an_earlier_bid_not_just_the_final_contract() -> None:

@@ -136,7 +136,7 @@ class ClocloBot(BotType):
                 if "V" in opp_ranks or "9" in opp_ranks or sum(c.rank == "A" for c in hand) >= 2:
                     return {"action": "coinche"}
 
-            counter_action = _choose_counter_action(options, current, strengths)
+            counter_action = _choose_counter_action(hand, options, current, strengths)
             if counter_action is not None:
                 return counter_action
 
