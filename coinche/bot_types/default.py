@@ -1300,7 +1300,8 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
         elif led_suit != trump:
             # Play ace when we have it and no ruff
             requested_trick_ace = [card for card in legal_cards if card.rank == "A" and card.suit == led_suit]
-            if any(requested_trick_ace):
+            trick_has_been_ruffed = any(card.suit == trump for _, card in trick)
+            if requested_trick_ace and not trick_has_been_ruffed:
                 return requested_trick_ace[0]
 
     # Information-set Monte-Carlo tree search

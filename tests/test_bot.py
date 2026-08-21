@@ -762,6 +762,21 @@ def test_default_bot_overcuts_with_lowest_winning_trump_when_fourth_in_trick() -
     assert choose_card(game, Seat.W) == Card("9", "♠")
 
 
+def test_default_bot_preserves_led_suit_ace_after_opponent_ruffs() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [
+        (Seat.N, Card("7", "♥")),
+        (Seat.E, Card("7", "♠")),
+    ]
+    game.round_state.hands[Seat.S] = _cards("A♥", "8♥")
+
+    assert choose_card(game, Seat.S) == Card("8", "♥")
+
+
 def test_default_bot_loads_non_trump_points_when_partner_wins_in_fourth_position() -> None:
     # E (partner) plays A♥, S plays 7♥, N plays 8♥. E is winning the trick.
     # W is 4th in trick and holds 10♦, 7♦, and V♠ (trump).
