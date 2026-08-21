@@ -269,6 +269,14 @@ Caveats:
 python -m pytest
 ```
 
+CI also requires 100% line and branch coverage for the default and Maestro bot strategies:
+
+```bash
+python -m coverage run --branch -m pytest
+python -m coverage report --fail-under=100 coinche/bot_types/default.py
+python -m coverage report --fail-under=100 coinche/bot_types/maestro.py
+```
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the setup, the lint/format/test

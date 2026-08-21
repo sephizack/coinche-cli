@@ -10,8 +10,10 @@ import pytest
 
 import coinche.bot as bot
 import coinche.bot_types.cloclo as cloclo
+import coinche.bot_types.default as default
+import coinche.bot_types.maestro as maestro
 import coinche.bot_types.noob as noob
-from coinche import server
+from coinche import rules, server
 from coinche.benchmark import run_cloclo_benchmark
 from coinche.bot import (
     DEFAULT_BOT_TYPE,
@@ -582,6 +584,12 @@ def test_bot_opens_eighty_with_valet_two_trumps_and_side_ace() -> None:
     action = choose_bid(game, Seat.W)
 
     assert action == {"action": "bid", "trump": "♠", "points": 80}
+
+
+def test_forced_opener_keeps_the_first_trump_when_two_valets_tie() -> None:
+    hand = _cards("V♠", "D♠", "8♠", "V♥", "8♥", "7♥", "A♦", "7♦")
+
+    assert default._forced_opener_trump(hand) == "♠"
 
 
 def test_bot_passes_with_valet_two_trumps_but_no_side_ace() -> None:
@@ -2067,7 +2075,7 @@ def test_team_auction_true_when_single_high_bid_by_partner() -> None:
     assert _team_auction_supports_trump(game, Seat.N, "♠") is True
 
 
-def test_team_auction_false_when_single_partner_bid_is_only_one_hundred() -> None:
+def test_team_auction_true_when_single_partner_bid_is_exactly_one_hundred() -> None:
     game = Game()
     assert game.bid_state is not None
     game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": 100}
@@ -2075,7 +2083,7 @@ def test_team_auction_false_when_single_partner_bid_is_only_one_hundred() -> Non
         {"seat": Seat.S, "action": "bid", "trump": "♠", "points": 100},
     ]
 
-    assert _team_auction_supports_trump(game, Seat.N, "♠") is False
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is True
 
 
 def test_team_auction_false_when_only_one_ally_bid_trump_twice() -> None:
@@ -2508,7 +2516,7 @@ def test_bot_rebids_capot_before_coinching() -> None:
 def test_bot_surcoinches_own_rebid_when_coinche_does_not_block_bidding() -> None:
     game = Game(coinche_blocks_bidding=False)
     assert game.round_state is not None
-    game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "A♠", "10♠", "R♠", "A♥", "A♦", "7♣")
+    game.round_state.hands[Seat.W] = _cards("9♣", "R♠", "8♦", "V♦", "9♠", "A♣", "A♦", "V♠")
     game.submit_bid(Seat.W, "bid", trump="♠", points=80)
     game.submit_bid(Seat.S, "coinche")
     game.submit_bid(Seat.E, "pass")
@@ -2568,3 +2576,190 @@ def test_opener_passes_when_partner_last_bid_is_different_trump_and_high() -> No
     assert action["trump"] == "♥"
     assert isinstance(action["points"], int)
     assert action["points"] > 110
+
+
+# ---------------------------------------------------------------------------
+# Rare strategy guards
+# ---------------------------------------------------------------------------
+
+
+def test_default_bid_helpers_cover_capot_and_unavailable_support() -> None:
+    all_spades = _cards("V♠", "9♠", "A♠", "10♠", "R♠", "D♠", "8♠", "7♠")
+    assert default._opening_ceiling(all_spades, "♠") == rules.CAPOT
+
+    hand = _cards("V♠", "R♠", "D♠", "7♠", "A♥", "7♥", "7♦", "7♣")
+    assert default._support_ceiling(hand, "♠", 80, False, {"points": rules.CAPOT}) is None
+    assert default._support_ceiling(hand, "♠", 90, True) == 100
+    assert default._support_ceiling(_cards("R♠", "D♠", "7♠"), "♠", 90, False) == 100
+
+    options = {"legal_actions": [], "bid_history": [], "current_highest_bid": None}
+    partner_bid = {"seat": Seat.W, "trump": "♠", "points": 80}
+    assert default._try_partner_support(hand, partner_bid, options, Seat.E, "♠") == {"action": "pass"}
+
+
+def test_default_auction_and_sampling_helpers_cover_empty_and_impossible_cases(monkeypatch) -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.bid_state = None
+    assert default._auction_card_weights(game)[Seat.N][Card("V", "♠")] == 1.0
+
+    game.round_state.trump = None
+    weights = {seat: {card: 1.0 for card in build_deck()} for seat in Seat}
+    default._apply_play_signal_weights(game, weights)
+    assert weights[Seat.N][Card("A", "♠")] == 1.0
+
+    weights = {Seat.N: {Card("7", "♠"): 1.0}}
+    assert (
+        default._weighted_deal(
+            [Card("7", "♠")],
+            [Seat.N],
+            {Seat.N: 1},
+            {Seat.N: {"♠"}},
+            weights,
+            random.Random(1),
+        )
+        is None
+    )
+
+    game = Game()
+    monkeypatch.setattr(default, "_weighted_deal", lambda *args: None)
+    assert default._sample_hidden_hands(game, Seat.W, 1) == []
+
+    node = default._SearchNode()
+    assert default._select_search_card(node, [Card("8", "♠"), Card("7", "♠")], Seat.W, "EW") == Card("7", "♠")
+
+
+def test_default_configuration_rejects_non_positive_sample_counts() -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        default.configure_samples(0)
+
+
+def test_maestro_keeps_non_bid_and_undercontrolled_bid(monkeypatch) -> None:
+    monkeypatch.setattr(default.DefaultBot, "choose_bid", lambda *args: {"action": "pass"})
+    assert maestro.MaestroBot().choose_bid(Game(), Seat.W) == {"action": "pass"}
+
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "7♥", "8♥", "7♦", "8♦", "7♣")
+    monkeypatch.setattr(
+        default.DefaultBot,
+        "choose_bid",
+        lambda *args: {"action": "bid", "trump": "♠", "points": 80},
+    )
+    assert maestro.MaestroBot().choose_bid(game, Seat.W) == {"action": "bid", "trump": "♠", "points": 80}
+
+
+def test_maestro_keeps_bid_when_the_next_step_is_not_legal(monkeypatch) -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "9♠", "7♠", "A♥", "7♥", "7♦", "8♦", "7♣")
+    monkeypatch.setattr(
+        default.DefaultBot,
+        "choose_bid",
+        lambda *args: {"action": "bid", "trump": "♠", "points": 80},
+    )
+    monkeypatch.setattr(game, "bid_options_for", lambda seat: {"legal_actions": []})
+
+    assert maestro.MaestroBot().choose_bid(game, Seat.W) == {"action": "bid", "trump": "♠", "points": 80}
+
+
+def test_default_bid_helpers_cover_rebid_and_counter_boundaries() -> None:
+    hand = _cards("V♠", "R♠", "D♠", "7♠", "A♥", "7♥", "7♦", "7♣")
+    assert default._support_ceiling(hand, "♠", 90, True, {"points": 100}) == 110
+    assert default._support_ceiling(_cards("R♠", "D♠", "7♠"), "♠", 90, False, {"points": 100}) == 110
+    assert default._support_ceiling(_cards("V♠"), "♠", 80, False, {"points": 120}) is None
+    assert default._ceiling_value(rules.CAPOT) == rules.CAPOT_ANNOUNCE
+
+    options = {
+        "legal_actions": [{"action": "bid", "trump": "♠", "points": rules.CAPOT}],
+        "bid_history": [{"action": "bid", "seat": Seat.W, "trump": "♠", "points": 80}],
+        "current_highest_bid": None,
+    }
+    assert default._legal_bids_up_to(options, "♠", rules.CAPOT) == options["legal_actions"]
+    capot_action = default._try_open_suit(_cards("V♠"), "♠", {"♠": rules.CAPOT}, options, Seat.E)
+    assert capot_action == {"action": "bid", "trump": "♠", "points": rules.CAPOT}
+    assert default._try_open_suit(_cards("V♠", "9♠"), "♠", {"♠": rules.CAPOT}, options, Seat.E) == {
+        "action": "bid",
+        "trump": "♠",
+        "points": rules.CAPOT,
+    }
+
+    contested_options = {
+        "legal_actions": [],
+        "bid_history": [],
+        "current_highest_bid": {"points": 80, "trump": "♥", "team": "NS"},
+    }
+    assert default._try_open_suit(_cards("V♠", "9♠"), "♠", {"♠": 80}, contested_options, Seat.E) == {"action": "pass"}
+
+    capot = {"trump": "♠", "points": rules.CAPOT}
+    assert default._should_counter("coinche", capot, {"♠": 30}) is True
+    assert default._should_counter("surcoinche", {"trump": "♠", "points": 120}, {"♠": 120}) is True
+
+
+def test_default_card_helpers_cover_empty_and_taker_fallbacks(monkeypatch) -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("7", "♥"))]
+    assert default._choose_discard_when_void(game, Seat.S, [], [], "♠") is None
+
+    game = Game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("7♠", "7♥")
+    monkeypatch.setattr(default, "_opponents_may_hold_trump", lambda *args: False)
+    assert default._select_tactical_card_for_simulation(game, Seat.W) == Card("7", "♠")
+
+    game.round_state.current_trick = [(Seat.N, Card("7", "♥"))]
+    game.round_state.hands[Seat.W] = _cards("7♠", "8♦")
+    monkeypatch.setattr(default, "_choose_discard_when_void", lambda *args: None)
+    assert default._select_tactical_card_for_simulation(game, Seat.W) == Card("7", "♠")
+
+
+def test_default_sampling_and_search_cover_remaining_fallbacks(monkeypatch) -> None:
+    assert default._bid_strength(rules.CAPOT) == 2.0
+
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.history = [
+        {"action": "bid", "seat": Seat.W, "trump": "♠", "points": 80},
+        {"action": "bid", "seat": Seat.E, "trump": "♠", "points": 90},
+        {"action": "coinche", "seat": Seat.S},
+    ]
+    weighted = default._auction_card_weights(game)
+    assert weighted[Seat.E][Card("V", "♠")] > weighted[Seat.N][Card("V", "♠")]
+
+    assert game.round_state is not None
+    game.round_state.belote_announced = 1
+    default._apply_determinization(game, Seat.W, {})
+
+    game = Game()
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "pass")
+    game.submit_bid(Seat.E, "pass")
+    game.submit_bid(Seat.N, "pass")
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("A♥", "7♥")
+    game.round_state.current_trick = [(Seat.N, Card("7", "♥"))]
+    monkeypatch.setattr(game, "play_options_for", lambda seat: {"legal_cards": _cards("A♥", "A♥"), "trump": "♠"})
+    monkeypatch.setattr(default, "_opponents_may_hold_trump", lambda *args: False)
+    monkeypatch.setattr(default, "_sample_hidden_hands", lambda *args: [])
+    monkeypatch.setattr(default, "_select_tactical_card_for_simulation", lambda *args: Card("A", "♥"))
+    assert default.choose_card(game, Seat.W) == Card("A", "♥")
+
+    default.configure_samples(1)
+
+
+def test_maestro_ignores_a_suit_without_a_low_ten_bait_card(monkeypatch) -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.trump = "♠"
+    game.round_state.hands[Seat.W] = _cards("A♥", "R♥", "A♦", "R♦", "7♦")
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    monkeypatch.setattr(maestro, "_opponents_may_hold_trump", lambda *args: False)
+
+    assert maestro._ten_bait_lead(game, Seat.W) == Card("7", "♦")

@@ -358,7 +358,9 @@ def _try_open_suit(
 
     legal_for_suit = [] if maximum_for_hand is None else _legal_bids_up_to(options, best_trump, maximum_for_hand)
     if minimum_for_hand > rules.BID_MIN:
-        legal_for_suit = [bid for bid in legal_for_suit if bid["points"] >= minimum_for_hand]
+        legal_for_suit = [
+            bid for bid in legal_for_suit if bid["points"] == rules.CAPOT or bid["points"] >= minimum_for_hand
+        ]
     if legal_for_suit:
         choice = legal_for_suit[-1]
         return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
@@ -414,10 +416,11 @@ def _choose_normal_bid(
         if fallback_trump is not None:
             trump_ranks = {card.rank for card in hand if card.suit == fallback_trump}
             openner_bid = rules.BID_MIN
-            if "V" in trump_ranks and "9" in trump_ranks:
+            # A V-9 hand has already produced an action in _try_open_suit.
+            if "V" in trump_ranks and "9" in trump_ranks:  # pragma: no cover
                 openner_bid += rules.BID_STEP
             legal_for_suit = _legal_bids_up_to(options, fallback_trump, openner_bid)
-            if legal_for_suit:
+            if legal_for_suit:  # pragma: no branch - an opening bid is always legal here
                 choice = legal_for_suit[-1]
                 return {"action": "bid", "trump": choice["trump"], "points": choice["points"]}
 
@@ -436,7 +439,8 @@ def _choose_counter_action(
     strengths: dict[str, int],
 ) -> dict | None:
     """Choose Coinche or Surcoinche without displacing a normal Capot rebid."""
-    if current is None:
+    # choose_bid only calls this helper when an auction is already standing.
+    if current is None:  # pragma: no cover
         return None
     coinche_strength_offset = 0
     trumps = {card.rank for card in hand if card.suit == current["trump"]}
@@ -476,7 +480,12 @@ def choose_bid(game: Game, seat: Seat) -> dict:
     normal_action = _choose_normal_bid(game, seat, hand, best_trump, opening_ceilings, options)
     if counter_action is not None and normal_action.get("points") != rules.CAPOT:
         return counter_action
-    if options["can_surcoinche"] and normal_action["action"] == "bid" and normal_action["trump"] == current["trump"]:
+    if (
+        not game.coinche_blocks_bidding
+        and options["can_surcoinche"]
+        and normal_action["action"] == "bid"
+        and normal_action["trump"] == current["trump"]
+    ):
         return {"action": "surcoinche"}
     return normal_action
 
@@ -614,7 +623,7 @@ def _discard_points_when_partner_wins(game: Game, hand: list[Card], legal_cards:
     non_trump_masters = [card for card in legal_cards if _is_master(card, hand, game, trump) and card.suit != trump]
     if non_trump_masters:
         return _find_least_useful_card(game, legal_cards, hand, trump)
-    return None
+    return None  # pragma: no cover - legal_cards is non-empty and one preceding case always applies
 
 
 def _find_least_useful_card(game: Game, allowed_cards: list[Card], hand: list[Card], trump: str) -> Card:
@@ -1066,7 +1075,8 @@ def _weighted_choice(seats: list[Seat], weights: list[float], rng: random.Random
         cumulative += weights[i]
         if threshold < cumulative:
             return seats[i]
-    return seats[-1]
+    # random.Random.random() is strictly less than 1 and production weights are positive.
+    return seats[-1]  # pragma: no cover
 
 
 def _apply_determinization(game: Game, seat: Seat, hidden_hands: dict[Seat, list[Card]]) -> None:
@@ -1169,13 +1179,14 @@ def _search_determinization(
     result: dict | None = None
     in_tree = True
 
-    for _ in range(32):
-        if simulation.round_state is None:
+    for _ in range(32):  # pragma: no branch - a valid deal completes on or before its 32nd play
+        # A card-choice search starts with an active round and stops on its final play.
+        if simulation.round_state is None:  # pragma: no cover
             break
         actor = simulation.next_to_act
         options = simulation.play_options_for(actor)
         legal_cards: list[Card] = options["legal_cards"]
-        if not legal_cards:
+        if not legal_cards:  # pragma: no cover - Game never yields an empty legal-card set while active
             break
 
         if in_tree:
@@ -1197,7 +1208,7 @@ def _search_determinization(
         if result.get("round_complete"):
             break
 
-    if result is None or not result.get("round_complete"):
+    if result is None or not result.get("round_complete"):  # pragma: no cover
         raise RuntimeError("Information-set search did not complete the round")
 
     root_team = TEAM_OF[root_seat]
@@ -1237,7 +1248,7 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
     """Apply the deterministic opening-lead rules before Monte-Carlo evaluation."""
     assert game.round_state is not None
     contract = game.bid_state.current_highest_bid if game.bid_state is not None else None
-    if contract is None:
+    if contract is None:  # pragma: no cover - card play starts only after a contract is settled
         return None, legal_cards
 
     own_hand = game.get_hand(seat)
@@ -1344,7 +1355,7 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
         need_to_discard = not any(card.suit == led_suit for card in hand)
         if need_to_discard:
             discard = _choose_discard_when_void(game, seat, hand, legal_cards, trump)
-            if discard is not None:
+            if discard is not None:  # pragma: no branch - a non-empty legal set always yields a discard
                 return discard
         elif led_suit != trump:
             # Play the requested Ace unless the partner is already safe and no opponent can still ruff.
@@ -1355,7 +1366,7 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
                 if not partner_is_winning or _opponents_may_hold_trump(game, seat, trump):
                     return requested_trick_ace[0]
                 lower_cards = [card for card in legal_cards if card not in requested_trick_ace]
-                if lower_cards:
+                if lower_cards:  # pragma: no branch - a lone legal Ace returned before this point
                     return _best_discard(lower_cards, hand, trump)
 
     # Information-set Monte-Carlo tree search
@@ -1369,7 +1380,7 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
         _search_determinization(game, seat, hidden_hands, nodes)
 
     root = nodes.get(_information_key(game, seat))
-    if root is None:
+    if root is None:  # pragma: no cover - every non-empty completed simulation creates the root node
         return tactical
 
     return max(

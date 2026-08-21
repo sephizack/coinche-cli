@@ -47,10 +47,13 @@ Before submitting any change, run all three and make sure they pass:
 ruff check .                              # lint (E, F, I, B, UP)
 ruff format --check coinche               # formatting
 python -m pytest                          # ~110 tests, ~2s
+python -m coverage run --branch -m pytest
+python -m coverage report --fail-under=100 coinche/bot_types/default.py
+python -m coverage report --fail-under=100 coinche/bot_types/maestro.py
 ```
 
 `ruff check . --fix` and `ruff format coinche` apply autofixes.
-CI (`.github/workflows/ci.yml`) runs the same three checks on push/PR for Python 3.10 and 3.13.
+CI (`.github/workflows/ci.yml`) runs the same checks on push/PR for Python 3.10 and 3.14, including a 100% line-and-branch coverage gate for `default.py` and `maestro.py`.
 
 ## Wire protocol additions
 

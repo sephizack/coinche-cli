@@ -24,5 +24,8 @@ jobs:
         run: ruff check .
       - name: Format check (ruff)
         run: ruff format --check coinche
-      - name: Tests (pytest)
-        run: python -m pytest -v
+      - name: Tests and bot strategy coverage
+        run: |
+          python -m coverage run --branch -m pytest -v
+          python -m coverage report --fail-under=100 coinche/bot_types/default.py
+          python -m coverage report --fail-under=100 coinche/bot_types/maestro.py
