@@ -601,7 +601,7 @@ def _discard_points_when_partner_wins(game: Game, hand: list[Card], legal_cards:
     # If we have only trumps, discard the lowest one
     trumps = [card for card in legal_cards if card.suit == trump]
     if len(trumps) == len(legal_cards):
-        return min(legal_cards, key=lambda card: rules.card_points(card, trump))
+        return min(legal_cards, key=lambda card: (rules.card_points(card, trump), _card_strength(card, trump)))
 
     non_master_cards = [card for card in legal_cards if card.suit != trump and not _is_master(card, hand, game, trump)]
     if non_master_cards:
@@ -1139,6 +1139,12 @@ def _information_key(game: Game, seat: Seat) -> tuple:
     bid_history = (
         () if game.bid_state is None else tuple(tuple(sorted(entry.items())) for entry in game.bid_state.history)
     )
+    public_belote = (
+        round_state.belote_announced,
+        round_state.belote_seat.value
+        if round_state.belote_announced > 0 and round_state.belote_seat is not None
+        else None,
+    )
     return (
         seat.value,
         tuple(sorted(str(card) for card in game.get_hand(seat))),
@@ -1146,6 +1152,7 @@ def _information_key(game: Game, seat: Seat) -> tuple:
         history,
         current_trick,
         bid_history,
+        public_belote,
         tuple(sorted(round_state.captured_points.items())),
     )
 
@@ -1209,7 +1216,7 @@ def _team_auction_supports_trump(game: Game, seat: Seat, trump: str) -> bool:
 
     Two conditions suffice:
     - Both members of the team each placed at least one bid on *trump*, OR
-    - The team placed exactly one bid on *trump* and it was high (≥ 110).
+    - The team placed exactly one bid on *trump* and it was high (≥ 100).
     """
     assert game.bid_state is not None
     team = TEAM_OF[seat]
@@ -1218,7 +1225,7 @@ def _team_auction_supports_trump(game: Game, seat: Seat, trump: str) -> bool:
         for entry in game.bid_state.history
         if entry["action"] == "bid" and entry["trump"] == trump and TEAM_OF[entry["seat"]] == team
     ]
-    if len(team_bids_on_trump) >= 2:
+    if len({entry["seat"] for entry in team_bids_on_trump}) == 2:
         return True
     if len(team_bids_on_trump) == 1 and team_bids_on_trump[0]["seat"] != seat:
         points = team_bids_on_trump[0]["points"]
@@ -1340,11 +1347,16 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
             if discard is not None:
                 return discard
         elif led_suit != trump:
-            # Play ace when we have it and no ruff
+            # Play the requested Ace unless the partner is already safe and no opponent can still ruff.
             requested_trick_ace = [card for card in legal_cards if card.rank == "A" and card.suit == led_suit]
             trick_has_been_ruffed = any(card.suit == trump for _, card in trick)
             if requested_trick_ace and not trick_has_been_ruffed:
-                return requested_trick_ace[0]
+                partner_is_winning = rules.trick_winner(trick, trump, led_suit) == PARTNER_OF[seat]
+                if not partner_is_winning or _opponents_may_hold_trump(game, seat, trump):
+                    return requested_trick_ace[0]
+                lower_cards = [card for card in legal_cards if card not in requested_trick_ace]
+                if lower_cards:
+                    return _best_discard(lower_cards, hand, trump)
 
     # Information-set Monte-Carlo tree search
     samples = _sample_hidden_hands(game, seat, MONTE_CARLO_SAMPLES if sample_count is None else sample_count)

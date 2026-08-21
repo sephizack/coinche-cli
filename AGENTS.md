@@ -163,4 +163,5 @@ Boundaries to preserve (these are hard rules for this package):
 
 - Line length 120 (see `pyproject.toml`).
 - Existing code comments and docstrings are in a mix of French and English; match the surrounding file. User-facing strings are French.
+- When code conflicts with documentation, comments, or docstrings, treat the executable implementation and its passing tests as the current source of truth. Do not change behavior solely to match prose; confirm the intended domain rule, then update stale prose instead.
 - Keep guidance and behavior in sync: if you change a check, a command, or an architectural rule, update this file and `README.md`.

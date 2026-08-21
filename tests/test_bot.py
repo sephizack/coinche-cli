@@ -18,6 +18,7 @@ from coinche.bot import (
     _auction_card_weights,
     _choose_discard_when_void,
     _find_least_useful_card,
+    _information_key,
     _is_partner_winning_trick,
     _known_void_suits,
     _opponent_may_ruff_suit,
@@ -871,6 +872,20 @@ def test_choose_discard_when_void_uses_cheapest_trump_when_partner_wins_and_only
     assert chosen in legal_cards
 
 
+def test_choose_discard_when_void_breaks_zero_point_trump_tie_by_rank() -> None:
+    hand = _cards("8♠", "7♠")
+    game, legal_cards = _void_discard_scenario(
+        Seat.W,
+        [(Seat.E, Card("A", "♥")), (Seat.S, Card("7", "♥")), (Seat.N, Card("8", "♥"))],
+        hand,
+    )
+
+    chosen = _choose_discard_when_void(game, Seat.W, hand, legal_cards, "♠")
+
+    assert chosen == Card("7", "♠")
+    assert chosen in legal_cards
+
+
 def test_choose_discard_when_void_cuts_with_lowest_trump_when_opponent_wins() -> None:
     hand = _cards("V♠", "7♠", "8♦")
     game, legal_cards = _void_discard_scenario(
@@ -1100,6 +1115,50 @@ def test_bot_cashes_the_requested_suit_ace_when_no_trump_is_in_the_trick() -> No
     game.round_state.hands[Seat.W] = _cards("A♥", "R♥")
 
     assert choose_card(game, Seat.W) == Card("A", "♥")
+
+
+def test_bot_plays_requested_ace_on_partner_win_while_opponents_may_hold_trump() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("10", "♥")), (Seat.W, Card("7", "♥"))]
+    game.round_state.hands[Seat.S] = _cards("A♥", "8♥")
+
+    assert choose_card(game, Seat.S) == Card("A", "♥")
+
+
+def test_bot_keeps_requested_ace_on_partner_win_when_opponents_are_out_of_trump() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("V", "♠")),
+                (Seat.E, Card("9", "♠")),
+                (Seat.S, Card("A", "♠")),
+                (Seat.W, Card("10", "♠")),
+            ],
+        },
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("R", "♠")),
+                (Seat.E, Card("D", "♠")),
+                (Seat.S, Card("8", "♠")),
+                (Seat.W, Card("7", "♠")),
+            ],
+        },
+    ]
+    game.round_state.current_trick = [(Seat.N, Card("10", "♥")), (Seat.W, Card("7", "♥"))]
+    game.round_state.hands[Seat.S] = _cards("A♥", "8♥")
+
+    assert choose_card(game, Seat.S) == Card("8", "♥")
 
 
 def test_card_choice_does_not_depend_on_any_real_hidden_hand() -> None:
@@ -1962,6 +2021,25 @@ def test_server_parser_accepts_only_positive_bot_sample_counts() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_information_key_tracks_announced_belote_without_exposing_hidden_holder() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trump = "♠"
+    game.round_state.current_trick = [(Seat.N, Card("R", "♠"))]
+    game.round_state.hands[Seat.S] = _cards("7♥")
+
+    hidden_holder = copy.deepcopy(game)
+    assert hidden_holder.round_state is not None
+    hidden_holder.round_state.belote_holder = "NS"
+    hidden_holder.round_state.belote_seat = Seat.N
+    assert _information_key(game, Seat.S) == _information_key(hidden_holder, Seat.S)
+
+    hidden_holder.round_state.belote_announced = 1
+    assert _information_key(game, Seat.S) != _information_key(hidden_holder, Seat.S)
+
+
 def test_team_auction_true_when_both_allies_bid_trump() -> None:
     game = Game()
     assert game.bid_state is not None
@@ -1987,6 +2065,29 @@ def test_team_auction_true_when_single_high_bid_by_partner() -> None:
         {"seat": Seat.W, "action": "pass"},
     ]
     assert _team_auction_supports_trump(game, Seat.N, "♠") is True
+
+
+def test_team_auction_false_when_single_partner_bid_is_only_one_hundred() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.S, "trump": "♠", "points": 100}
+    game.bid_state.history = [
+        {"seat": Seat.S, "action": "bid", "trump": "♠", "points": 100},
+    ]
+
+    assert _team_auction_supports_trump(game, Seat.N, "♠") is False
+
+
+def test_team_auction_false_when_only_one_ally_bid_trump_twice() -> None:
+    game = Game()
+    assert game.bid_state is not None
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 90}
+    game.bid_state.history = [
+        {"seat": Seat.N, "action": "bid", "trump": "♠", "points": 80},
+        {"seat": Seat.N, "action": "bid", "trump": "♠", "points": 90},
+    ]
+
+    assert _team_auction_supports_trump(game, Seat.S, "♠") is False
 
 
 def test_team_auction_false_when_single_high_bid_by_self() -> None:
