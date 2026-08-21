@@ -586,6 +586,22 @@ def test_bot_opens_eighty_with_valet_two_trumps_and_side_ace() -> None:
     assert action == {"action": "bid", "trump": "♠", "points": 80}
 
 
+def test_bot_passes_with_nine_two_trumps_and_side_ace() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("9♠", "7♠", "8♠", "A♥", "8♥", "7♦", "8♦", "7♣")
+
+    assert choose_bid(game, Seat.W) == {"action": "pass"}
+
+
+def test_bot_opens_eighty_with_trump_master_and_two_side_aces() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "A♥", "A♦", "8♥", "7♦", "8♦", "7♣")
+
+    assert choose_bid(game, Seat.W) == {"action": "bid", "trump": "♠", "points": 80}
+
+
 def test_forced_opener_keeps_the_first_trump_when_two_valets_tie() -> None:
     hand = _cards("V♠", "D♠", "8♠", "V♥", "8♥", "7♥", "A♦", "7♦")
 
@@ -601,13 +617,13 @@ def test_bot_passes_with_valet_two_trumps_but_no_side_ace() -> None:
     assert choose_bid(game, Seat.W) == {"action": "pass"}
 
 
-def test_bot_passes_with_valet_one_trump_and_side_ace() -> None:
-    # V + only 1 other trump + side Ace: not enough trumps to open.
+def test_bot_opens_with_valet_one_trump_and_two_side_aces() -> None:
+    # V + one other trump and two side Aces: the pair has three likely tricks.
     game = Game()
     assert game.round_state is not None
     game.round_state.hands[Seat.W] = _cards("V♠", "7♠", "A♥", "A♦", "8♥", "7♦", "8♦", "7♣")
 
-    assert choose_bid(game, Seat.W) == {"action": "pass"}
+    assert choose_bid(game, Seat.W) == {"action": "bid", "trump": "♠", "points": 80}
 
 
 def test_bot_does_not_fallback_when_someone_already_bid() -> None:

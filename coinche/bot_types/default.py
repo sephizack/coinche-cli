@@ -198,13 +198,13 @@ def _ceiling_value(ceiling: int | str | None) -> int:
 
 
 def _forced_opener_trump(hand: list[Card]) -> str | None:
-    """Find a trump suit where the hand has V + at least 2 other trumps + a side Ace.
+    """Find a playable minimum-contract suit after the normal evaluation passes.
 
     This is a last-resort opener: when nobody has bid and the normal
     evaluation decides to pass, the bot checks whether its hand is strong
-    enough to try an 80 anyway.  The Valet plus two more trumps give
-    reasonable trump control, and a side Ace promises at least one
-    additional trick.
+    enough to try an 80 anyway. A Valet plus two more trumps and a side Ace
+    give reasonable trump control. With only two trumps, two side Aces provide
+    the same minimum-contract guarantee.
     """
     best_trump: str | None = None
     best_count = 0
@@ -213,10 +213,10 @@ def _forced_opener_trump(hand: list[Card]) -> str | None:
         trump_ranks = {card.rank for card in trump_cards}
         if "V" not in trump_ranks:
             continue
-        if len(trump_cards) < 3:
-            continue
         side_aces = sum(1 for card in hand if card.rank == "A" and card.suit != trump)
-        if side_aces < 1:
+        has_three_trumps_and_ace = len(trump_cards) >= 3 and side_aces >= 1
+        has_two_trumps_and_two_aces = len(trump_cards) >= 2 and side_aces >= 2
+        if not has_three_trumps_and_ace and not has_two_trumps_and_two_aces:
             continue
         score = len(trump_cards) + side_aces
         if score > best_count:
