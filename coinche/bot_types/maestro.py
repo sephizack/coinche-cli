@@ -54,6 +54,9 @@ def _ten_bait_lead(game: Game, seat: Seat) -> Card | None:
 class MaestroBot(DefaultBot):
     """Bid boldly and use protected side-suit lengths to draw out a Ten."""
 
+    def _has_minimum_trump_for_forced_openner(self, hand: list[Card], trump: str) -> bool:
+        return any(card.suit == trump and card.rank in {"V", "9"} for card in hand)
+
     def choose_bid(self, game: Game, seat: Seat) -> dict:
         action = super().choose_bid(game, seat)
         if action.get("action") != "bid" or not isinstance(action.get("points"), int):

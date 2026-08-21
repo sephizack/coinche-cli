@@ -198,31 +198,8 @@ def _ceiling_value(ceiling: int | str | None) -> int:
 
 
 def _forced_opener_trump(hand: list[Card]) -> str | None:
-    """Find a playable minimum-contract suit after the normal evaluation passes.
-
-    This is a last-resort opener: when nobody has bid and the normal
-    evaluation decides to pass, the bot checks whether its hand is strong
-    enough to try an 80 anyway. A Valet plus two more trumps and a side Ace
-    give reasonable trump control. With only two trumps, two side Aces provide
-    the same minimum-contract guarantee.
-    """
-    best_trump: str | None = None
-    best_count = 0
-    for trump in rules.ALLOWED_TRUMPS:
-        trump_cards = [card for card in hand if card.suit == trump]
-        trump_ranks = {card.rank for card in trump_cards}
-        if "V" not in trump_ranks:
-            continue
-        side_aces = sum(1 for card in hand if card.rank == "A" and card.suit != trump)
-        has_three_trumps_and_ace = len(trump_cards) >= 3 and side_aces >= 1
-        has_two_trumps_and_two_aces = len(trump_cards) >= 2 and side_aces >= 2
-        if not has_three_trumps_and_ace and not has_two_trumps_and_two_aces:
-            continue
-        score = len(trump_cards) + side_aces
-        if score > best_count:
-            best_count = score
-            best_trump = trump
-    return best_trump
+    """Find the Default bot's playable minimum-contract suit."""
+    return DefaultBot()._forced_opener_trump(hand)
 
 
 def _hand_strength(hand: list[Card], trump: str) -> int:
@@ -396,6 +373,7 @@ def _choose_normal_bid(
     best_trump: str,
     opening_ceilings: dict[str, int | str | None],
     options: dict,
+    bot: DefaultBot | None = None,
 ) -> dict:
     """Choose a normal bid or pass, excluding Coinche and Surcoinche."""
     last_partner_bid = next(
@@ -412,7 +390,7 @@ def _choose_normal_bid(
         return own_action
 
     if options["current_highest_bid"] is None:
-        fallback_trump = _forced_opener_trump(hand)
+        fallback_trump = bot._forced_opener_trump(hand) if bot is not None else _forced_opener_trump(hand)
         if fallback_trump is not None:
             trump_ranks = {card.rank for card in hand if card.suit == fallback_trump}
             openner_bid = rules.BID_MIN
@@ -454,8 +432,8 @@ def _choose_counter_action(
     return None
 
 
-def choose_bid(game: Game, seat: Seat) -> dict:
-    """Choose a legal, conservative auction action from the bot's own hand."""
+def _choose_bid(game: Game, seat: Seat, bot: DefaultBot) -> dict:
+    """Choose a legal, conservative auction action for a DefaultBot strategy."""
     options = game.bid_options_for(seat)
     hand = game.get_hand(seat)
     strengths = {trump: _hand_strength(hand, trump) for trump in rules.ALLOWED_TRUMPS}
@@ -477,7 +455,7 @@ def choose_bid(game: Game, seat: Seat) -> dict:
     counter_action = None
     if current:
         counter_action = _choose_counter_action(hand, options, current, strengths)
-    normal_action = _choose_normal_bid(game, seat, hand, best_trump, opening_ceilings, options)
+    normal_action = _choose_normal_bid(game, seat, hand, best_trump, opening_ceilings, options, bot)
     if counter_action is not None and normal_action.get("points") != rules.CAPOT:
         return counter_action
     if (
@@ -1409,8 +1387,30 @@ class DefaultBot:
     def __init__(self, sample_count: int = MONTE_CARLO_SAMPLES) -> None:
         self.sample_count = sample_count
 
+    def _has_minimum_trump_for_forced_openner(self, hand: list[Card], trump: str) -> bool:
+        return any(card.suit == trump and card.rank == "V" for card in hand)
+
+    def _forced_opener_trump(self, hand: list[Card]) -> str | None:
+        """Find a playable minimum-contract suit after the normal evaluation passes."""
+        best_trump: str | None = None
+        best_count = 0
+        for trump in rules.ALLOWED_TRUMPS:
+            trump_cards = [card for card in hand if card.suit == trump]
+            if not self._has_minimum_trump_for_forced_openner(hand, trump):
+                continue
+            side_aces = sum(1 for card in hand if card.rank == "A" and card.suit != trump)
+            has_three_trumps_and_ace = len(trump_cards) >= 3 and side_aces >= 1
+            has_two_trumps_and_two_aces = len(trump_cards) >= 2 and side_aces >= 2
+            if not has_three_trumps_and_ace and not has_two_trumps_and_two_aces:
+                continue
+            score = len(trump_cards) + side_aces
+            if score > best_count:
+                best_count = score
+                best_trump = trump
+        return best_trump
+
     def choose_bid(self, game: Game, seat: Seat) -> dict:
-        return choose_bid(game, seat)
+        return _choose_bid(game, seat, self)
 
     def choose_card(self, game: Game, seat: Seat) -> Card:
         return choose_card(game, seat, self.sample_count)

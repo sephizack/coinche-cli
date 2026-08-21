@@ -594,6 +594,14 @@ def test_bot_passes_with_nine_two_trumps_and_side_ace() -> None:
     assert choose_bid(game, Seat.W) == {"action": "pass"}
 
 
+def test_maestro_opens_eighty_with_nine_two_trumps_and_side_ace() -> None:
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.W] = _cards("9♠", "7♠", "8♠", "A♥", "8♥", "7♦", "8♦", "7♣")
+
+    assert maestro.MaestroBot().choose_bid(game, Seat.W) == {"action": "bid", "trump": "♠", "points": 80}
+
+
 def test_bot_opens_eighty_with_trump_master_and_two_side_aces() -> None:
     game = Game()
     assert game.round_state is not None
