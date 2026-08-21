@@ -724,6 +724,7 @@ def test_default_bot_loads_points_when_partner_first_leads_side_master() -> None
 
     assert choose_card(game, Seat.S) == Card("7", "♣")
 
+
 def test_default_bot_loads_points_when_partner_first_leads_side_master_second_case() -> None:
     # N (partner) leads A♥ (master of ♥), W (opponent) plays 7♥.
     # Trumps (♠) are still outstanding in opponents' hands. E is 4th and could cut,
