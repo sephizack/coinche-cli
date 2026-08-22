@@ -958,6 +958,19 @@ def test_choose_card_discards_instead_of_undertrumping_when_overtrump_is_impossi
     assert choose_card(game, Seat.S) == Card("7", "♦")
 
 
+def test_choose_card_keeps_ten_when_a_lower_non_trump_can_be_discarded() -> None:
+    hand = _cards("10♦", "7♣")
+    game, legal_cards = _void_discard_scenario(
+        Seat.S,
+        [(Seat.N, Card("A", "♥")), (Seat.E, Card("V", "♠"))],
+        hand,
+    )
+
+    assert legal_cards == hand
+    assert choose_card(game, Seat.S) == Card("7", "♣")
+    assert choose_card(game, Seat.S, "maestro") == Card("7", "♣")
+
+
 def test_choose_discard_when_void_loads_points_on_first_suit_lead() -> None:
     hand = _cards("9♠", "7♠", "10♦")
     game, legal_cards = _void_discard_scenario(

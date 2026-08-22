@@ -518,6 +518,32 @@ const ChatPanel = {
 // =========================================================================
 // Root application
 // =========================================================================
+const BOT_TYPE_DETAILS = {
+  toto: {
+    label: "Toto",
+    description: "Algorithme conçu par Tony. Évalue ses annonces et sélectionne ses cartes avec prudence.",
+  },
+  maestro: {
+    label: "Maestro",
+    description: "Basé sur le bot Toto, plus audacieux il possède quelques techniques supplémentaires plus risqués.",
+  },
+  cloclo: {
+    label: "Cloclo",
+    description: "Bot entièrement créé par IA, sans intervention humaine. Qui sera le plus fort 🤖",
+  },
+  noob: {
+    label: "Noob",
+    description: "Jouez avec quelqu'un qui vient tout juste d'apprendre la Coinche. Bonne chance !",
+  },
+};
+
+function botTypeDetail(botType) {
+  return BOT_TYPE_DETAILS[botType] || {
+    label: botType,
+    description: "Strategie de bot disponible pour cette table.",
+  };
+}
+
 const App = {
   components: { Card, SeatPanel, BidPanel, ChatPanel },
   setup() {
@@ -525,6 +551,7 @@ const App = {
     const snapshot = ref(null); // latest full snapshot (source of truth)
     const toasts = ref([]); // transient messages
     const chatOpen = ref(window.innerWidth >= 1024); // docked open on desktop
+    const botTypesInfoOpen = ref(false);
     // This belongs to App, not ChatPanel: the round recap temporarily unmounts
     // the panel, but must never discard a message currently being composed.
     const chatDraft = ref("");
@@ -1597,15 +1624,24 @@ const App = {
       },
     );
 
-    onMounted(connect);
+    function closeBotTypesInfoOnEscape(event) {
+      if (event.key === "Escape") botTypesInfoOpen.value = false;
+    }
+
+    onMounted(() => {
+      window.addEventListener("keydown", closeBotTypesInfoOnEscape);
+      connect();
+    });
     onUnmounted(() => {
       if (countdownInterval) clearInterval(countdownInterval);
+      window.removeEventListener("keydown", closeBotTypesInfoOnEscape);
     });
 
     return {
       snapshot,
       toasts,
       chatOpen,
+      botTypesInfoOpen,
       chatDraft,
       unread,
       bidSending,
@@ -1663,6 +1699,7 @@ const App = {
       lobbyTables,
       lobbyLoaded,
       availableBotTypes,
+      botTypeDetail,
       tableOptionsOpen,
       tableOptions,
       discordNotificationsEnabled,
@@ -1730,6 +1767,30 @@ const App = {
       <strong class="bid-effect__value">{{ bidAnnouncement.label }}</strong>
     </div>
 
+    <div v-if="botTypesInfoOpen" class="bot-types-dialog" role="presentation" @click.self="botTypesInfoOpen = false">
+      <section class="bot-types-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="bot-types-title"
+               data-testid="bot-types-info-panel">
+        <div class="bot-types-dialog__header">
+          <div>
+            <p class="bot-types-dialog__eyebrow">Strategies disponibles</p>
+            <h2 id="bot-types-title">Types de bots</h2>
+          </div>
+          <button class="bot-types-dialog__close" type="button" aria-label="Fermer les types de bots"
+                  @click="botTypesInfoOpen = false">x</button>
+        </div>
+        <aside class="bot-types-dialog__notice" role="note">
+          <strong>Comme un vrai joueur</strong>
+          <span>Tous les bots jouent uniquement avec les informations publiques de la partie. Ils n'ont jamais accès aux mains adverses.</span>
+        </aside>
+        <div class="bot-types-dialog__list">
+          <article v-for="botType in availableBotTypes" :key="botType" class="bot-types-dialog__item">
+            <h3>{{ botTypeDetail(botType).label }}</h3>
+            <p>{{ botTypeDetail(botType).description }}</p>
+          </article>
+        </div>
+      </section>
+    </div>
+
     <!-- ================= LOBBY (not joined) ================= -->
     <div v-if="!joined" class="lobby">
       <div class="lobby__inner">
@@ -1746,6 +1807,11 @@ const App = {
           <a v-if="isMetaClient" class="pairing-badge" href="/pair">
             <span class="pairing-badge__label">Acces rapide</span>
           </a>
+          <button class="pairing-badge pairing-badge--button" type="button" data-testid="bot-types-info-header"
+                  @click="botTypesInfoOpen = true">
+            <span class="info-icon" aria-hidden="true">i</span>
+            <span class="pairing-badge__label">Types de bots</span>
+          </button>
         </header>
 
         <!-- Before the first snapshot lands the table list is unknown; show a
@@ -1770,13 +1836,18 @@ const App = {
               <label>Nom de la table
                 <input v-model="tableOptions.name" maxlength="20" @input="tableNameEdited = true" />
               </label>
-              <label>Type de bot
-                <select v-model="tableOptions.botType">
+              <div class="table-options__field">
+                <div class="table-options__label-row">
+                  <label for="table-bot-type">Type de bot</label>
+                  <button class="info-icon-button" type="button" data-testid="bot-types-info-option"
+                          aria-label="En savoir plus sur les types de bots" @click="botTypesInfoOpen = true">i</button>
+                </div>
+                <select id="table-bot-type" v-model="tableOptions.botType">
                   <option v-for="botType in availableBotTypes" :key="botType" :value="botType">
-                    {{ botType === "toto" ? "Toto" : botType === "maestro" ? "Maestro - audacieux" : botType === "cloclo" ? "Cloclo - IA offensive" : botType }}
+                    {{ botTypeDetail(botType).label }}
                   </option>
                 </select>
-              </label>
+              </div>
               <div class="table-options__setting">
                 <span>Coincher bloque les annonces</span>
                 <button class="table-options__chip" type="button"

@@ -1627,6 +1627,38 @@ body > .lobby {
   display: grid;
   gap: var(--sp-1);
 }
+.table-options__field {
+  display: grid;
+  gap: var(--sp-1);
+}
+.table-options__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.info-icon-button,
+.info-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--gold-soft);
+  font-family: Georgia, serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.info-icon-button {
+  padding: 0;
+  background: transparent;
+}
+.info-icon-button:hover {
+  background: rgba(212, 175, 55, 0.2);
+  color: var(--gold);
+}
 .table-options input,
 .table-options select {
   width: 100%;
@@ -1745,6 +1777,118 @@ body > .lobby {
   display: flex;
   justify-content: center;
   width: 100%;
+}
+.pairing-badge--button {
+  appearance: none;
+}
+.pairing-badge--button .info-icon {
+  width: 18px;
+  height: 18px;
+  font-size: 0.72rem;
+}
+
+.bot-types-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6);
+  background: var(--overlay-scrim);
+}
+.bot-types-dialog__panel {
+  width: min(620px, 100%);
+  max-height: min(680px, 100%);
+  overflow: auto;
+  padding: var(--sp-6);
+  border: 2px solid var(--gold);
+  border-radius: var(--radius-panel);
+  background: var(--panel-bg-solid);
+  box-shadow: var(--shadow-panel);
+  font-family: system-ui, sans-serif;
+}
+.bot-types-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.bot-types-dialog__header h2,
+.bot-types-dialog__item h3,
+.bot-types-dialog__item p {
+  margin: 0;
+}
+.bot-types-dialog__header h2 {
+  color: var(--gold);
+  font-family: Georgia, serif;
+  font-size: 1.6rem;
+}
+.bot-types-dialog__eyebrow {
+  margin: 0 0 var(--sp-1);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.bot-types-dialog__close {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(245, 245, 245, 0.35);
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: var(--text-on-felt);
+  font: inherit;
+  font-size: 1.15rem;
+}
+.bot-types-dialog__close:hover {
+  border-color: var(--gold);
+  color: var(--gold-soft);
+}
+.bot-types-dialog__notice {
+  display: grid;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 3px solid var(--team-nous);
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  background: rgba(38, 198, 218, 0.12);
+  color: var(--text-on-felt);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.bot-types-dialog__notice strong {
+  color: var(--team-nous);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.bot-types-dialog__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+.bot-types-dialog__item {
+  min-height: 128px;
+  padding: var(--sp-4);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: var(--radius-card);
+  background: rgba(255, 255, 255, 0.04);
+}
+.bot-types-dialog__item h3 {
+  margin-bottom: var(--sp-2);
+  color: var(--gold-soft);
+  font-family: Georgia, serif;
+  font-size: 1.1rem;
+}
+.bot-types-dialog__item p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 .team-picker {
   display: grid;
@@ -2232,6 +2376,17 @@ body > .lobby {
    Responsive: mobile portrait (<600) — vertical recompose, NO perspective
    ========================================================================= */
 @media (max-width: 599px) {
+  .bot-types-dialog {
+    align-items: end;
+    padding: var(--sp-3);
+  }
+  .bot-types-dialog__panel {
+    max-height: calc(100% - var(--sp-6));
+    padding: var(--sp-4);
+  }
+  .bot-types-dialog__list {
+    grid-template-columns: 1fr;
+  }
   .felt {
     transform: none; /* A4: perspective removed on mobile portrait */
     width: 96%;
