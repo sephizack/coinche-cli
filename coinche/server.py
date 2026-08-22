@@ -169,14 +169,17 @@ def _post_discord_table_created(webhook_url: str, table_key: str, player_name: s
     return None
 
 
-def _patch_discord_table_closed(webhook_url: str, table_key: str, message_id: str) -> None:
+def _patch_discord_table_closed(webhook_url: str, table_key: str, message_id: str, creator_name: str | None) -> None:
     """Update a Discord notification to indicate that the table is closed and remove components."""
+    description = f"La table **{table_key}** est fermée."
+    if creator_name:
+        description = f"La table **{table_key}** créée par **{creator_name}** est fermée."
     body = {
         "embeds": [
             {
                 "title": f"🔒 [Fermée] Table {table_key}",
                 "color": _DISCORD_TABLE_CLOSED_COLOR,
-                "description": f"La table **{table_key}** est fermée.",
+                "description": description,
             }
         ],
         "components": [],
@@ -198,21 +201,24 @@ def _patch_discord_table_closed(webhook_url: str, table_key: str, message_id: st
 async def _notify_discord_table_created(webhook_url: str, table: Table, player_name: str, creator_seat: Seat) -> None:
     """Run the blocking webhook call away from the game server's event loop."""
     try:
+        table.discord_creator_name = player_name
         msg_id = await asyncio.to_thread(
             _post_discord_table_created, webhook_url, table.table_key, player_name, creator_seat
         )
         if msg_id:
             table.discord_message_id = msg_id
             if table.is_closed or table.table_key not in TABLES:
-                await _notify_discord_table_closed(webhook_url, table.table_key, msg_id)
+                await _notify_discord_table_closed(webhook_url, table.table_key, msg_id, table.discord_creator_name)
     except Exception:  # noqa: BLE001 - a webhook failure must never affect a game session
         logger.exception("[%s] Echec inattendu de la notification Discord", table.table_key)
 
 
-async def _notify_discord_table_closed(webhook_url: str, table_key: str, message_id: str) -> None:
+async def _notify_discord_table_closed(
+    webhook_url: str, table_key: str, message_id: str, creator_name: str | None
+) -> None:
     """Run the blocking webhook patch call away from the game server's event loop."""
     try:
-        await asyncio.to_thread(_patch_discord_table_closed, webhook_url, table_key, message_id)
+        await asyncio.to_thread(_patch_discord_table_closed, webhook_url, table_key, message_id, creator_name)
     except Exception:  # noqa: BLE001 - a webhook failure must never affect a game session
         logger.exception("[%s] Echec inattendu de la mise a jour Discord", table_key)
 
@@ -222,7 +228,12 @@ async def _remove_table_and_notify(table: Table) -> None:
     await remove_table(table.table_key)
     if DISCORD_NOTIF_CHANNEL_POST_URL and table.discord_message_id:
         asyncio.create_task(
-            _notify_discord_table_closed(DISCORD_NOTIF_CHANNEL_POST_URL, table.table_key, table.discord_message_id)
+            _notify_discord_table_closed(
+                DISCORD_NOTIF_CHANNEL_POST_URL,
+                table.table_key,
+                table.discord_message_id,
+                table.discord_creator_name,
+            )
         )
 
 

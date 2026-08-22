@@ -132,7 +132,9 @@ def test_discord_table_closed_patches_expected_embed(monkeypatch) -> None:
 
     monkeypatch.setattr(server.urllib.request, "urlopen", fake_urlopen)
 
-    server._patch_discord_table_closed("https://discord.example/webhook?with_components=true", "coinche1", "msg_42")
+    server._patch_discord_table_closed(
+        "https://discord.example/webhook?with_components=true", "coinche1", "msg_42", "Alice"
+    )
 
     request = captured["request"]
     assert isinstance(request, server.urllib.request.Request)
@@ -144,7 +146,7 @@ def test_discord_table_closed_patches_expected_embed(monkeypatch) -> None:
         {
             "title": "🔒 [Fermée] Table coinche1",
             "color": server._DISCORD_TABLE_CLOSED_COLOR,
-            "description": "La table **coinche1** est fermée.",
+            "description": "La table **coinche1** créée par **Alice** est fermée.",
         }
     ]
     assert body["components"] == []
@@ -195,10 +197,10 @@ def test_discord_notification_is_scheduled_only_for_notified_new_tables(monkeypa
 
 
 def test_table_removal_schedules_discord_close_notification(monkeypatch) -> None:
-    closed_notifications: list[tuple[str, str, str]] = []
+    closed_notifications: list[tuple[str, str, str, str | None]] = []
 
-    async def fake_notify_closed(webhook_url: str, table_key: str, message_id: str) -> None:
-        closed_notifications.append((webhook_url, table_key, message_id))
+    async def fake_notify_closed(webhook_url: str, table_key: str, message_id: str, creator_name: str | None) -> None:
+        closed_notifications.append((webhook_url, table_key, message_id, creator_name))
 
     monkeypatch.setattr(server, "_notify_discord_table_closed", fake_notify_closed)
     monkeypatch.setattr(server, "DISCORD_NOTIF_CHANNEL_POST_URL", "https://discord.example")
@@ -206,6 +208,7 @@ def test_table_removal_schedules_discord_close_notification(monkeypatch) -> None
     async def scenario() -> None:
         table = Table("test_close")
         table.discord_message_id = "msg_999"
+        table.discord_creator_name = "Alice"
         server.TABLES["test_close"] = table
 
         await server._remove_table_and_notify(table)
@@ -213,16 +216,16 @@ def test_table_removal_schedules_discord_close_notification(monkeypatch) -> None
         assert "test_close" not in server.TABLES
         assert table.is_closed
         await asyncio.sleep(0)
-        assert closed_notifications == [("https://discord.example", "test_close", "msg_999")]
+        assert closed_notifications == [("https://discord.example", "test_close", "msg_999", "Alice")]
 
     asyncio.run(scenario())
 
 
 def test_notify_discord_table_created_stores_message_id_and_handles_fast_close(monkeypatch) -> None:
-    closed_notifications: list[tuple[str, str, str]] = []
+    closed_notifications: list[tuple[str, str, str, str | None]] = []
 
-    async def fake_notify_closed(webhook_url: str, table_key: str, message_id: str) -> None:
-        closed_notifications.append((webhook_url, table_key, message_id))
+    async def fake_notify_closed(webhook_url: str, table_key: str, message_id: str, creator_name: str | None) -> None:
+        closed_notifications.append((webhook_url, table_key, message_id, creator_name))
 
     monkeypatch.setattr(server, "_notify_discord_table_closed", fake_notify_closed)
     monkeypatch.setattr(server, "_post_discord_table_created", lambda *args: "msg_fast_123")
@@ -234,6 +237,7 @@ def test_notify_discord_table_created_stores_message_id_and_handles_fast_close(m
         # Normal creation notification stores message id
         await server._notify_discord_table_created("https://discord.example", table, "Alice", Seat.N)
         assert table.discord_message_id == "msg_fast_123"
+        assert table.discord_creator_name == "Alice"
         assert closed_notifications == []
 
         # Table is closed before notify completes
@@ -241,7 +245,8 @@ def test_notify_discord_table_created_stores_message_id_and_handles_fast_close(m
         table2.is_closed = True
         await server._notify_discord_table_created("https://discord.example", table2, "Bob", Seat.N)
         assert table2.discord_message_id == "msg_fast_123"
-        assert closed_notifications == [("https://discord.example", "already_closed", "msg_fast_123")]
+        assert table2.discord_creator_name == "Bob"
+        assert closed_notifications == [("https://discord.example", "already_closed", "msg_fast_123", "Bob")]
 
     asyncio.run(scenario())
 

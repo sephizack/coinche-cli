@@ -206,6 +206,7 @@ class Table:
         self.spectators: dict[str, SpectatorSession] = {}
         self.game: Game | None = None
         self.discord_message_id: str | None = None
+        self.discord_creator_name: str | None = None
         self.is_closed: bool = False
 
     def bot_think_delay(self) -> float:
