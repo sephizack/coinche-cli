@@ -62,6 +62,7 @@ TABLE_LISTING = "table_listing"
 LEFT = "left"
 TURN_TIMEOUT = "turn_timeout"
 BOT_TYPE_CHANGED = "bot_type_changed"
+SPECTATOR_COUNT = "spectator_count"
 ERROR = "error"
 
 SERVER_MESSAGE_TYPES = {
@@ -85,6 +86,7 @@ SERVER_MESSAGE_TYPES = {
     LEFT,
     TURN_TIMEOUT,
     BOT_TYPE_CHANGED,
+    SPECTATOR_COUNT,
     ERROR,
     CHAT,  # chat is also broadcast server -> client
 }

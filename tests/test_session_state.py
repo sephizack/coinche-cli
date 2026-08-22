@@ -35,6 +35,16 @@ def _join(state: ClientState) -> ApplyResult:
         {
             "table_key": "table1",
             "seat": "S",
+            "table_options": {
+                "target_score": 1000,
+                "coinche_blocks_bidding": True,
+                "bot_type": "toto",
+                "trick_pause_seconds": 2.5,
+                "round_pause_seconds": 5.0,
+                "bot_think_seconds": 1.0,
+                "turn_timeout_seconds": 300.0,
+            },
+            "spectator_count": 2,
             "players": [
                 {"seat": "N", "name": "Nord", "team_name": "Nous"},
                 {"seat": "E", "name": "Est"},
@@ -57,6 +67,8 @@ def test_joined_populates_identity_and_players():
     assert result == ApplyResult(action_requested=False)
     assert state.joined_once is True
     assert state.table_key == "table1"
+    assert state.table_options["target_score"] == 1000
+    assert state.spectator_count == 2
     assert state.seat == Seat.S
     assert state.players == {Seat.N: "Nord", Seat.E: "Est", Seat.S: "Moi", Seat.W: "Ouest"}
     assert state.team_of == {Seat.N: "NS", Seat.E: "EW", Seat.S: "NS", Seat.W: "EW"}
@@ -85,6 +97,8 @@ def test_left_resets_state_back_to_lobby():
     assert state.joined_once is False
     assert state.seat is None
     assert state.table_key is None
+    assert state.table_options == {}
+    assert state.spectator_count == 0
     assert state.players == {}
     assert state.hand == []
     assert state.whose_turn is None
@@ -128,6 +142,16 @@ def test_bot_types_are_projected_and_updated_per_seat():
 
     assert state.bot_types == {Seat.E: "maestro"}
     assert snapshot_to_dict(state)["bot_types"] == {"E": "maestro"}
+
+
+def test_spectator_count_is_projected_and_refreshed():
+    state = ClientState()
+    _join(state)
+
+    apply_message(state, protocol.SPECTATOR_COUNT, {"count": 3})
+
+    assert state.spectator_count == 3
+    assert snapshot_to_dict(state)["spectator_count"] == 3
 
 
 def test_table_listing_stored_and_projected():
@@ -958,6 +982,7 @@ def test_snapshot_is_json_serializable_and_decoded():
     assert snap["dealer_seat"] == "W"
     assert set(snap["hand"]) == {"7♠", "A♥"}
     assert snap["can_fill_bots"] is False
+    assert snap["table_options"]["bot_type"] == "toto"
 
 
 def test_snapshot_includes_last_round_contract():

@@ -121,12 +121,64 @@ button {
   flex: 0 0 auto;
 }
 
+.topbar__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
 .topbar__brand {
   font-size: 1.35rem;
   font-weight: bold;
   letter-spacing: 0.06em;
   color: var(--gold);
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+.topbar__table-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-on-felt);
+  font-family: system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar__info {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--gold-soft);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--gold-soft);
+  font-family: Georgia, serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.topbar__info:hover,
+.topbar__info[aria-expanded="true"] {
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.18);
+  color: var(--gold);
+}
+.topbar__spectators {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  min-height: 28px;
+  color: var(--gold-soft);
+  font-family: system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .topbar__favicon {
   height: 1.1em;
@@ -416,6 +468,9 @@ button {
   display: grid;
   place-items: center;
 }
+.seat__slot .card {
+  display:none
+}
 .bid-mark {
   padding: var(--sp-1) var(--sp-3);
   border-radius: var(--radius-card);
@@ -465,16 +520,16 @@ button {
 }
 /* Each played card offset slightly toward its origin seat. */
 .trick-card--south {
-  transform: translate(-50%, 10%);
+  transform: translate(-50%, 35%);
 }
 .trick-card--north {
-  transform: translate(-50%, -80%);
+  transform: translate(-50%, -105%);
 }
 .trick-card--west {
-  transform: translate(-90%, -35%) rotate(-6deg);
+  transform: translate(-115%, -35%) rotate(-6deg);
 }
 .trick-card--east {
-  transform: translate(-10%, -35%) rotate(6deg);
+  transform: translate(15%, -35%) rotate(6deg);
 }
 /* Vue applies these classes whenever a newly played card is inserted into the
    trick. Each direction begins near its player's seat and lands at its fixed
@@ -498,7 +553,7 @@ button {
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 10%) scale(1);
+    transform: translate(-50%, 35%) scale(1);
   }
 }
 @keyframes trick-card-enter-north {
@@ -508,7 +563,7 @@ button {
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -80%) scale(1);
+    transform: translate(-50%, -105%) scale(1);
   }
 }
 @keyframes trick-card-enter-west {
@@ -518,7 +573,7 @@ button {
   }
   to {
     opacity: 1;
-    transform: translate(-90%, -35%) scale(1) rotate(-6deg);
+    transform: translate(-115%, -35%) scale(1) rotate(-6deg);
   }
 }
 @keyframes trick-card-enter-east {
@@ -528,7 +583,7 @@ button {
   }
   to {
     opacity: 1;
-    transform: translate(-10%, -35%) scale(1) rotate(6deg);
+    transform: translate(15%, -35%) scale(1) rotate(6deg);
   }
 }
 .trick-area--sweeping .trick-card {
@@ -1861,6 +1916,85 @@ body > .lobby {
   font-size: 0.9rem;
   line-height: 1.45;
 }
+
+.table-info-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6);
+  background: var(--overlay-scrim);
+}
+.table-info-dialog__panel {
+  width: min(460px, 100%);
+  max-height: min(680px, 100%);
+  overflow: auto;
+  padding: var(--sp-6);
+  border: 2px solid var(--gold);
+  border-radius: var(--radius-panel);
+  background: var(--panel-bg-solid);
+  box-shadow: var(--shadow-panel);
+  font-family: system-ui, sans-serif;
+}
+.table-info-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.table-info-dialog__eyebrow {
+  margin: 0 0 var(--sp-1);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.table-info-dialog__header h2 {
+  margin: 0;
+  color: var(--gold);
+  font-family: Georgia, serif;
+  font-size: 1.6rem;
+}
+.table-info-dialog__close {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(245, 245, 245, 0.35);
+  border-radius: var(--radius-card);
+  background: transparent;
+  color: var(--text-on-felt);
+  font: inherit;
+  font-size: 1.15rem;
+}
+.table-info-dialog__close:hover {
+  border-color: var(--gold);
+  color: var(--gold-soft);
+}
+.table-info-dialog__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+}
+.table-info-dialog__list dt,
+.table-info-dialog__list dd {
+  margin: 0;
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid rgba(245, 245, 245, 0.12);
+}
+.table-info-dialog__list dt {
+  color: var(--text-muted);
+}
+.table-info-dialog__list dd {
+  color: var(--text-on-felt);
+  font-weight: 700;
+  text-align: right;
+}
 .bot-types-dialog__notice strong {
   color: var(--team-nous);
   font-size: 0.82rem;
@@ -2386,6 +2520,42 @@ body > .lobby {
   }
   .bot-types-dialog__list {
     grid-template-columns: 1fr;
+  }
+  .table-info-dialog {
+    align-items: end;
+    padding: var(--sp-3);
+  }
+  .table-info-dialog__panel {
+    width: 100%;
+    max-height: calc(100% - var(--sp-6));
+    padding: var(--sp-4);
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  }
+  .topbar__brand {
+    display: none;
+  }
+  .topbar__identity {
+    flex: 1 1 auto;
+  }
+  .topbar__table-title {
+    font-size: 0.88rem;
+  }
+  .topbar {
+    gap: var(--sp-2);
+    padding-inline: var(--sp-2);
+  }
+  .scoreboard {
+    gap: var(--sp-1);
+  }
+  .scoreboard__team {
+    gap: var(--sp-1);
+    padding-inline: var(--sp-2);
+  }
+  .scoreboard__label {
+    display: none;
+  }
+  .chat-toggle {
+    padding: var(--sp-2);
   }
   .felt {
     transform: none; /* A4: perspective removed on mobile portrait */

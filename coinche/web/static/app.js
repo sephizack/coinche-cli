@@ -556,6 +556,7 @@ const App = {
     const toasts = ref([]); // transient messages
     const chatOpen = ref(window.innerWidth >= 1024); // docked open on desktop
     const botTypesInfoOpen = ref(false);
+    const tableInfoOpen = ref(false);
     // This belongs to App, not ChatPanel: the round recap temporarily unmounts
     // the panel, but must never discard a message currently being composed.
     const chatDraft = ref("");
@@ -1095,6 +1096,29 @@ const App = {
       const sc = (snapshot.value && snapshot.value.cumulative_scores) || {};
       return sc[otherTeam.value] || 0;
     });
+    const spectatorCount = computed(() =>
+      Number.isInteger(snapshot.value && snapshot.value.spectator_count)
+        ? snapshot.value.spectator_count
+        : 0,
+    );
+    const tableInfo = computed(() => {
+      const options = (snapshot.value && snapshot.value.table_options) || {};
+      const duration = (seconds) => {
+        if (typeof seconds !== "number") return "Non défini";
+        if (seconds < 60) return `${seconds} s`;
+        const minutes = Math.floor(seconds / 60);
+        const remainder = seconds % 60;
+        return remainder ? `${minutes} min ${remainder} s` : `${minutes} min`;
+      };
+      return [
+        { label: "Score à atteindre", value: options.target_score ?? "Non défini" },
+        {
+          label: "Coinche bloque les annonces",
+          value: options.coinche_blocks_bidding === false ? "Non" : "Oui",
+        },
+        { label: "Bot par défaut", value: botTypeDetail(options.bot_type || "toto").label },
+      ];
+    });
 
     // Seats arranged into visual slots (local = south), with all per-seat data.
     const seats = computed(() => {
@@ -1628,17 +1652,19 @@ const App = {
       },
     );
 
-    function closeBotTypesInfoOnEscape(event) {
-      if (event.key === "Escape") botTypesInfoOpen.value = false;
+    function closeInfoPanelsOnEscape(event) {
+      if (event.key !== "Escape") return;
+      botTypesInfoOpen.value = false;
+      tableInfoOpen.value = false;
     }
 
     onMounted(() => {
-      window.addEventListener("keydown", closeBotTypesInfoOnEscape);
+      window.addEventListener("keydown", closeInfoPanelsOnEscape);
       connect();
     });
     onUnmounted(() => {
       if (countdownInterval) clearInterval(countdownInterval);
-      window.removeEventListener("keydown", closeBotTypesInfoOnEscape);
+      window.removeEventListener("keydown", closeInfoPanelsOnEscape);
     });
 
     return {
@@ -1646,6 +1672,7 @@ const App = {
       toasts,
       chatOpen,
       botTypesInfoOpen,
+      tableInfoOpen,
       chatDraft,
       unread,
       bidSending,
@@ -1680,6 +1707,8 @@ const App = {
       teamPlayers,
       nousScore,
       euxScore,
+      spectatorCount,
+      tableInfo,
       seats,
       trickCards,
       lastTrickCells,
@@ -1796,6 +1825,26 @@ const App = {
             <p>{{ botTypeDetail(botType).description }}</p>
           </article>
         </div>
+      </section>
+    </div>
+
+    <div v-if="tableInfoOpen" class="table-info-dialog" role="presentation" @click.self="tableInfoOpen = false">
+      <section class="table-info-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="table-info-title"
+               data-testid="table-info-panel">
+        <div class="table-info-dialog__header">
+          <div>
+            <p class="table-info-dialog__eyebrow">Configuration de la table</p>
+            <h2 id="table-info-title">Table {{ snapshot.table_key }}</h2>
+          </div>
+          <button class="table-info-dialog__close" type="button" aria-label="Fermer les informations de la table"
+                  @click="tableInfoOpen = false">x</button>
+        </div>
+        <dl class="table-info-dialog__list">
+          <template v-for="setting in tableInfo" :key="setting.label">
+            <dt>{{ setting.label }}</dt>
+            <dd>{{ setting.value }}</dd>
+          </template>
+        </dl>
       </section>
     </div>
 
@@ -2011,7 +2060,18 @@ const App = {
     <!-- ================= TABLE VIEW ================= -->
     <template v-else>
       <header class="topbar">
-        <span class="topbar__brand"><img src="favicon.ico" alt="" class="topbar__favicon" /> Coinche</span>
+        <div class="topbar__identity">
+          <span class="topbar__brand"><img src="favicon.ico" alt="" class="topbar__favicon" /> Coinche</span>
+          <h1 class="topbar__table-title">Table {{ snapshot.table_key }}</h1>
+          <button class="topbar__info" type="button" data-testid="table-info"
+                  title="Informations de la table" aria-label="Ouvrir les informations de la table"
+                  :aria-expanded="tableInfoOpen" @click="tableInfoOpen = true">i</button>
+          <span class="topbar__spectators" data-testid="spectator-count"
+                :aria-label="spectatorCount + ' spectateur' + (spectatorCount > 1 ? 's' : '')">
+            <span aria-hidden="true">👁</span>
+            <span>{{ spectatorCount }}</span>
+          </span>
+        </div>
         <div class="scoreboard">
           <span class="scoreboard__team scoreboard__team--nous">
             <span class="scoreboard__label">{{ nousLabel }}</span>

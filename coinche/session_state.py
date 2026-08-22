@@ -42,6 +42,10 @@ class ClientState:
     is_spectator: bool = False
     spectator_name: str | None = None
     table_key: str | None = None
+    # Player-visible, immutable configuration received when joining or
+    # reconnecting to a table. The browser renders this in its table info panel.
+    table_options: dict[str, str | int | float | bool] = field(default_factory=dict)
+    spectator_count: int = 0
     players: dict[Seat, str] = field(default_factory=dict)
     # Which seats are currently held by a server-controlled bot (seat -> True).
     # Sourced from the wire `players` entries' `is_bot` flag and kept in sync by
@@ -423,6 +427,8 @@ def _reset_to_lobby(state: ClientState) -> None:
     state.is_spectator = fresh.is_spectator
     state.spectator_name = fresh.spectator_name
     state.table_key = fresh.table_key
+    state.table_options = fresh.table_options
+    state.spectator_count = fresh.spectator_count
     state.players = fresh.players
     state.bots = fresh.bots
     state.bot_types = fresh.bot_types
@@ -504,6 +510,8 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
     if msg_type == protocol.JOINED:
         state.joined_once = True
         state.table_key = payload["table_key"]
+        state.table_options = dict(payload.get("table_options", {}))
+        state.spectator_count = payload.get("spectator_count", 0)
         state.seat = Seat(payload["seat"])
         state.players = _players_from_wire(payload["players"])
         state.bots = _bots_from_wire(payload["players"])
@@ -525,6 +533,8 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.joined_once = True
         state.seat = None
         state.table_key = payload["table_key"]
+        state.table_options = dict(payload.get("table_options", {}))
+        state.spectator_count = payload.get("spectator_count", 0)
         state.players = _players_from_wire(payload["players"])
         state.bots = _bots_from_wire(payload["players"])
         state.bot_types = _bot_types_from_wire(payload["players"])
@@ -583,6 +593,9 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
 
     elif msg_type == protocol.BOT_TYPE_CHANGED:
         state.bot_types[Seat(payload["seat"])] = payload["bot_type"]
+
+    elif msg_type == protocol.SPECTATOR_COUNT:
+        state.spectator_count = payload["count"]
 
     elif msg_type == protocol.DEAL:
         state.can_fill_bots = False
@@ -784,6 +797,8 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.can_fill_bots = False
         state.joined_once = True
         state.table_key = payload["table_key"]
+        state.table_options = dict(payload.get("table_options", {}))
+        state.spectator_count = payload.get("spectator_count", 0)
         state.seat = Seat(payload["seat"])
         state.trump = payload["trump"]
         state.hand = _sort_hand(payload["hand"], state.trump)
@@ -931,6 +946,8 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "is_spectator": state.is_spectator,
         "spectator_name": state.spectator_name,
         "table_key": state.table_key,
+        "table_options": dict(state.table_options),
+        "spectator_count": state.spectator_count,
         "players": {seat.value: name for seat, name in state.players.items()},
         "bots": {seat.value: is_bot for seat, is_bot in state.bots.items()},
         "bot_types": {seat.value: bot_type for seat, bot_type in state.bot_types.items()},

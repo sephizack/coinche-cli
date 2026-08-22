@@ -311,6 +311,24 @@ def _players_summary(table: Table) -> list[dict]:
     ]
 
 
+def _table_options_to_wire(table: Table) -> dict:
+    """Return the player-visible, immutable configuration of a table."""
+    return {
+        "target_score": table.target_score,
+        "coinche_blocks_bidding": table.coinche_blocks_bidding,
+        "bot_type": table.bot_type,
+        "trick_pause_seconds": table.trick_pause_seconds,
+        "round_pause_seconds": table.round_pause_seconds,
+        "bot_think_seconds": table.bot_think_seconds,
+        "turn_timeout_seconds": table.turn_timeout_seconds,
+    }
+
+
+async def _broadcast_spectator_count(table: Table) -> None:
+    """Tell every table participant how many spectators are currently watching."""
+    await table.broadcast(protocol.SPECTATOR_COUNT, {"count": len(table.spectators)})
+
+
 def _resolve_bot_seat(
     table: Table,
     bot_seats: list[Seat],
@@ -358,6 +376,8 @@ def _snapshot_to_wire(snapshot: dict, table_key: str, table: Table) -> dict:
     contract = snapshot.get("contract")
     return {
         "table_key": table_key,
+        "table_options": _table_options_to_wire(table),
+        "spectator_count": len(table.spectators),
         "seat": _seat_to_str(snapshot["seat"]),
         "players": _players_summary(table),
         "hand": [_card_to_wire(c) for c in snapshot["hand"]],
@@ -387,6 +407,8 @@ def _public_snapshot_to_wire(snapshot: dict, table_key: str, table: Table, spect
     contract = snapshot.get("contract")
     return {
         "table_key": table_key,
+        "table_options": _table_options_to_wire(table),
+        "spectator_count": len(table.spectators),
         "spectator_name": spectator_name,
         "players": _players_summary(table),
         "phase": snapshot["phase"],
@@ -1136,6 +1158,8 @@ async def _spectator_snapshot_payload(table: Table, spectator_name: str) -> dict
         return _public_snapshot_to_wire(table.game.public_snapshot(), table.table_key, table, spectator_name)
     return {
         "table_key": table.table_key,
+        "table_options": _table_options_to_wire(table),
+        "spectator_count": len(table.spectators),
         "spectator_name": spectator_name,
         "players": _players_summary(table),
         "phase": "waiting",
@@ -1163,9 +1187,12 @@ async def _handle_spectator_leave(table: Table, spectator_name: str, writer: asy
     table.remove_spectator(spectator_name)
     logger.info("[%s] DEPART SPECTATEUR %s", table.table_key, spectator_name)
 
-    if not table.has_humans() and not table.spectators:
+    removed = not table.has_humans() and not table.spectators
+    if removed:
         await _remove_table_and_notify(table)
         logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
+    else:
+        await _broadcast_spectator_count(table)
 
     LOBBY_SUBSCRIBERS.add(writer)
     try:
@@ -1311,6 +1338,7 @@ async def _resolve_join_inner(
             await table.send_to_writer(
                 writer, protocol.SPECTATING, await _spectator_snapshot_payload(table, unique_name)
             )
+            await _broadcast_spectator_count(table)
             await notify_lobby_subscribers()
             return table, None, unique_name
 
@@ -1423,6 +1451,8 @@ async def _resolve_join_inner(
             protocol.JOINED,
             {
                 "table_key": table_key,
+                "table_options": _table_options_to_wire(table),
+                "spectator_count": len(table.spectators),
                 "seat": _seat_to_str(seat),
                 "players": players,
                 "target_score": table.target_score,
@@ -1544,6 +1574,8 @@ async def handle_connection(
                 if not table.has_humans() and not table.spectators:
                     await _remove_table_and_notify(table)
                     logger.info("[%s] table abandonnee (plus aucun occupant) -> supprimee", table.table_key)
+                else:
+                    await _broadcast_spectator_count(table)
                 await notify_lobby_subscribers()
         elif table is not None and seat is not None:
             async with table.lock:
