@@ -84,15 +84,23 @@ if [[ "$DO_PULL" -eq 1 ]] && [[ -d "$SCRIPT_DIR/.git" ]] && command -v git >/dev
 fi
 
 # --- environnement verrouillé (même logique que run_common.sh) --------------
-if ! command -v uv >/dev/null 2>&1; then
-    echo "Erreur : uv est requis. Installation : https://docs.astral.sh/uv/getting-started/installation/" >&2
+UV_BIN="${UV_BIN:-uv}"
+# The official installer uses ~/.local/bin, which non-interactive NAS shells
+# may not include in PATH.
+if [[ "$UV_BIN" == "uv" && -x "$HOME/.local/bin/uv" ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+if ! command -v "$UV_BIN" >/dev/null 2>&1; then
+    echo "Erreur : uv est requis. Ajoutez ~/.local/bin au PATH ou définissez UV_BIN=/chemin/vers/uv." >&2
+    echo "Installation : https://docs.astral.sh/uv/getting-started/installation/" >&2
     exit 1
 fi
 
 echo "Synchronisation de l'environnement verrouillé..."
-uv sync --locked --all-groups
+"$UV_BIN" sync --locked --all-groups
 
-if ! uv run --no-sync python - "$TURN_TIMEOUT" "$IDLE_TIMEOUT" <<'PY'
+if ! "$UV_BIN" run --no-sync python - "$TURN_TIMEOUT" "$IDLE_TIMEOUT" <<'PY'
 import sys
 
 from coinche.timeouts import validate_timeout_order
@@ -183,7 +191,7 @@ if [[ -n "$SERVER_LOG" ]]; then
 fi
 
 echo "Démarrage du serveur de jeu sur le port $GAME_PORT ..."
-uv run --no-sync -m coinche.server "${SERVER_ARGS[@]}" &
+"$UV_BIN" run --no-sync -m coinche.server "${SERVER_ARGS[@]}" &
 SERVER_PID=$!
 
 echo "Attente du serveur de jeu ..."
@@ -194,7 +202,7 @@ for _ in $(seq 1 300); do
         exit 1
     fi
 
-    if uv run --no-sync python - "$GAME_PORT" <<'PY'
+    if "$UV_BIN" run --no-sync python - "$GAME_PORT" <<'PY'
 import socket
 import sys
 
@@ -215,7 +223,7 @@ if [[ "$SERVER_READY" -ne 1 ]]; then
 fi
 
 echo "Démarrage du méta-client (web) sur le port $META_PORT ..."
-uv run --no-sync -m coinche.meta \
+"$UV_BIN" run --no-sync -m coinche.meta \
     --host 127.0.0.1 --port "$GAME_PORT" \
     --listen-host 0.0.0.0 --listen-port "$META_PORT" \
     --auth-user "$AUTH_USER" --auth-pass "$AUTH_PASS" --idle-timeout "$IDLE_TIMEOUT" &

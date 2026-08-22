@@ -36,11 +36,19 @@ if [[ "$DO_PULL" -eq 1 ]] && [[ -d "$SCRIPT_DIR/.git" ]] && command -v git >/dev
     fi
 fi
 
-if ! command -v uv >/dev/null 2>&1; then
-    echo "Erreur : uv est requis. Installation : https://docs.astral.sh/uv/getting-started/installation/" >&2
+UV_BIN="${UV_BIN:-uv}"
+# The official installer uses ~/.local/bin, which non-interactive NAS shells
+# may not include in PATH.
+if [[ "$UV_BIN" == "uv" && -x "$HOME/.local/bin/uv" ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+if ! command -v "$UV_BIN" >/dev/null 2>&1; then
+    echo "Erreur : uv est requis. Ajoutez ~/.local/bin au PATH ou définissez UV_BIN=/chemin/vers/uv." >&2
+    echo "Installation : https://docs.astral.sh/uv/getting-started/installation/" >&2
     exit 1
 fi
 
 echo "Synchronisation de l'environnement verrouillé..."
-uv sync --locked --all-groups
-exec uv run --no-sync -m "$MODULE" "${MODULE_ARGS[@]+"${MODULE_ARGS[@]}"}"
+"$UV_BIN" sync --locked --all-groups
+exec "$UV_BIN" run --no-sync -m "$MODULE" "${MODULE_ARGS[@]+"${MODULE_ARGS[@]}"}"

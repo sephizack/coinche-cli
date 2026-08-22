@@ -19,7 +19,15 @@ fois avec l'installeur officiel, puis ouvre une nouvelle session SSH pour que
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+uv --version
 uv sync --all-groups
+```
+
+Si `uv` est installé ailleurs, indique son chemin au lanceur :
+
+```bash
+UV_BIN=/volume1/homes/<utilisateur>/.local/bin/uv ./run_app.sh --auth-pass 'change-me'
 ```
 
 `uv` crée et gère `.venv` automatiquement. La version `3.14.6` est définie dans
