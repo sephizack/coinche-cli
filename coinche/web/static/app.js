@@ -535,6 +535,10 @@ const BOT_TYPE_DETAILS = {
     label: "Noob",
     description: "Jouez avec quelqu'un qui vient tout juste d'apprendre la Coinche. Bonne chance !",
   },
+  jj: {
+    label: "JJ",
+    description: "Bot Ultime. Jouez avec un champion du monde de la coinche. Not yet available.",
+  },
 };
 
 function botTypeDetail(botType) {
@@ -1784,6 +1788,10 @@ const App = {
         </aside>
         <div class="bot-types-dialog__list">
           <article v-for="botType in availableBotTypes" :key="botType" class="bot-types-dialog__item">
+            <h3>{{ botTypeDetail(botType).label }}</h3>
+            <p>{{ botTypeDetail(botType).description }}</p>
+          </article>
+          <article v-for="botType in ['jj']" :key="botType" class="bot-types-dialog__item">
             <h3>{{ botTypeDetail(botType).label }}</h3>
             <p>{{ botTypeDetail(botType).description }}</p>
           </article>
