@@ -262,7 +262,7 @@ def test_pairing_link_authenticates_a_second_browser_without_basic_auth() -> Non
 
             status, _, body = await http_get(port, "/pair")
             assert status == 200
-            match = re.search(rb"/a/([A-Z2-9]{6})", body)
+            match = re.search(rb"saisissez ce code : <strong>([A-Z2-9]{6})", body)
             assert match is not None
             pairing_path = "/a/" + match.group(1).decode("ascii")
 
