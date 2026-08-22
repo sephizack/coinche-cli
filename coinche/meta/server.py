@@ -331,18 +331,17 @@ class MetaClientServer:
         code = "".join(secrets.choice(_PAIR_CODE_ALPHABET) for _ in range(_PAIR_CODE_LENGTH))
         self.pairing_codes[code] = time.monotonic() + _PAIR_CODE_TTL_SECONDS
         display_code = code
-        access_url = f"{self._pairing_base_url()}/a/{display_code}"
+        access_url = f"{self._pairing_base_url()}/a"
         body = f"""<!doctype html>
 <html lang=\"fr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
 <title>Accès voiture</title><link rel=\"stylesheet\" href=\"/styles.css\"></head>
 <body><main class=\"lobby\"><section class=\"lobby__card\">
 <h1 class=\"lobby__title\">Accès voiture</h1>
-<p>Ouvrez ce lien sur la voiture dans les 10 minutes.</p>
+<p>Ouvrez ce lien sur la voiture (ajoutez le au favoris 😉):</p>
 <p><strong>{html.escape(access_url)}</strong></p>
-<p>Ou ajoutez <strong>{html.escape(self._pairing_base_url())}/a</strong> aux favoris de la voiture,</p>
 <p>puis saisissez ce code : <strong>{display_code}</strong></p>
 <p>La voiture restera connectée pendant 30 jours, sauf redémarrage du serveur. Ce lien ne fonctionne qu'une fois.</p>
-<p><a class=\"rematch-btn\" href=\"/\">Retour</a></p>
+<p style="margin:auto"><br><a class=\"rematch-btn\" href=\"/\">Retour</a></p>
 </section></main></body></html>"""
         await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body.encode("utf-8"), set_cookie)
         _safe_close(writer)
