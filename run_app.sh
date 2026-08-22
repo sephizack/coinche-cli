@@ -148,7 +148,7 @@ kill_coinche_processes() {
     [[ -z "$ps_out" ]] && ps_out="$(ps 2>/dev/null || true)"
     pids="$(printf '%s\n' "$ps_out" | awk '
         !/awk/ && tolower($0) ~ /python.*-m coinche\./ {print $1}
-        !/awk/ && $0 ~ /(^|[[:space:]])uv[[:space:]].*run.*-m coinche\./ {print $1}
+        !/awk/ && $0 ~ /(^|[[:space:]])[^[:space:]]*uv[[:space:]].*run.*-m coinche\./ {print $1}
     ' || true)"
     [[ -z "$pids" ]] && return 0
     # shellcheck disable=SC2086
