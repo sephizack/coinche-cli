@@ -10,9 +10,9 @@
 
 ## Verification
 
-- [ ] `ruff check .` passes
-- [ ] `ruff format --check coinche` passes
-- [ ] `python -m pytest` passes
+- [ ] `uv run ruff check .` passes
+- [ ] `uv run ruff format --check coinche` passes
+- [ ] `uv run pytest` passes
 - [ ] Behavior changes to rules/scoring/protocol have matching tests
 
 ## Limitations / risks

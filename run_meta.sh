@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Lance le méta-client coinche (front web multi-session). Voir run_common.sh
-# pour les détails (git pull, venv, installation des dépendances).
+# pour les détails (git pull, uv sync).
 #
 # Un seul process héberge plusieurs sessions clientes : chaque joueur ouvre la
 # page web (protégée par basic auth), choisit son nom, et se voit attribuer une

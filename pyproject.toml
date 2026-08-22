@@ -7,6 +7,13 @@ dependencies = [
     "rich>=13.7",
 ]
 
+[dependency-groups]
+dev = [
+    "coverage>=7.0",
+    "pytest>=8.0",
+    "ruff>=0.15",
+]
+
 [project.scripts]
 coinche-server = "coinche.server:cli"
 coinche-client = "coinche.client:cli"

@@ -9,18 +9,29 @@ is reached).
 ## Install
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+brew install uv                 # macOS, une seule fois
+uv sync --all-groups
 ```
 
-(Python 3.10+ is required; the codebase uses `from __future__ import annotations`
-and modern type-hint syntax.)
+Sur un NAS Synology ou une machine Linux sans Homebrew, installe `uv` une seule
+fois avec l'installeur officiel, puis ouvre une nouvelle session SSH pour que
+`uv` soit dans le `PATH` :
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync --all-groups
+```
+
+`uv` crée et gère `.venv` automatiquement. La version `3.14.6` est définie dans
+`.python-version` et `uv.lock` fige toutes les dépendances. Sur une autre
+machine, `uv` télécharge cette version de Python si elle n'est pas déjà présente.
+Après une modification de `pyproject.toml`, exécute `uv lock`, puis
+`uv sync --all-groups`. La CI et les lanceurs refusent un lock obsolète.
 
 ## Start the server
 
 ```bash
-python -m coinche.server [--host HOST] [--port PORT] [--target-score N]
+uv run -m coinche.server [--host HOST] [--port PORT] [--target-score N]
 ```
 
 - `--host` — address to bind (default `0.0.0.0`)
@@ -47,13 +58,13 @@ méta-client, for example `https://coinche.example.org`.
 Example:
 
 ```bash
-python -m coinche.server --port 8765 --target-score 1000
+uv run -m coinche.server --port 8765 --target-score 1000
 ```
 
 ## Start a client
 
 ```bash
-python -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
+uv run -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
                          [--team TEAM] [--web-port PORT]
 ```
 
@@ -114,9 +125,8 @@ a trick. When disabled,
 a later valid bid cancels the Coinche and returns the contract multiplier to
 normal.
 
-Alternatively, `./run_client.sh` creates the `.venv` if it doesn't exist,
-activates it, installs/updates `requirements.txt` when needed, then launches
-the client — passing through any arguments you give it:
+Alternatively, `./run_client.sh` synchronizes the locked `uv` environment then
+launches the client — passing through any arguments you give it:
 
 ```bash
 ./run_client.sh --host 127.0.0.1 --port 8765
@@ -127,10 +137,10 @@ To play a full 4-player game, start the server once, then run the client
 each a distinct `--name` and the same `--table` key:
 
 ```bash
-python -m coinche.client --host 127.0.0.1 --port 8765 --table demo1 --name Alice
-python -m coinche.client --host 127.0.0.1 --port 8765 --table demo1 --name Bob
-python -m coinche.client --host 127.0.0.1 --port 8765 --table demo1 --name Carol
-python -m coinche.client --host 127.0.0.1 --port 8765 --table demo1 --name Dave
+uv run -m coinche.client --host 127.0.0.1 --port 8765 --table demo1 --name Alice
+uv run -m coinche.client --host 127.0.0.1 --port 8765 --table demo1 --name Bob
+uv run -m coinche.client --host 127.0.0.1 --port 8765 --table demo1 --name Carol
+uv run -m coinche.client --host 127.0.0.1 --port 8765 --table demo1 --name Dave
 ```
 
 (or `./run_client.sh --table demo1 --name Alice`, etc.)
@@ -174,13 +184,13 @@ name and gets their own dedicated, isolated client session (its own connection
 to the game server, its own state, its own seat).
 
 ```bash
-python -m coinche.meta \
+uv run -m coinche.meta \
   --host 127.0.0.1 --port 8765 \        # the game server to connect sessions to
   --listen-host 0.0.0.0 --listen-port 8080 \
   --auth-user coinche --auth-pass 'change-me'   # HTTP basic auth (password required)
 ```
 
-or, with the launcher (creates `.venv`, installs deps, then runs it):
+or, with the launcher (syncs the locked environment, then runs it):
 
 ```bash
 ./run_meta.sh --auth-pass 'change-me' --host 127.0.0.1 --port 8765
@@ -247,11 +257,11 @@ wired to it — in a single terminal:
              --server-log game.log                   # custom ports + server log file
 ```
 
-`--auth-pass` is **required**. `run_app.sh` prepares the venv (like the other
+`--auth-pass` is **required**. `run_app.sh` synchronizes the locked `uv` environment (like the other
 launchers), starts `coinche.server` then `coinche.meta` pointed at it, and
 supervises both: Ctrl+C stops them together, and if either process dies the
 other is torn down too. This is deliberately a plain shell script — for a
-single host with two Python processes and one venv, a docker-compose-style
+single host with two Python processes and one `uv` environment, a docker-compose-style
 orchestrator would add a daemon, images, and a network to manage for no real
 gain.
 
@@ -266,15 +276,15 @@ Caveats:
 ## Running the tests
 
 ```bash
-python -m pytest
+uv run pytest
 ```
 
 CI also requires 100% line and branch coverage for the default and Maestro bot strategies:
 
 ```bash
-python -m coverage run --branch -m pytest
-python -m coverage report --fail-under=100 coinche/bot_types/default.py
-python -m coverage report --fail-under=100 coinche/bot_types/maestro.py
+uv run coverage run --branch -m pytest
+uv run coverage report --fail-under=100 coinche/bot_types/default.py
+uv run coverage report --fail-under=100 coinche/bot_types/maestro.py
 ```
 
 ## Contributing

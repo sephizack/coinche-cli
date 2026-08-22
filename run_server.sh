@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Lance le serveur coinche. Voir run_common.sh pour les détails
-# (git pull, venv, installation des dépendances).
+# (git pull, uv sync).
 #
 # Usage:
 #   ./run_server.sh [--no-pull] [--host HOST] [--port PORT] [--target-score N]

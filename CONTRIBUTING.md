@@ -7,11 +7,11 @@ dans [`AGENTS.md`](AGENTS.md).
 ## Mise en place
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+uv sync --all-groups
 ```
 
-Python 3.10+ est requis.
+`uv` utilise la version exacte définie dans `.python-version` et les versions
+de dépendances définies dans `uv.lock`.
 
 ## La boucle de vérification
 
@@ -20,12 +20,12 @@ qu'elles passent (ce sont exactement celles que la CI exécute sur Python 3.10 e
 3.13) :
 
 ```bash
-ruff check .                              # lint (E, F, I, B, UP)
-ruff format --check coinche               # formatage
-python -m pytest                          # tests (~1,5 s)
+uv run ruff check .                       # lint (E, F, I, B, UP)
+uv run ruff format --check coinche        # formatage
+uv run pytest                             # tests (~1,5 s)
 ```
 
-Corrections automatiques : `ruff check . --fix` et `ruff format coinche`.
+Corrections automatiques : `uv run ruff check . --fix` et `uv run ruff format coinche`.
 
 ## Attentes sur les changements
 

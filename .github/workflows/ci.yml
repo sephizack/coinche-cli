@@ -13,19 +13,20 @@ jobs:
         python-version: ["3.10", "3.14"]
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.10.8"
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups --python ${{ matrix.python-version }}
       - name: Lint (ruff)
-        run: ruff check .
+        run: uv run ruff check .
       - name: Format check (ruff)
-        run: ruff format --check coinche
+        run: uv run ruff format --check coinche
       - name: Tests and bot strategy coverage
         run: |
-          python -m coverage run --branch -m pytest -v
-          python -m coverage report --fail-under=100 coinche/bot_types/default.py
-          python -m coverage report --fail-under=100 coinche/bot_types/maestro.py
+          uv run coverage run --branch -m pytest -v
+          uv run coverage report --fail-under=100 coinche/bot_types/default.py
+          uv run coverage report --fail-under=100 coinche/bot_types/maestro.py

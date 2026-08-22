@@ -23,7 +23,7 @@
 # Ctrl+C arrête proprement les deux process.
 #
 # Note : pour un seul hôte, ce script suffit. Un orchestrateur type
-# docker-compose n'apporterait rien ici (deux process Python, un venv) et
+# docker-compose n'apporterait rien ici (deux process Python, un environnement uv) et
 # ajouterait daemon/images/réseau à gérer — inutile tant qu'on reste mono-hôte.
 
 set -euo pipefail
@@ -83,16 +83,16 @@ if [[ "$DO_PULL" -eq 1 ]] && [[ -d "$SCRIPT_DIR/.git" ]] && command -v git >/dev
     fi
 fi
 
-# --- venv + dépendances (même logique que run_common.sh) ---------------------
-VENV_DIR=".venv"
-if [[ ! -d "$VENV_DIR" ]]; then
-    echo "Création du venv dans $VENV_DIR ..."
-    python3 -m venv "$VENV_DIR"
+# --- environnement verrouillé (même logique que run_common.sh) --------------
+if ! command -v uv >/dev/null 2>&1; then
+    echo "Erreur : uv est requis. Installation : https://docs.astral.sh/uv/getting-started/installation/" >&2
+    exit 1
 fi
-# shellcheck disable=SC1091
-source "$VENV_DIR/bin/activate"
 
-if ! python - "$TURN_TIMEOUT" "$IDLE_TIMEOUT" <<'PY'
+echo "Synchronisation de l'environnement verrouillé..."
+uv sync --locked --all-groups
+
+if ! uv run --no-sync python - "$TURN_TIMEOUT" "$IDLE_TIMEOUT" <<'PY'
 import sys
 
 from coinche.timeouts import validate_timeout_order
@@ -102,15 +102,6 @@ PY
 then
     echo "Erreur : --turn-timeout doit être strictement inférieur à --idle-timeout." >&2
     exit 2
-fi
-
-REQUIREMENTS_FILE="requirements.txt"
-STAMP_FILE="$VENV_DIR/.requirements.installed"
-if [[ ! -f "$STAMP_FILE" || "$REQUIREMENTS_FILE" -nt "$STAMP_FILE" ]]; then
-    echo "Installation des dépendances ..."
-    pip install --upgrade pip >/dev/null
-    pip install -r "$REQUIREMENTS_FILE"
-    touch "$STAMP_FILE"
 fi
 
 # --- libère les ports d'éventuels process fantômes ---------------------------
@@ -131,8 +122,8 @@ free_port() {
     kill -9 $pids 2>/dev/null || true
 }
 
-# Tue tous les process coinche restants d'un lancement précédent (serveur `python
-# -m coinche.server` et méta `python -m coinche.meta`). Ils n'occupent pas
+# Tue tous les process coinche restants d'un lancement précédent (serveur et
+# méta lancés avec `uv run -m coinche.*`). Ils n'occupent pas
 # forcément les ports libérés par free_port mais continuent de tourner ; on les
 # nettoie ici.
 #
@@ -192,7 +183,7 @@ if [[ -n "$SERVER_LOG" ]]; then
 fi
 
 echo "Démarrage du serveur de jeu sur le port $GAME_PORT ..."
-python -m coinche.server "${SERVER_ARGS[@]}" &
+uv run --no-sync -m coinche.server "${SERVER_ARGS[@]}" &
 SERVER_PID=$!
 
 echo "Attente du serveur de jeu ..."
@@ -203,7 +194,7 @@ for _ in $(seq 1 300); do
         exit 1
     fi
 
-    if python - "$GAME_PORT" <<'PY'
+    if uv run --no-sync python - "$GAME_PORT" <<'PY'
 import socket
 import sys
 
@@ -224,7 +215,7 @@ if [[ "$SERVER_READY" -ne 1 ]]; then
 fi
 
 echo "Démarrage du méta-client (web) sur le port $META_PORT ..."
-python -m coinche.meta \
+uv run --no-sync -m coinche.meta \
     --host 127.0.0.1 --port "$GAME_PORT" \
     --listen-host 0.0.0.0 --listen-port "$META_PORT" \
     --auth-user "$AUTH_USER" --auth-pass "$AUTH_PASS" --idle-timeout "$IDLE_TIMEOUT" &

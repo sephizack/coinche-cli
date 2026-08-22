@@ -37,22 +37,21 @@ Rules to preserve:
 ## Setup, checks, and the verification loop
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+uv sync --all-groups
 ```
 
 Before submitting any change, run all three and make sure they pass:
 
 ```bash
-ruff check .                              # lint (E, F, I, B, UP)
-ruff format --check coinche               # formatting
-python -m pytest                          # ~110 tests, ~2s
-python -m coverage run --branch -m pytest
-python -m coverage report --fail-under=100 coinche/bot_types/default.py
-python -m coverage report --fail-under=100 coinche/bot_types/maestro.py
+uv run ruff check .                       # lint (E, F, I, B, UP)
+uv run ruff format --check coinche        # formatting
+uv run pytest                             # ~110 tests, ~2s
+uv run coverage run --branch -m pytest
+uv run coverage report --fail-under=100 coinche/bot_types/default.py
+uv run coverage report --fail-under=100 coinche/bot_types/maestro.py
 ```
 
-`ruff check . --fix` and `ruff format coinche` apply autofixes.
+`uv run ruff check . --fix` and `uv run ruff format coinche` apply autofixes.
 CI (`.github/workflows/ci.yml`) runs the same checks on push/PR for Python 3.10 and 3.14, including a 100% line-and-branch coverage gate for `default.py` and `maestro.py`.
 
 ## Wire protocol additions
@@ -114,7 +113,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks on push/PR for Python 3.10 
 
 Each client runs an optional in-process HTTP + WebSocket server (a **proxy**,
 not a second game connection) that mirrors the local session to browsers.
-Launch it with `python -m coinche.client ... [--web-port PORT]` (default `0` =
+Launch it with `uv run -m coinche.client ... [--web-port PORT]` (default `0` =
 auto); the reachable URL(s) are printed on start (`Interface web disponible :
 http://...`). It runs as a 3rd coroutine in `run_session`'s gather.
 

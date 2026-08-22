@@ -2,9 +2,8 @@
 #
 # Logique commune aux lanceurs coinche (client / serveur).
 #
-# Prépare l'environnement (git pull, venv, dépendances) puis lance le module
-# Python demandé. Ne pas appeler directement : utiliser run_client.sh ou
-# run_server.sh.
+# Prépare l'environnement verrouillé (git pull, uv sync) puis lance le module
+# demandé. Ne pas appeler directement : utiliser run_client.sh ou run_server.sh.
 #
 # Usage interne:
 #   run_common.sh <module.python> [args...]
@@ -37,27 +36,11 @@ if [[ "$DO_PULL" -eq 1 ]] && [[ -d "$SCRIPT_DIR/.git" ]] && command -v git >/dev
     fi
 fi
 
-VENV_DIR=".venv"
-
-if [[ ! -d "$VENV_DIR" ]]; then
-    echo "Création du venv dans $VENV_DIR ..."
-    python -m venv "$VENV_DIR"
+if ! command -v uv >/dev/null 2>&1; then
+    echo "Erreur : uv est requis. Installation : https://docs.astral.sh/uv/getting-started/installation/" >&2
+    exit 1
 fi
 
-# shellcheck disable=SC1091
-source "$VENV_DIR/bin/activate"
-
-REQUIREMENTS_FILE="requirements.txt"
-STAMP_FILE="$VENV_DIR/.requirements.installed"
-
-if [[ ! -f "$STAMP_FILE" || "$REQUIREMENTS_FILE" -nt "$STAMP_FILE" ]]; then
-    echo "Installation des dépendances ..."
-    pip install --upgrade pip >/dev/null
-    pip install -r "$REQUIREMENTS_FILE"
-    touch "$STAMP_FILE"
-fi
-
-# The "${MODULE_ARGS[@]+...}" form (instead of a bare "${MODULE_ARGS[@]}")
-# avoids an "unbound variable" error under `set -u` when MODULE_ARGS is
-# empty on bash < 4.4 (e.g. macOS's default /bin/bash 3.2).
-exec python -m "$MODULE" "${MODULE_ARGS[@]+"${MODULE_ARGS[@]}"}"
+echo "Synchronisation de l'environnement verrouillé..."
+uv sync --locked --all-groups
+exec uv run --no-sync -m "$MODULE" "${MODULE_ARGS[@]+"${MODULE_ARGS[@]}"}"
