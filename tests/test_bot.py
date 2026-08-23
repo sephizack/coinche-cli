@@ -260,6 +260,13 @@ def test_cloclo_card_choice_does_not_depend_on_any_real_hidden_hand() -> None:
     assert cloclo_bot.choose_card(game, Seat.W) == cloclo_bot.choose_card(altered, Seat.W)
 
 
+@pytest.mark.parametrize("best_discard", [default._best_discard, ClocloBot._best_discard])
+def test_best_discard_keeps_ten_despite_shorter_side_suit(best_discard) -> None:
+    hand = _cards("10♦", "8♦", "7♦", "7♥", "8♥", "D♥", "R♥")
+
+    assert best_discard([Card("10", "♦"), Card("7", "♥")], hand, "♠") == Card("7", "♥")
+
+
 def test_cloclo_benchmark_is_reproducible_with_alternating_teams() -> None:
     first = run_cloclo_benchmark(deals=2, sample_count=1, seed=4)
     second = run_cloclo_benchmark(deals=2, sample_count=1, seed=4)
@@ -1808,7 +1815,7 @@ def test_opponent_cannot_ruff_when_all_trumps_are_visible() -> None:
     assert not _opponent_may_ruff_suit(game, Seat.S, "♥", "♠")
 
 
-def test_choose_card_opens_a_suit_that_has_not_been_played() -> None:
+def test_choose_card_prefers_a_played_suit_over_an_unplayed_singleton_ten() -> None:
     game = Game()
     assert game.round_state is not None and game.bid_state is not None
     game.round_state.trump = "♠"
@@ -1828,9 +1835,22 @@ def test_choose_card_opens_a_suit_that_has_not_been_played() -> None:
         }
     ]
     game.round_state.current_trick = []
-    game.round_state.hands[Seat.S] = _cards("7♥", "10♣")
+    game.round_state.hands[Seat.S] = _cards("V♠", "7♠", "V♥", "10♣", "10♦")
 
-    assert choose_card(game, Seat.S) == Card("10", "♣")
+    assert choose_card(game, Seat.S) == Card("V", "♥")
+
+
+def test_choose_card_opens_with_a_ten_only_without_a_played_side_suit() -> None:
+    game = Game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("10♣", "10♦")
+
+    assert choose_card(game, Seat.S) in {Card("10", "♣"), Card("10", "♦")}
 
 
 def test_defender_on_lead_does_not_open_a_trump_without_the_master() -> None:

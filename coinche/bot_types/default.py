@@ -1294,15 +1294,23 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
                 ),
                 legal_cards,
             )
-    # tenter une couleur jamais jouée si possible
+    # Tenter une couleur jamais jouée si possible, sans sacrifier un 10 sec
+    # uniquement pour ouvrir cette couleur.
     played_suits = {played.suit for cards in _played_cards_by_seat(game.round_state).values() for played in cards}
-    never_played_suits = {card.suit for card in legal_cards if card.suit != trump and card.suit not in played_suits}
-    if never_played_suits:
+    never_played_cards = [card for card in legal_cards if card.suit != trump and card.suit not in played_suits]
+    opening_cards = [
+        card
+        for card in never_played_cards
+        if card.rank != "10" or sum(owned.suit == card.suit for owned in own_hand) > 1
+    ]
+    if opening_cards:
         return min(
-            (card for card in legal_cards if card.suit in never_played_suits),
+            opening_cards,
             key=lambda card: _card_strength(card, trump),
-            default=None,
         ), legal_cards
+    if never_played_cards:
+        played_suit_cards = [card for card in legal_cards if card.suit != trump and card.suit in played_suits]
+        return _best_discard(played_suit_cards or never_played_cards, own_hand, trump), legal_cards
     return None, legal_cards
 
 
