@@ -38,6 +38,7 @@ def _join(state: ClientState) -> ApplyResult:
             "table_options": {
                 "target_score": 1000,
                 "coinche_blocks_bidding": True,
+                "score_mode": "points_made_plus_announced",
                 "bot_type": "toto",
                 "trick_pause_seconds": 2.5,
                 "round_pause_seconds": 5.0,
@@ -68,6 +69,7 @@ def test_joined_populates_identity_and_players():
     assert state.joined_once is True
     assert state.table_key == "table1"
     assert state.table_options["target_score"] == 1000
+    assert state.table_options["score_mode"] == "points_made_plus_announced"
     assert state.spectator_count == 2
     assert state.seat == Seat.S
     assert state.players == {Seat.N: "Nord", Seat.E: "Est", Seat.S: "Moi", Seat.W: "Ouest"}

@@ -92,10 +92,14 @@ class Game:
         target_score: int = rules.DEFAULT_TARGET_SCORE,
         initial_dealer: Seat = Seat.N,
         coinche_blocks_bidding: bool = True,
+        score_mode: str = rules.DEFAULT_SCORE_MODE,
     ) -> None:
+        if not rules.is_supported_score_mode(score_mode):
+            raise ValueError(f"Unknown score mode: {score_mode!r}")
         self.target_score = target_score
         self.dealer = initial_dealer
         self.coinche_blocks_bidding = coinche_blocks_bidding
+        self.score_mode = score_mode
         self.round_number = 0
         self.cumulative_scores: dict[str, int] = {"NS": 0, "EW": 0}
         self.phase = "bidding"
@@ -423,6 +427,7 @@ class Game:
             capot_result,
             rs.belote_holder,
             attacker_tricks,
+            score_mode=self.score_mode,
         )
 
         for team in ("NS", "EW"):

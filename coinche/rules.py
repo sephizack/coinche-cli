@@ -58,6 +58,23 @@ CAPOT_TOTAL = CAPOT_ANNOUNCE + CAPOT_POINTS  # raw value of an announced capot
 
 TRICKS_PER_ROUND = 8
 
+# Table-level scoring conventions recognised by the federation. Keep the
+# current hybrid convention as the default for existing tables.
+SCORE_MODE_POINTS_MADE = "points_made"
+SCORE_MODE_POINTS_ANNOUNCED = "points_announced"
+SCORE_MODE_POINTS_MADE_PLUS_ANNOUNCED = "points_made_plus_announced"
+SCORE_MODES: tuple[str, ...] = (
+    SCORE_MODE_POINTS_MADE,
+    SCORE_MODE_POINTS_ANNOUNCED,
+    SCORE_MODE_POINTS_MADE_PLUS_ANNOUNCED,
+)
+DEFAULT_SCORE_MODE = SCORE_MODE_POINTS_MADE_PLUS_ANNOUNCED
+
+
+def is_supported_score_mode(score_mode: str) -> bool:
+    """Return whether ``score_mode`` names one of the supported conventions."""
+    return score_mode in SCORE_MODES
+
 
 def round_to_nearest_ten(points: int) -> int:
     """Round card points to the nearest multiple of 10 (mathematical rounding,
@@ -243,6 +260,7 @@ def score_round(
     capot_result: bool | None,
     belote_holder: str | None,
     attacker_tricks: int | None = None,
+    score_mode: str = DEFAULT_SCORE_MODE,
 ) -> dict[str, dict]:
     """Score a completed round.
 
@@ -256,83 +274,95 @@ def score_round(
     upgrade a numeric contract to a capot bonus when they take all 8 tricks
     without having announced it.
 
-    Scoring model ("points faits + points demandés"):
+    ``score_mode`` selects one of the federation conventions: points made,
+    points announced, or points made plus announced. Card points are rounded
+    to the nearest 10 for modes that count them. The contract itself is always
+    judged from the attacker's unrounded card points plus any belote.
 
-        * Contrat réussi : preneurs = arrondi(points cartes) + demandé ;
-            adversaires = arrondi(leurs points cartes). Un capot réalisé (8 plis)
-            remplace les points cartes du preneur par 250 (252 arrondis), qu'il ait
-            été annoncé ou non.
-    * Contrat chuté : preneurs = 0 ; adversaires = (162 + demandé). Un capot
-      annoncé et chuté donne (502) aux adversaires.
-    * Coinche / surcoinche : la somme (demandé + chute) du camp gagnant est
-      doublée ou quadruplée. La belote n'est jamais multipliée et n'est comptée
-      qu'une seule fois.
-    * Belote : +20 au camp qui détient Roi+Dame d'atout, indépendamment de
-      l'issue du contrat.
-
-    Card points are rounded to the nearest 10 for both teams (see
-    `round_to_nearest_ten`); the +20 belote bonus is added after rounding.
-
-    Contrat réussi ou chuté : les points bruts faits par les preneurs (cartes
-    + belote éventuelle) doivent atteindre le contrat annoncé. Les points des
-    défenseurs et l'arrondi n'influencent pas la réussite du contrat.
+    In the announced-points convention, belote can still complete a numeric
+    contract but scores no separate points. In the other conventions it is
+    added after the multiplier: on a normal failed contract the defence takes
+    it; an attacking side that fails an announced capot loses it.
     """
+    if not is_supported_score_mode(score_mode):
+        raise ValueError(f"Unknown score mode: {score_mode!r}")
+
     attacking_team = bid["team"]
     defending_team = "EW" if attacking_team == "NS" else "NS"
-
-    belote_bonus = {"NS": 0, "EW": 0}
-    if belote_holder is not None:
-        belote_bonus[belote_holder] = BELOTE_BONUS
-
     capot_bonus = {"NS": 0, "EW": 0}
 
     is_capot_bid = bid["points"] == CAPOT
     announced = CAPOT_ANNOUNCE if is_capot_bid else bid["points"]
     attacker_made_capot = attacker_tricks == TRICKS_PER_ROUND
-
-    # The belote (+20) held by each team:
     attacker_belote = BELOTE_BONUS if belote_holder == attacking_team else 0
 
-    # Attacking-team base score before coinche multiplier (excludes belote).
     if is_capot_bid:
         contract_made = bool(capot_result)
     else:
         attacking_points = captured_points_by_team.get(attacking_team, 0)
         contract_made = attacking_points + attacker_belote >= bid["points"]
 
+    winning_team = attacking_team if contract_made else defending_team
+    made_capot = contract_made and (is_capot_bid or attacker_made_capot)
+
     if contract_made:
-        # Points réalisés by the attackers: a full capot is worth 252
-        # regardless of whether it was the announced contract.
-        if is_capot_bid or attacker_made_capot:
-            attacker_realized = round_to_nearest_ten(CAPOT_POINTS)
-            capot_bonus[attacking_team] = attacker_realized
-        else:
-            attacker_realized = round_to_nearest_ten(captured_points_by_team.get(attacking_team, 0))
-        attacking_base = attacker_realized + announced
-        # Defenders keep their rounded card points (nothing on a made capot).
-        if is_capot_bid or attacker_made_capot:
+        if made_capot:
+            capot_bonus[attacking_team] = round_to_nearest_ten(CAPOT_POINTS)
+
+        if score_mode == SCORE_MODE_POINTS_MADE:
+            attacking_base = capot_bonus[attacking_team] or round_to_nearest_ten(
+                captured_points_by_team.get(attacking_team, 0)
+            )
+            defending_base = 0 if made_capot else round_to_nearest_ten(captured_points_by_team.get(defending_team, 0))
+        elif score_mode == SCORE_MODE_POINTS_ANNOUNCED:
+            attacking_base = CAPOT_ANNOUNCE if is_capot_bid else announced
             defending_base = 0
         else:
-            defending_base = round_to_nearest_ten(captured_points_by_team.get(defending_team, 0))
+            attacker_realized = capot_bonus[attacking_team] or round_to_nearest_ten(
+                captured_points_by_team.get(attacking_team, 0)
+            )
+            attacking_base = attacker_realized + announced
+            defending_base = 0 if made_capot else round_to_nearest_ten(captured_points_by_team.get(defending_team, 0))
         contract_result = "capot_achieved" if is_capot_bid else "made"
-        winning_team = attacking_team
     else:
-        # Chute : les adversaires reçoivent la chute plus le contrat demandé.
-        # Pour un capot annoncé, la chute vaut 502 (déjà 252 + 250 demandés) :
-        # on n'ajoute donc pas `announced` une seconde fois.
         if is_capot_bid:
-            defending_base = round_to_nearest_ten(CAPOT_TOTAL)
+            if score_mode == SCORE_MODE_POINTS_ANNOUNCED:
+                defending_base = CAPOT_ANNOUNCE if coinche_level > 1 else round_to_nearest_ten(NORMAL_POOL)
+            else:
+                defending_base = round_to_nearest_ten(CAPOT_TOTAL)
         else:
-            defending_base = round_to_nearest_ten(NORMAL_POOL) + announced
+            defending_base = round_to_nearest_ten(NORMAL_POOL)
+            if score_mode == SCORE_MODE_POINTS_MADE_PLUS_ANNOUNCED:
+                defending_base += announced
         attacking_base = 0
         contract_result = "capot_failed" if is_capot_bid else "failed"
-        winning_team = defending_team
 
     base_by_team = {attacking_team: attacking_base, defending_team: defending_base}
-
-    # Coinche/surcoinche multiplies only the winning camp's base (belote excluded).
     scored_by_team = dict(base_by_team)
-    scored_by_team[winning_team] = base_by_team[winning_team] * coinche_level
+
+    if coinche_level > 1:
+        if made_capot or is_capot_bid:
+            capot_value = CAPOT_ANNOUNCE if score_mode == SCORE_MODE_POINTS_ANNOUNCED else CAPOT_ANNOUNCE * 2
+            scored_by_team = {"NS": 0, "EW": 0}
+            scored_by_team[winning_team] = capot_value * coinche_level
+        elif score_mode == SCORE_MODE_POINTS_MADE:
+            scored_by_team = {"NS": 0, "EW": 0}
+            scored_by_team[winning_team] = round_to_nearest_ten(NORMAL_POOL) * coinche_level
+        elif score_mode == SCORE_MODE_POINTS_ANNOUNCED:
+            scored_by_team = {"NS": 0, "EW": 0}
+            scored_by_team[winning_team] = announced * coinche_level
+        else:
+            scored_by_team = {"NS": 0, "EW": 0}
+            scored_by_team[winning_team] = (round_to_nearest_ten(NORMAL_POOL) + announced) * coinche_level
+
+    belote_bonus = {"NS": 0, "EW": 0}
+    if score_mode != SCORE_MODE_POINTS_ANNOUNCED and belote_holder is not None:
+        if contract_made:
+            belote_bonus[belote_holder] = BELOTE_BONUS
+        elif not is_capot_bid:
+            belote_bonus[defending_team] = BELOTE_BONUS
+        elif belote_holder == defending_team:
+            belote_bonus[defending_team] = BELOTE_BONUS
 
     result: dict[str, dict] = {}
     for team in ("NS", "EW"):

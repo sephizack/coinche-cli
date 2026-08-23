@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from coinche import bot
+from coinche import bot, rules
 from coinche.session_state import ClientState
 from coinche.web import WebOverlayServer
 from coinche.web.messages import (
@@ -121,6 +121,10 @@ def test_parse_rejects_invalid_table_options() -> None:
         parse_browser_message(
             json.dumps({"action": "join", "table_key": "t1", "player_name": "Zoe", "bot_type": "unknown"})
         )
+    with pytest.raises(WebProtocolError):
+        parse_browser_message(
+            json.dumps({"action": "join", "table_key": "t1", "player_name": "Zoe", "score_mode": "unknown"})
+        )
 
 
 def test_parse_accepts_a_registered_bot_type(monkeypatch) -> None:
@@ -189,6 +193,7 @@ class FakeLink:
         spectate=False,
         suppress_discord_notification=False,
         coinche_blocks_bidding=True,
+        score_mode=rules.DEFAULT_SCORE_MODE,
         bot_type=bot.DEFAULT_BOT_TYPE,
     ) -> bool:
         self.calls.append(
@@ -201,6 +206,7 @@ class FakeLink:
                 spectate,
                 suppress_discord_notification,
                 coinche_blocks_bidding,
+                score_mode,
                 bot_type,
             )
         )
@@ -365,7 +371,18 @@ def test_round_trip_initial_frame_and_seam() -> None:
                 await asyncio.sleep(0.01)
             assert ("bid", "bid", "♠", 90) in link.calls
             assert ("chat", "salut") in link.calls
-            assert ("join", "t1", "Zoe", None, None, False, True, True, bot.DEFAULT_BOT_TYPE) in link.calls
+            assert (
+                "join",
+                "t1",
+                "Zoe",
+                None,
+                None,
+                False,
+                True,
+                True,
+                rules.DEFAULT_SCORE_MODE,
+                bot.DEFAULT_BOT_TYPE,
+            ) in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
             assert ("fill_bots",) in link.calls

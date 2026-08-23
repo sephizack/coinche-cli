@@ -316,6 +316,7 @@ def _table_options_to_wire(table: Table) -> dict:
     return {
         "target_score": table.target_score,
         "coinche_blocks_bidding": table.coinche_blocks_bidding,
+        "score_mode": table.score_mode,
         "bot_type": table.bot_type,
         "trick_pause_seconds": table.trick_pause_seconds,
         "round_pause_seconds": table.round_pause_seconds,
@@ -1289,7 +1290,11 @@ async def _resolve_join_inner(
     spectate = bool(payload.get("spectate"))
     suppress_discord_notification = payload.get("suppress_discord_notification", False)
     coinche_blocks_bidding = payload.get("coinche_blocks_bidding", True)
+    score_mode = payload.get("score_mode", rules.DEFAULT_SCORE_MODE)
     bot_type = payload.get("bot_type", DEFAULT_BOT_TYPE)
+    if not isinstance(score_mode, str) or not rules.is_supported_score_mode(score_mode):
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "Mode de comptage inconnu.")
+        return None
     if not isinstance(bot_type, str) or not is_supported_bot_type(bot_type):
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "Type de bot inconnu.")
         return None
@@ -1347,6 +1352,7 @@ async def _resolve_join_inner(
         table_key,
         target_score=target_score,
         coinche_blocks_bidding=coinche_blocks_bidding,
+        score_mode=score_mode,
         bot_type=bot_type,
         trick_pause_seconds=trick_pause_seconds,
         round_pause_seconds=round_pause_seconds,

@@ -56,6 +56,13 @@ CI (`.github/workflows/ci.yml`) runs the same checks on push/PR for Python 3.10 
 
 ## Wire protocol additions
 
+- **`score_mode` table option** (optional on the table creator's `JOIN`):
+  `points_made`, `points_announced`, or `points_made_plus_announced` (the
+  default). The selection is immutable for a table, is returned in
+  `table_options`, and is passed from `Table` into every newly-created `Game`,
+  including bot fills and rematches. Keep all scoring variants in the pure
+  `rules.score_round` function; the client and web overlay only display and
+  relay the setting.
 - **`LIST_TABLES`** (client→server, no payload): replies with **`TABLE_LISTING`**
   containing `{"tables": [{"table_key", "in_progress", "seats_filled", "players": [{"seat","name","team_name"}]}]}`.
   Sent by the client before `JOIN` to power the interactive table picker;

@@ -9,6 +9,7 @@ import pytest
 import coinche.table as table_mod
 from coinche.bot import DEFAULT_BOT_TYPE
 from coinche.game import Seat
+from coinche.rules import SCORE_MODE_POINTS_ANNOUNCED
 from coinche.table import BOT_NAMES, GameInProgressError, NameTakenError, Table, TableFullError
 
 
@@ -36,14 +37,25 @@ def test_add_player_fills_seats_in_order():
     assert table.game is not None  # auto-starts once the 4th seat fills
 
 
-def test_table_passes_non_blocking_coinche_rule_to_games():
-    table = Table("abcd", coinche_blocks_bidding=False, bot_type=DEFAULT_BOT_TYPE)
+def test_table_passes_its_rules_to_games():
+    table = Table(
+        "abcd",
+        coinche_blocks_bidding=False,
+        score_mode=SCORE_MODE_POINTS_ANNOUNCED,
+        bot_type=DEFAULT_BOT_TYPE,
+    )
     for name in ("Alice", "Bob", "Carol", "Dave"):
         table.add_player(name, FakeWriter())
 
     assert table.game is not None
     assert table.game.coinche_blocks_bidding is False
+    assert table.game.score_mode == SCORE_MODE_POINTS_ANNOUNCED
     assert table.bot_type == DEFAULT_BOT_TYPE
+
+
+def test_table_rejects_unknown_score_mode():
+    with pytest.raises(ValueError, match="Unknown score mode"):
+        Table("abcd", score_mode="unknown")
 
 
 def test_fill_with_bots_occupies_open_seats_and_starts_game():

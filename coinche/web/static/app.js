@@ -23,6 +23,11 @@ const { createApp, ref, reactive, computed, watch, nextTick, onMounted, onUnmoun
 // ---- Card vocabulary (display + accessible names) -----------------------
 const SUIT_NAMES = { "♥": "Cœur", "♦": "Carreau", "♠": "Pique", "♣": "Trèfle" };
 const RED_SUITS = new Set(["♥", "♦"]);
+const SCORE_MODE_LABELS = {
+  points_made: "Points faits",
+  points_announced: "Points annoncés",
+  points_made_plus_announced: "Points faits + annoncés",
+};
 const RANK_NAMES = {
   7: "7",
   8: "8",
@@ -54,6 +59,10 @@ function cardLabel(card) {
   const r = RANK_NAMES[rank] || rank;
   const s = SUIT_NAMES[suit] || suit;
   return `${r} de ${s}`;
+}
+
+function scoreModeLabel(scoreMode) {
+  return SCORE_MODE_LABELS[scoreMode] || SCORE_MODE_LABELS.points_made_plus_announced;
 }
 
 const REDUCED_MOTION = window.matchMedia(
@@ -1116,6 +1125,7 @@ const App = {
           label: "Coinche bloque les annonces",
           value: options.coinche_blocks_bidding === false ? "Non" : "Oui",
         },
+        { label: "Comptage", value: scoreModeLabel(options.score_mode) },
         { label: "Bot par défaut", value: botTypeDetail(options.bot_type || "toto").label },
       ];
     });
@@ -1513,6 +1523,7 @@ const App = {
       suppressDiscordNotification: false,
       botType: "toto",
       coincheBlocksBidding: true,
+      scoreMode: "points_made_plus_announced",
     });
     const discordNotificationsEnabled = computed({
       get: () => !tableOptions.suppressDiscordNotification,
@@ -1563,6 +1574,7 @@ const App = {
       if (tableSettings) {
         if (tableSettings.suppressDiscordNotification) payload.suppress_discord_notification = true;
         if (!tableSettings.coincheBlocksBidding) payload.coinche_blocks_bidding = false;
+        if (tableSettings.scoreMode !== "points_made_plus_announced") payload.score_mode = tableSettings.scoreMode;
         if (tableSettings.botType !== "toto") payload.bot_type = tableSettings.botType;
       }
       sendAction("join", payload);
@@ -1903,6 +1915,14 @@ const App = {
                   <option v-for="botType in availableBotTypes" :key="botType" :value="botType">
                     {{ botTypeDetail(botType).label }}
                   </option>
+                </select>
+              </div>
+              <div class="table-options__field">
+                <label for="table-score-mode">Comptage</label>
+                <select id="table-score-mode" v-model="tableOptions.scoreMode" data-testid="table-score-mode">
+                  <option value="points_made">Points faits</option>
+                  <option value="points_announced">Points annoncés</option>
+                  <option value="points_made_plus_announced">Points faits + annoncés</option>
                 </select>
               </div>
               <div class="table-options__setting">

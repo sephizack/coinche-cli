@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from rich.live import Live
 from rich.text import Text
 
-from coinche import __version__, protocol, ui
+from coinche import __version__, protocol, rules, ui
 from coinche.bot import DEFAULT_BOT_TYPE
 from coinche.session_state import ClientState, _build_last_round_contract, apply_message
 from coinche.table import TABLE_NAMES
@@ -97,6 +97,7 @@ class ClientLink:
         spectate: bool = False,
         suppress_discord_notification: bool = False,
         coinche_blocks_bidding: bool = True,
+        score_mode: str = rules.DEFAULT_SCORE_MODE,
         bot_type: str = DEFAULT_BOT_TYPE,
     ) -> bool:
         payload = {"table_key": table_key, "player_name": player_name, "team_name": team_name}
@@ -108,6 +109,8 @@ class ClientLink:
             payload["suppress_discord_notification"] = True
         if not coinche_blocks_bidding:
             payload["coinche_blocks_bidding"] = False
+        if score_mode != rules.DEFAULT_SCORE_MODE:
+            payload["score_mode"] = score_mode
         if bot_type != DEFAULT_BOT_TYPE:
             payload["bot_type"] = bot_type
         return await self._send(protocol.JOIN, payload)
@@ -138,6 +141,7 @@ async def run_session(
     web_port: int = 0,
     seat: str | None = None,
     suppress_discord_notification: bool = False,
+    score_mode: str = rules.DEFAULT_SCORE_MODE,
 ) -> str:
     """Run one connection attempt end-to-end.
 
@@ -176,6 +180,7 @@ async def run_session(
         team_name,
         seat=seat,
         suppress_discord_notification=suppress_discord_notification,
+        score_mode=score_mode,
     ):
         return "not_joined"
 
@@ -1084,6 +1089,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not notify Discord when this connection creates a new table.",
     )
+    parser.add_argument(
+        "--score-mode",
+        choices=rules.SCORE_MODES,
+        default=rules.DEFAULT_SCORE_MODE,
+        help="Table scoring convention when creating a table (default: points_made_plus_announced).",
+    )
     return parser
 
 
@@ -1116,6 +1127,7 @@ async def main(argv: list[str] | None = None) -> None:
         web_port=args.web_port,
         seat=seat,
         suppress_discord_notification=suppress_discord_notification,
+        score_mode=args.score_mode,
     )
     if result == "not_joined":
         return
@@ -1137,6 +1149,7 @@ async def main(argv: list[str] | None = None) -> None:
             team_name,
             web_port=args.web_port,
             suppress_discord_notification=suppress_discord_notification,
+            score_mode=args.score_mode,
         )
         if result == "game_over":
             print("Partie terminée. Au revoir !")

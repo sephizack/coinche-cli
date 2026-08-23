@@ -165,15 +165,19 @@ class Table:
         table_key: str,
         target_score: int = rules.DEFAULT_TARGET_SCORE,
         coinche_blocks_bidding: bool = True,
+        score_mode: str = rules.DEFAULT_SCORE_MODE,
         bot_type: str = DEFAULT_BOT_TYPE,
         trick_pause_seconds: float = DEFAULT_TRICK_PAUSE_SECONDS,
         round_pause_seconds: float = DEFAULT_ROUND_PAUSE_SECONDS,
         bot_think_seconds: float = DEFAULT_BOT_THINK_SECONDS,
         turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
     ) -> None:
+        if not rules.is_supported_score_mode(score_mode):
+            raise ValueError(f"Unknown score mode: {score_mode!r}")
         self.table_key = table_key
         self.target_score = target_score
         self.coinche_blocks_bidding = coinche_blocks_bidding
+        self.score_mode = score_mode
         self.bot_type = bot_type
         # How long the server waits after broadcasting a trick's result before
         # moving play on (next play_request, or dealing the next round), so
@@ -253,7 +257,11 @@ class Table:
                 seat=preferred_seat, name=name, writer=writer, connected=True, team_name=team_name
             )
             if all(s is not None for s in self.seats.values()):
-                self.game = Game(target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding)
+                self.game = Game(
+                    target_score=self.target_score,
+                    coinche_blocks_bidding=self.coinche_blocks_bidding,
+                    score_mode=self.score_mode,
+                )
             return preferred_seat
 
         normalized_team = team_name.strip().lower() if team_name else None
@@ -277,7 +285,9 @@ class Table:
                             )
                             if all(s is not None for s in self.seats.values()):
                                 self.game = Game(
-                                    target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding
+                                    target_score=self.target_score,
+                                    coinche_blocks_bidding=self.coinche_blocks_bidding,
+                                    score_mode=self.score_mode,
                                 )
                             return partner_seat
                         break
@@ -288,7 +298,11 @@ class Table:
                     seat=seat, name=name, writer=writer, connected=True, team_name=team_name
                 )
                 if all(s is not None for s in self.seats.values()):
-                    self.game = Game(target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding)
+                    self.game = Game(
+                        target_score=self.target_score,
+                        coinche_blocks_bidding=self.coinche_blocks_bidding,
+                        score_mode=self.score_mode,
+                    )
                 return seat
 
         raise TableFullError(self.table_key)
@@ -452,7 +466,11 @@ class Table:
                 )
                 added.append(seat)
         if added:
-            self.game = Game(target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding)
+            self.game = Game(
+                target_score=self.target_score,
+                coinche_blocks_bidding=self.coinche_blocks_bidding,
+                score_mode=self.score_mode,
+            )
         return added
 
     def restart_game(self) -> Game:
@@ -460,7 +478,11 @@ class Table:
         (rematch). Resets cumulative scores/round number/dealer rotation back
         to a fresh `Game`, keeping the same seated players."""
         assert self.game is not None and self.game.game_over
-        self.game = Game(target_score=self.target_score, coinche_blocks_bidding=self.coinche_blocks_bidding)
+        self.game = Game(
+            target_score=self.target_score,
+            coinche_blocks_bidding=self.coinche_blocks_bidding,
+            score_mode=self.score_mode,
+        )
         return self.game
 
     async def broadcast(self, msg_type: str, payload: dict, exclude: Seat | None = None) -> None:
@@ -523,6 +545,7 @@ def get_or_create_table(
     table_key: str,
     target_score: int = rules.DEFAULT_TARGET_SCORE,
     coinche_blocks_bidding: bool = True,
+    score_mode: str = rules.DEFAULT_SCORE_MODE,
     bot_type: str = DEFAULT_BOT_TYPE,
     trick_pause_seconds: float = DEFAULT_TRICK_PAUSE_SECONDS,
     round_pause_seconds: float = DEFAULT_ROUND_PAUSE_SECONDS,
@@ -535,6 +558,7 @@ def get_or_create_table(
             table_key,
             target_score=target_score,
             coinche_blocks_bidding=coinche_blocks_bidding,
+            score_mode=score_mode,
             bot_type=bot_type,
             trick_pause_seconds=trick_pause_seconds,
             round_pause_seconds=round_pause_seconds,

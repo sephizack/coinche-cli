@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 
-from coinche import bot
+from coinche import bot, rules
 
 # Per-message size cap for inbound browser frames (BR-U2-5). Mirrors the
 # server's 64 KiB `readline` DoS guard at this new I/O boundary. A browser
@@ -103,6 +103,10 @@ def parse_browser_message(raw: str | bytes) -> dict:
     if action == "join" and "coinche_blocks_bidding" in decoded:
         if not isinstance(decoded["coinche_blocks_bidding"], bool):
             raise WebProtocolError("coinche_blocks_bidding doit être un booléen.")
+    if action == "join" and "score_mode" in decoded:
+        score_mode = decoded["score_mode"]
+        if not isinstance(score_mode, str) or not rules.is_supported_score_mode(score_mode):
+            raise WebProtocolError("Mode de comptage inconnu.")
     if action == "join" and "bot_type" in decoded:
         bot_type = decoded["bot_type"]
         if not isinstance(bot_type, str) or not bot.is_supported_bot_type(bot_type):

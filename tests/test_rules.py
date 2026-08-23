@@ -4,6 +4,9 @@ from coinche.cards import Card, Seat
 from coinche.rules import (
     ALLOWED_TRUMPS,
     CAPOT,
+    SCORE_MODE_POINTS_ANNOUNCED,
+    SCORE_MODE_POINTS_MADE,
+    SCORE_MODE_POINTS_MADE_PLUS_ANNOUNCED,
     card_points,
     is_valid_bid,
     legal_bid_actions,
@@ -229,6 +232,54 @@ def test_score_round_contract_made_normal():
     assert result["EW"]["total"] == 70
 
 
+def test_score_round_supports_all_federation_score_modes_on_a_made_contract():
+    captured = {"NS": 92, "EW": 70}
+    bid = {"team": "NS", "trump": "♠", "points": 90}
+
+    points_made = score_round(
+        captured, bid, coinche_level=1, capot_result=None, belote_holder=None, score_mode=SCORE_MODE_POINTS_MADE
+    )
+    points_announced = score_round(
+        captured, bid, coinche_level=1, capot_result=None, belote_holder=None, score_mode=SCORE_MODE_POINTS_ANNOUNCED
+    )
+    hybrid = score_round(
+        captured,
+        bid,
+        coinche_level=1,
+        capot_result=None,
+        belote_holder=None,
+        score_mode=SCORE_MODE_POINTS_MADE_PLUS_ANNOUNCED,
+    )
+
+    assert (points_made["NS"]["total"], points_made["EW"]["total"]) == (90, 70)
+    assert (points_announced["NS"]["total"], points_announced["EW"]["total"]) == (90, 0)
+    assert (hybrid["NS"]["total"], hybrid["EW"]["total"]) == (180, 70)
+
+
+def test_score_round_score_modes_distinguish_failure_and_coinche():
+    captured = {"NS": 90, "EW": 72}
+    bid = {"team": "NS", "trump": "♠", "points": 100}
+
+    points_made = score_round(
+        captured, bid, coinche_level=2, capot_result=None, belote_holder=None, score_mode=SCORE_MODE_POINTS_MADE
+    )
+    points_announced = score_round(
+        captured, bid, coinche_level=2, capot_result=None, belote_holder=None, score_mode=SCORE_MODE_POINTS_ANNOUNCED
+    )
+    hybrid = score_round(
+        captured,
+        bid,
+        coinche_level=2,
+        capot_result=None,
+        belote_holder=None,
+        score_mode=SCORE_MODE_POINTS_MADE_PLUS_ANNOUNCED,
+    )
+
+    assert points_made["EW"]["total"] == 320
+    assert points_announced["EW"]["total"] == 200
+    assert hybrid["EW"]["total"] == 520
+
+
 def test_score_round_opponent_can_have_more_points_on_made_contract():
     # 80 annoncés et 80 cartes faites par NS : le contrat est réussi même si
     # EW a fait 82 cartes.
@@ -275,8 +326,8 @@ def test_score_round_96_faits_avec_belote_ne_valide_pas_120():
     bid = {"team": "NS", "trump": "♠", "points": 120}
     result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder="NS")
     assert result["NS"]["contract_result"] == "failed"
-    assert result["NS"]["total"] == 20
-    assert result["EW"]["total"] == 280
+    assert result["NS"]["total"] == 0
+    assert result["EW"]["total"] == 300
 
 
 def test_score_round_contract_failed_defenders_get_pool_plus_bid():
@@ -317,6 +368,49 @@ def test_score_round_unannounced_capot_upgrades_to_252():
     assert result["EW"]["total"] == 0
 
 
+def test_score_round_capot_values_follow_each_score_mode():
+    captured = {"NS": 162, "EW": 0}
+    numeric_bid = {"team": "NS", "trump": "♠", "points": 100}
+    capot_bid = {"team": "NS", "trump": "♠", "points": CAPOT}
+
+    assert (
+        score_round(
+            captured,
+            numeric_bid,
+            coinche_level=1,
+            capot_result=None,
+            belote_holder=None,
+            attacker_tricks=8,
+            score_mode=SCORE_MODE_POINTS_MADE,
+        )["NS"]["total"]
+        == 250
+    )
+    assert (
+        score_round(
+            captured,
+            numeric_bid,
+            coinche_level=1,
+            capot_result=None,
+            belote_holder=None,
+            attacker_tricks=8,
+            score_mode=SCORE_MODE_POINTS_ANNOUNCED,
+        )["NS"]["total"]
+        == 100
+    )
+    assert (
+        score_round(
+            captured,
+            capot_bid,
+            coinche_level=1,
+            capot_result=True,
+            belote_holder=None,
+            attacker_tricks=8,
+            score_mode=SCORE_MODE_POINTS_MADE_PLUS_ANNOUNCED,
+        )["NS"]["total"]
+        == 500
+    )
+
+
 def test_score_round_coinche_doubles_bid_plus_pool():
     # 100 annoncés, 90 faits, contré : (100 + 160) × 2 = 520 pour les gagnants.
     captured = {"NS": 90, "EW": 72}
@@ -336,12 +430,12 @@ def test_score_round_surcoinche_quadruples_bid_plus_pool():
 
 
 def test_score_round_coinche_on_made_contract_doubles_attackers():
-    # Contrat réussi et contré : (points réalisés arrondis + demandé) × 2.
+    # Contrat réussi et contré, mode hybride : (160 + demandé) × 2.
     captured = {"NS": 92, "EW": 70}
     bid = {"team": "NS", "trump": "♠", "points": 90}
     result = score_round(captured, bid, coinche_level=2, capot_result=None, belote_holder=None)
-    assert result["NS"]["total"] == (90 + 90) * 2  # 360
-    assert result["EW"]["total"] == 70  # defenders unmultiplied
+    assert result["NS"]["total"] == (160 + 90) * 2  # 500
+    assert result["EW"]["total"] == 0
 
 
 def test_score_round_belote_counted_once_and_not_multiplied_on_coinche():
@@ -353,16 +447,16 @@ def test_score_round_belote_counted_once_and_not_multiplied_on_coinche():
     assert result["EW"]["belote_bonus"] == 20
 
 
-def test_score_round_belote_bonus_credited_to_holder_on_failure():
+def test_score_round_belote_bonus_is_credited_to_defence_on_failure():
     # NS annonce 110 mais ne fait que 40 cartes ; même avec la belote
-    # (40 + 20 = 60 < 110) le contrat chute. La belote reste au détenteur.
+    # (40 + 20 = 60 < 110) le contrat chute. La défense marque la belote.
     captured = {"NS": 40, "EW": 122}
     bid = {"team": "NS", "trump": "♠", "points": 110}
     result = score_round(captured, bid, coinche_level=1, capot_result=None, belote_holder="NS")
     assert result["NS"]["contract_result"] == "failed"
-    assert result["NS"]["total"] == 20  # 0 base + 20 belote (règle coinche classique)
-    assert result["NS"]["belote_bonus"] == 20
-    assert result["EW"]["total"] == 270
+    assert result["NS"]["total"] == 0
+    assert result["EW"]["belote_bonus"] == 20
+    assert result["EW"]["total"] == 290
 
 
 def test_score_round_belote_helps_fulfil_contract_with_more_defender_points():

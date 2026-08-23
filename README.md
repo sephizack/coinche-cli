@@ -73,7 +73,7 @@ uv run -m coinche.server --port 8765 --target-score 1000
 
 ```bash
 uv run -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
-                         [--team TEAM] [--web-port PORT]
+                         [--team TEAM] [--score-mode MODE] [--web-port PORT]
 ```
 
 - `--host` — server address (defaults to an interactive prompt, `127.0.0.1`)
@@ -84,6 +84,8 @@ uv run -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
   table picker (useful for scripting)
 - `--team` — team label (`Equipe 1` or `Equipe 2`); skips the interactive
   team picker
+- `--score-mode` — scoring convention for a table you create: `points_made`,
+  `points_announced`, or `points_made_plus_announced` (default)
 - `--web-port` — port for the optional **web overlay** (default `0` = pick a
   free port automatically)
 
@@ -122,8 +124,10 @@ update automatically.
 
 In the Web lobby, **Options de table** opens the settings for a new table:
 table name, Discord notification, and the default bot type for newly created
-bots, as well as whether a Coinche/Contre blocks later bids. The blocking rule
-is enabled by default. Each bot keeps its own type; click its `BOT <type>`
+bots, the scoring convention, and whether a Coinche/Contre blocks later bids.
+The scoring choices are **Points faits**, **Points annoncés**, and **Points
+faits + annoncés** (the default); the blocking rule is enabled by default.
+Each bot keeps its own type; click its `BOT <type>`
 badge at the table to cycle through the available strategies. `Maestro` uses
 the same information-safe card play as the bot
 but announces one extra trick when it holds firm trump control. `Cloclo` is an

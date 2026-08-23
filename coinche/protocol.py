@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 
 from coinche.bot import is_supported_bot_type
-from coinche.rules import ALLOWED_TRUMPS
+from coinche.rules import ALLOWED_TRUMPS, is_supported_score_mode
 
 TABLE_KEY_MIN_LENGTH = 4
 TABLE_KEY_MAX_LENGTH = 20
@@ -126,8 +126,8 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
 # the sanctioned way to watch a table you can't sit at (see server._resolve_join).
 # A creator can also set the optional boolean "suppress_discord_notification"
 # to keep a newly-created table out of the Discord notification channel. It
-# may also set ``coinche_blocks_bidding`` (defaults to true) and ``bot_type``
-# for a newly-created table.
+# may also set ``coinche_blocks_bidding`` (defaults to true), ``score_mode``,
+# and ``bot_type`` for a newly-created table.
 
 _VALID_BID_ACTIONS = {"pass", "bid", "coinche", "surcoinche"}
 
@@ -196,6 +196,9 @@ def _validate_client_payload(msg_type: str, payload: dict) -> None:
     if msg_type == JOIN and "coinche_blocks_bidding" in payload:
         if not isinstance(payload["coinche_blocks_bidding"], bool):
             raise ProtocolError("coinche_blocks_bidding must be a boolean")
+    if msg_type == JOIN and "score_mode" in payload:
+        if not isinstance(payload["score_mode"], str) or not is_supported_score_mode(payload["score_mode"]):
+            raise ProtocolError(f"Unknown score_mode: {payload['score_mode']!r}")
     if msg_type == JOIN and "bot_type" in payload:
         if not isinstance(payload["bot_type"], str) or not is_supported_bot_type(payload["bot_type"]):
             raise ProtocolError(f"Unknown bot_type: {payload['bot_type']!r}")
