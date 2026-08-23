@@ -11,8 +11,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from coinche import protocol
-from coinche.client import _auto_generate_table_key, _reconnectable_seat, _replaceable_bot_seats
+from coinche.client import _auto_generate_table_key, _reconnectable_seat, _replaceable_bot_seats, build_arg_parser
 from coinche.table import TABLE_NAMES, TABLE_NAMES_PATH
 
 
@@ -137,3 +139,12 @@ def test_table_venue_names_match_server_key_constraints():
 def test_table_venue_names_are_loaded_from_shared_static_json():
     assert TABLE_NAMES_PATH == Path(__file__).parent.parent / "coinche" / "web" / "static" / "table_names.json"
     assert tuple(json.loads(TABLE_NAMES_PATH.read_text(encoding="utf-8"))) == TABLE_NAMES
+
+
+def test_target_score_cli_option_is_strictly_positive():
+    parser = build_arg_parser()
+
+    assert parser.parse_args([]).target_score is None
+    assert parser.parse_args(["--target-score", "1500"]).target_score == 1500
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--target-score", "0"])

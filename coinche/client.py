@@ -37,6 +37,17 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 BACKOFF_DELAYS = (1, 2, 4, 8, 16)
 
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an integer") from error
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
 # Thread-safety flag: when set, `_read_single_key` returns "" promptly so the
 # executor's worker thread frees up.  This allows shutdown_default_executor()
 # to complete within ms rather than blocking for up to 5 minutes waiting on a
@@ -99,6 +110,7 @@ class ClientLink:
         coinche_blocks_bidding: bool = True,
         score_mode: str = rules.DEFAULT_SCORE_MODE,
         bot_type: str = DEFAULT_BOT_TYPE,
+        target_score: int | None = None,
     ) -> bool:
         payload = {"table_key": table_key, "player_name": player_name, "team_name": team_name}
         if seat is not None:
@@ -113,6 +125,8 @@ class ClientLink:
             payload["score_mode"] = score_mode
         if bot_type != DEFAULT_BOT_TYPE:
             payload["bot_type"] = bot_type
+        if target_score is not None:
+            payload["target_score"] = target_score
         return await self._send(protocol.JOIN, payload)
 
     async def send_rematch(self) -> bool:
@@ -142,6 +156,7 @@ async def run_session(
     seat: str | None = None,
     suppress_discord_notification: bool = False,
     score_mode: str = rules.DEFAULT_SCORE_MODE,
+    target_score: int | None = None,
 ) -> str:
     """Run one connection attempt end-to-end.
 
@@ -181,6 +196,7 @@ async def run_session(
         seat=seat,
         suppress_discord_notification=suppress_discord_notification,
         score_mode=score_mode,
+        target_score=target_score,
     ):
         return "not_joined"
 
@@ -1095,6 +1111,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=rules.DEFAULT_SCORE_MODE,
         help="Table scoring convention when creating a table (default: points_made_plus_announced).",
     )
+    parser.add_argument(
+        "--target-score",
+        type=_positive_int,
+        help="Cumulative score to win a table you create (default: server setting).",
+    )
     return parser
 
 
@@ -1128,6 +1149,7 @@ async def main(argv: list[str] | None = None) -> None:
         seat=seat,
         suppress_discord_notification=suppress_discord_notification,
         score_mode=args.score_mode,
+        target_score=args.target_score,
     )
     if result == "not_joined":
         return
@@ -1150,6 +1172,7 @@ async def main(argv: list[str] | None = None) -> None:
             web_port=args.web_port,
             suppress_discord_notification=suppress_discord_notification,
             score_mode=args.score_mode,
+            target_score=args.target_score,
         )
         if result == "game_over":
             print("Partie terminée. Au revoir !")

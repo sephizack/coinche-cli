@@ -107,6 +107,10 @@ def parse_browser_message(raw: str | bytes) -> dict:
         score_mode = decoded["score_mode"]
         if not isinstance(score_mode, str) or not rules.is_supported_score_mode(score_mode):
             raise WebProtocolError("Mode de comptage inconnu.")
+    if action == "join" and "target_score" in decoded:
+        target_score = decoded["target_score"]
+        if type(target_score) is not int or target_score < 1:
+            raise WebProtocolError("Score cible invalide.")
     if action == "join" and "bot_type" in decoded:
         bot_type = decoded["bot_type"]
         if not isinstance(bot_type, str) or not bot.is_supported_bot_type(bot_type):

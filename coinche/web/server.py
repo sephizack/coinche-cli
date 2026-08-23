@@ -380,6 +380,7 @@ class WebOverlayServer:
                 coinche_blocks_bidding=msg.get("coinche_blocks_bidding", True),
                 score_mode=msg.get("score_mode", rules.DEFAULT_SCORE_MODE),
                 bot_type=msg.get("bot_type", DEFAULT_BOT_TYPE),
+                target_score=msg.get("target_score"),
             )
         elif action == "continue" and self.on_round_continue is not None:
             await self.on_round_continue()

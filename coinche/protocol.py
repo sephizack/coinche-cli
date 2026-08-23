@@ -127,7 +127,8 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
 # A creator can also set the optional boolean "suppress_discord_notification"
 # to keep a newly-created table out of the Discord notification channel. It
 # may also set ``coinche_blocks_bidding`` (defaults to true), ``score_mode``,
-# and ``bot_type`` for a newly-created table.
+# ``bot_type``, and a strictly positive integer ``target_score`` for a
+# newly-created table.
 
 _VALID_BID_ACTIONS = {"pass", "bid", "coinche", "surcoinche"}
 

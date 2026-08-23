@@ -125,6 +125,10 @@ def test_parse_rejects_invalid_table_options() -> None:
         parse_browser_message(
             json.dumps({"action": "join", "table_key": "t1", "player_name": "Zoe", "score_mode": "unknown"})
         )
+    with pytest.raises(WebProtocolError):
+        parse_browser_message(
+            json.dumps({"action": "join", "table_key": "t1", "player_name": "Zoe", "target_score": 0})
+        )
 
 
 def test_parse_accepts_a_registered_bot_type(monkeypatch) -> None:
@@ -195,6 +199,7 @@ class FakeLink:
         coinche_blocks_bidding=True,
         score_mode=rules.DEFAULT_SCORE_MODE,
         bot_type=bot.DEFAULT_BOT_TYPE,
+        target_score=None,
     ) -> bool:
         self.calls.append(
             (
@@ -208,6 +213,7 @@ class FakeLink:
                 coinche_blocks_bidding,
                 score_mode,
                 bot_type,
+                target_score,
             )
         )
         return True
@@ -382,6 +388,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
                 True,
                 rules.DEFAULT_SCORE_MODE,
                 bot.DEFAULT_BOT_TYPE,
+                None,
             ) in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
@@ -521,10 +528,26 @@ def test_on_browser_message_dispatch_direct() -> None:
         server = WebOverlayServer(ClientState(), link, host=HOST, port=0)
         await server.on_browser_message({"action": "play", "card": "7♦"})
         await server.on_browser_message({"action": "bid", "bid_action": "pass"})
+        await server.on_browser_message(
+            {"action": "join", "table_key": "t1", "player_name": "Zoe", "target_score": 1500}
+        )
         await server.on_browser_message({"action": "set_bot_type", "seat": "E", "bot_type": "maestro"})
         await server.on_browser_message({"action": "leave"})
         assert ("play", "7♦") in link.calls
         assert ("bid", "pass", None, None) in link.calls
+        assert (
+            "join",
+            "t1",
+            "Zoe",
+            None,
+            None,
+            False,
+            False,
+            True,
+            rules.DEFAULT_SCORE_MODE,
+            bot.DEFAULT_BOT_TYPE,
+            1500,
+        ) in link.calls
         assert ("set_bot_type", "E", "maestro") in link.calls
         assert ("leave",) in link.calls
 

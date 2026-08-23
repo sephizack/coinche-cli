@@ -1524,6 +1524,7 @@ const App = {
       botType: "toto",
       coincheBlocksBidding: true,
       scoreMode: "points_made_plus_announced",
+      targetScore: "",
     });
     const discordNotificationsEnabled = computed({
       get: () => !tableOptions.suppressDiscordNotification,
@@ -1576,6 +1577,7 @@ const App = {
         if (!tableSettings.coincheBlocksBidding) payload.coinche_blocks_bidding = false;
         if (tableSettings.scoreMode !== "points_made_plus_announced") payload.score_mode = tableSettings.scoreMode;
         if (tableSettings.botType !== "toto") payload.bot_type = tableSettings.botType;
+        if (tableSettings.targetScore !== "") payload.target_score = tableSettings.targetScore;
       }
       sendAction("join", payload);
     }
@@ -1597,6 +1599,10 @@ const App = {
       const tableKey = tableOptions.name.trim() || nextTableKey.value;
       if (!/^[A-Za-z0-9]{4,20}$/.test(tableKey)) {
         showToast("Le nom doit contenir de 4 à 20 lettres ou chiffres", "error");
+        return;
+      }
+      if (tableOptions.targetScore !== "" && (!Number.isInteger(tableOptions.targetScore) || tableOptions.targetScore < 1)) {
+        showToast("Le score doit être un entier positif", "error");
         return;
       }
       joinSpecificTable(tableKey, lobbyTeams.value.nsLabel, null, tableOptions);
@@ -1924,6 +1930,11 @@ const App = {
                   <option value="points_announced">Points annoncés</option>
                   <option value="points_made_plus_announced">Points faits + annoncés</option>
                 </select>
+              </div>
+              <div class="table-options__field">
+                <label for="table-target-score">Score à atteindre</label>
+                <input id="table-target-score" v-model.number="tableOptions.targetScore" type="number" min="1" step="1"
+                       placeholder="Défaut du serveur" data-testid="table-target-score" />
               </div>
               <div class="table-options__setting">
                 <span>Coincher bloque les annonces</span>

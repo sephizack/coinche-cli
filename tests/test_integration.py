@@ -128,6 +128,7 @@ def test_join_creation_options_configure_the_new_table() -> None:
                     "coinche_blocks_bidding": False,
                     "score_mode": SCORE_MODE_POINTS_ANNOUNCED,
                     "bot_type": DEFAULT_BOT_TYPE,
+                    "target_score": 1500,
                 },
             )
             await _read_until(reader, protocol.JOINED)
@@ -136,6 +137,7 @@ def test_join_creation_options_configure_the_new_table() -> None:
             assert table.coinche_blocks_bidding is False
             assert table.score_mode == SCORE_MODE_POINTS_ANNOUNCED
             assert table.bot_type == DEFAULT_BOT_TYPE
+            assert table.target_score == 1500
         finally:
             if writer is not None:
                 writer.close()

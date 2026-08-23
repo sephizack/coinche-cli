@@ -54,6 +54,7 @@ logger = logging.getLogger("coinche.server")
 
 DISCORD_NOTIF_CHANNEL_POST_URL = os.environ.get("DISCORD_NOTIF_CHANNEL_POST_URL")
 COINCHE_PUBLIC_URL = os.environ.get("COINCHE_PUBLIC_URL", "").rstrip("/")
+TARGET_SCORE_ENV_VAR = "COINCHE_TARGET_SCORE"
 _DISCORD_WEBHOOK_TIMEOUT_SECONDS = 5.0
 _DISCORD_TABLE_CREATED_COLOR = 0x57F287
 _DISCORD_TABLE_CLOSED_COLOR = 0x95A5A6
@@ -273,6 +274,17 @@ def _positive_int(value: str) -> int:
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
     return parsed
+
+
+def _default_target_score() -> int:
+    """Return the server target-score default, optionally configured by the environment."""
+    value = os.environ.get(TARGET_SCORE_ENV_VAR)
+    if value is None:
+        return rules.DEFAULT_TARGET_SCORE
+    try:
+        return _positive_int(value)
+    except argparse.ArgumentTypeError as error:
+        raise argparse.ArgumentTypeError(f"{TARGET_SCORE_ENV_VAR} must be a positive integer") from error
 
 
 def _positive_float(value: str) -> float:
@@ -1292,11 +1304,15 @@ async def _resolve_join_inner(
     coinche_blocks_bidding = payload.get("coinche_blocks_bidding", True)
     score_mode = payload.get("score_mode", rules.DEFAULT_SCORE_MODE)
     bot_type = payload.get("bot_type", DEFAULT_BOT_TYPE)
+    table_target_score = payload.get("target_score", target_score)
     if not isinstance(score_mode, str) or not rules.is_supported_score_mode(score_mode):
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "Mode de comptage inconnu.")
         return None
     if not isinstance(bot_type, str) or not is_supported_bot_type(bot_type):
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "Type de bot inconnu.")
+        return None
+    if type(table_target_score) is not int or table_target_score < 1:
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "Score cible invalide.")
         return None
 
     preferred_seat: Seat | None = None
@@ -1350,7 +1366,7 @@ async def _resolve_join_inner(
     table_was_created = table_key not in TABLES
     table = get_or_create_table(
         table_key,
-        target_score=target_score,
+        target_score=table_target_score,
         coinche_blocks_bidding=coinche_blocks_bidding,
         score_mode=score_mode,
         bot_type=bot_type,
@@ -1620,11 +1636,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Coinche network game server")
     parser.add_argument("--host", default="0.0.0.0", help="Host/IP to bind (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8765, help="Port to listen on (default: 8765)")
+    try:
+        default_target_score = _default_target_score()
+    except argparse.ArgumentTypeError as error:
+        parser.error(str(error))
     parser.add_argument(
         "--target-score",
-        type=int,
-        default=rules.DEFAULT_TARGET_SCORE,
-        help=f"Cumulative score to win the game (default: {rules.DEFAULT_TARGET_SCORE})",
+        type=_positive_int,
+        default=default_target_score,
+        help=(
+            "Cumulative score to win the game "
+            f"(default: {default_target_score}; override the {TARGET_SCORE_ENV_VAR} environment variable)"
+        ),
     )
     parser.add_argument(
         "--trick-pause",

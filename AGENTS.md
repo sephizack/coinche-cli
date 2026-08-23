@@ -56,6 +56,13 @@ CI (`.github/workflows/ci.yml`) runs the same checks on push/PR for Python 3.10 
 
 ## Wire protocol additions
 
+- **`target_score` table option** (optional positive integer on the table
+  creator's `JOIN`): sets the immutable cumulative score needed to win that
+  table. When omitted, the server uses its `--target-score` default, which can
+  be configured with `COINCHE_TARGET_SCORE`. It is returned in `table_options`
+  and passed from `Table` into every newly-created `Game`, including bot fills
+  and rematches. The terminal CLI and web overlay only send a value when the
+  creator explicitly selects one.
 - **`score_mode` table option** (optional on the table creator's `JOIN`):
   `points_made`, `points_announced`, or `points_made_plus_announced` (the
   default). The selection is immutable for a table, is returned in

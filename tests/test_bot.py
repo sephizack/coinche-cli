@@ -2081,6 +2081,16 @@ def test_server_parser_accepts_only_positive_bot_sample_counts() -> None:
         parser.parse_args(["--bot-samples", "0"])
 
 
+def test_server_target_score_defaults_to_environment_and_cli_overrides_it(monkeypatch) -> None:
+    monkeypatch.setenv(server.TARGET_SCORE_ENV_VAR, "1500")
+    parser = server.build_arg_parser()
+
+    assert parser.parse_args([]).target_score == 1500
+    assert parser.parse_args(["--target-score", "2000"]).target_score == 2000
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--target-score", "0"])
+
+
 # ---------------------------------------------------------------------------
 # _team_auction_supports_trump
 # ---------------------------------------------------------------------------
