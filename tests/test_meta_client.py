@@ -18,7 +18,7 @@ import struct
 
 from coinche import protocol
 from coinche.meta import server as meta_server
-from coinche.meta.server import LANDING_PAGE_PATH, MetaClientServer
+from coinche.meta.server import LANDING_PAGE_PATH, PAIRING_ENTRY_PAGE_PATH, PAIRING_PAGE_PATH, MetaClientServer
 
 HOST = "127.0.0.1"
 AUTH = base64.b64encode(b"coinche:secret").decode("ascii")
@@ -213,6 +213,11 @@ async def _stop(server: MetaClientServer, task: asyncio.Task) -> None:
 # --------------------------------------------------------------------------- #
 
 
+def test_pairing_templates_are_available() -> None:
+    assert PAIRING_PAGE_PATH.is_file()
+    assert PAIRING_ENTRY_PAGE_PATH.is_file()
+
+
 def test_pairing_base_url_prefers_configured_public_url(monkeypatch) -> None:
     server = MetaClientServer(HOST, 9999, "coinche", "secret")
     server.urls = ["http://127.0.0.1:8123", "http://192.168.1.20:8123"]
@@ -259,11 +264,14 @@ def test_pairing_link_authenticates_a_second_browser_without_basic_auth() -> Non
             assert status == 200
             assert b"Saisissez le code" in body
             assert b"styles.css" not in body
+            assert b"pairing-spinner" in body
+            assert b"aria-busy" in body
 
             status, _, body = await http_get(port, "/pair")
             assert status == 200
-            match = re.search(rb"saisissez ce code : <strong>([A-Z2-9]{6})", body)
+            match = re.search(rb'<p class="pairing-code">([A-Z2-9]{6})</p>', body)
             assert match is not None
+            assert b'class="pairing-code"' in body
             pairing_path = "/a/" + match.group(1).decode("ascii")
 
             status, headers, _ = await http_get(port, pairing_path, auth=None)

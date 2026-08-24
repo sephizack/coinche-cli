@@ -69,6 +69,8 @@ IDLE_TIMEOUT_SECONDS = DEFAULT_GLOBAL_KICK_TIMEOUT_SECONDS
 REAP_INTERVAL_SECONDS = 15.0
 META_STATIC_DIR = Path(__file__).resolve().parent / "static"
 LANDING_PAGE_PATH = META_STATIC_DIR / "landing.html"
+PAIRING_PAGE_PATH = META_STATIC_DIR / "pairing.html"
+PAIRING_ENTRY_PAGE_PATH = META_STATIC_DIR / "pairing-entry.html"
 
 
 class MetaClientServer:
@@ -330,41 +332,31 @@ class MetaClientServer:
         self._purge_expired_access()
         code = "".join(secrets.choice(_PAIR_CODE_ALPHABET) for _ in range(_PAIR_CODE_LENGTH))
         self.pairing_codes[code] = time.monotonic() + _PAIR_CODE_TTL_SECONDS
-        display_code = code
         access_url = f"{self._pairing_base_url()}/a"
-        body = f"""<!doctype html>
-<html lang=\"fr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-<title>Accès voiture</title><link rel=\"stylesheet\" href=\"/styles.css\"></head>
-<body><main class=\"lobby\"><section class=\"lobby__card\">
-<h1 class=\"lobby__title\">Accès voiture</h1>
-<p>Ouvrez ce lien sur la voiture (ajoutez le au favoris 😉):</p>
-<p><strong>{html.escape(access_url)}</strong></p>
-<p>puis saisissez ce code : <strong>{display_code}</strong></p>
-<p>La voiture restera connectée pendant 30 jours, sauf redémarrage du serveur. Ce lien ne fonctionne qu'une fois.</p>
-<p style="margin:auto"><br><a class=\"rematch-btn\" href=\"/\">Retour</a></p>
-</section></main></body></html>"""
-        await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body.encode("utf-8"), set_cookie)
+        try:
+            template = PAIRING_PAGE_PATH.read_text(encoding="utf-8")
+        except OSError:
+            logger.exception("Méta-client : template de page d'association introuvable")
+            await WebOverlayServer._write_http(
+                writer, 500, "text/plain; charset=utf-8", b"Pairing page unavailable", set_cookie
+            )
+        else:
+            body = template.replace("__ACCESS_URL__", html.escape(access_url))
+            body = body.replace("__PAIRING_CODE__", html.escape(code))
+            await WebOverlayServer._write_http(
+                writer, 200, "text/html; charset=utf-8", body.encode("utf-8"), set_cookie
+            )
         _safe_close(writer)
 
     async def _serve_pairing_entry(self, writer: asyncio.StreamWriter) -> None:
         """Serve the public page where a second device enters a pairing code."""
-        body = b"""<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Acces rapide</title><style>
-    body{margin:0;background:#10251c;color:#f7f1df;font:18px system-ui,sans-serif}
-    main{max-width:28rem;margin:10vh auto;padding:1.5rem}.card{padding:1.5rem;border:1px solid #d4af37}
-    input,button{box-sizing:border-box;width:100%;padding:.75rem;font:inherit}button{margin-top:1rem}
-    </style></head><body><main><section class="card">
-    <h1>Acces tapide</h1>
-<p>Saisissez le code affiche sur le telephone.</p>
-<form class="lobby__field"
-    onsubmit="event.preventDefault();location.href='/a/'+this.code.value.replace(/[^A-Za-z0-9]/g,'').toUpperCase()">
-<label for="code">Code</label>
-<input id="code" name="code" type="text" maxlength="6" pattern="[A-Za-z2-9]{6}" required
-    autocomplete="one-time-code" autocapitalize="characters" placeholder="ABCDEF">
-<button type="submit">Ouvrir</button>
-</form></section></main></body></html>"""
-        await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body)
+        try:
+            body = PAIRING_ENTRY_PAGE_PATH.read_bytes()
+        except OSError:
+            logger.exception("Méta-client : template de saisie du code introuvable")
+            await WebOverlayServer._write_http(writer, 500, "text/plain; charset=utf-8", b"Pairing entry unavailable")
+        else:
+            await WebOverlayServer._write_http(writer, 200, "text/html; charset=utf-8", body)
         _safe_close(writer)
 
     async def _redeem_pairing_code(self, code: str, writer: asyncio.StreamWriter) -> None:

@@ -274,6 +274,7 @@ button {
 .felt-scene {
   flex: 1 1 auto;
   position: relative;
+  z-index: 1;
   perspective: 1400px;
   display: grid;
   place-items: center;
@@ -917,6 +918,8 @@ button {
    ========================================================================= */
 .status-footer {
   flex: 0 0 auto;
+  position: relative;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1923,6 +1926,16 @@ body > .lobby {
   width: 18px;
   height: 18px;
   font-size: 0.72rem;
+}
+.pairing-code {
+  margin: var(--sp-3) 0 var(--sp-4);
+  color: var(--gold-soft);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: clamp(2.5rem, 10vw, 5.5rem);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-align: center;
 }
 
 .bot-types-dialog {

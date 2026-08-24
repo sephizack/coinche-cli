@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Accès rapide</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --felt-green: #0b5d3b;
+        --felt-green-dark: #083f29;
+        --felt-green-light: #10744a;
+        --gold: #d4af37;
+        --gold-soft: #e8cf7a;
+        --text-on-felt: #f5f5f5;
+        --text-muted: #b9c6bd;
+        --panel-bg: #0a2a1c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        min-height: 100vh;
+        min-height: 100dvh;
+        margin: 0;
+        padding: 24px;
+        background: radial-gradient(ellipse at 50% 20%, #133b2a 0%, #06140d 75%), #06140d;
+        color: var(--text-on-felt);
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main {
+        display: grid;
+        min-height: calc(100vh - 48px);
+        min-height: calc(100dvh - 48px);
+        place-items: center;
+      }
+      .card {
+        width: min(100%, 440px);
+        padding: 32px;
+        border: 1px solid rgba(212, 175, 55, 0.7);
+        border-radius: 8px;
+        background: rgba(6, 40, 27, 0.92);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+      }
+      h1 {
+        margin: 0 0 12px;
+        color: var(--gold);
+        font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+        font-size: clamp(1.8rem, 7vw, 2.4rem);
+        letter-spacing: 0;
+        text-align: center;
+      }
+      p {
+        margin: 0 0 28px;
+        color: var(--text-muted);
+        line-height: 1.5;
+        text-align: center;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--gold-soft);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      input, button {
+        width: 100%;
+        min-height: 52px;
+        border-radius: 8px;
+        font: inherit;
+      }
+      input {
+        padding: 10px 14px;
+        border: 1px solid rgba(232, 207, 122, 0.72);
+        background: rgba(0, 0, 0, 0.35);
+        color: var(--text-on-felt);
+        font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+        font-size: clamp(1.5rem, 8vw, 2.25rem);
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        text-align: center;
+        text-transform: uppercase;
+      }
+      input::placeholder { color: rgba(185, 198, 189, 0.55); }
+      input:focus-visible, button:focus-visible {
+        outline: 3px solid var(--gold);
+        outline-offset: 3px;
+      }
+      button {
+        margin-top: 16px;
+        border: 1px solid var(--gold);
+        background: var(--felt-green);
+        color: var(--gold-soft);
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 800;
+        transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+      }
+      button:hover:not(:disabled) {
+        border-color: var(--gold-soft);
+        background: var(--felt-green-light);
+        color: var(--text-on-felt);
+      }
+      button:disabled { cursor: wait; opacity: 0.7; }
+      button[aria-busy="true"] { cursor: wait; }
+      .pairing-spinner {
+        display: none;
+        width: 1em;
+        height: 1em;
+        margin-right: 0.55rem;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        vertical-align: -0.15em;
+        animation: spin 0.7s linear infinite;
+      }
+      button[aria-busy="true"] .pairing-spinner { display: inline-block; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (max-width: 420px) {
+        body { padding: 16px; }
+        main { min-height: calc(100vh - 32px); min-height: calc(100dvh - 32px); }
+        .card { padding: 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="card">
+        <h1>Accès rapide</h1>
+        <p>Saisissez le code affiché sur votre appareil connecté.</p>
+        <form class="lobby__field">
+          <label for="code">Code</label>
+          <input
+            id="code"
+            name="code"
+            type="text"
+            maxlength="6"
+            pattern="[A-Za-z2-9]{6}"
+            required
+            autocomplete="one-time-code"
+            autocapitalize="characters"
+            placeholder="ABCDEF"
+          />
+          <button type="submit"><span class="pairing-spinner" aria-hidden="true"></span>Ouvrir</button>
+        </form>
+      </section>
+    </main>
+    <script>
+      document.querySelector(".lobby__field").addEventListener("submit", function (event) {
+        event.preventDefault();
+        var button = this.querySelector("button");
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        requestAnimationFrame(function () {
+          location.href = "/a/" + document.getElementById("code").value.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+        });
+      });
+    </script>
+  </body>
+</html>
