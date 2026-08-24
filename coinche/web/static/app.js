@@ -702,6 +702,7 @@ const App = {
 
     let ws = null;
     let backoff = 500;
+    let reconnectTimer = null;
     let toastId = 0;
     let pendingJoinSent = false;
     let bidEffectTimer = null;
@@ -727,8 +728,30 @@ const App = {
       // toast): while the socket is down, taps/clicks are dropped anyway, so we
       // make that explicit rather than letting the player click into the void.
       reconnecting.value = true;
-      setTimeout(connect, backoff);
+      if (reconnectTimer !== null) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, backoff);
       backoff = Math.min(backoff * 2, 4000);
+    }
+
+    function reconnectImmediately() {
+      reconnecting.value = true;
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      backoff = 500;
+      failedOpens = 0;
+
+      // A browser may preserve an apparently-open WebSocket while backgrounded
+      // even though the network path is no longer usable. Replacing it on
+      // return matches the refresh path and avoids waiting for TCP timeouts.
+      const staleSocket = ws;
+      ws = null;
+      if (staleSocket && staleSocket.readyState < WebSocket.CLOSING) staleSocket.close();
+      connect();
     }
 
     function abandonDeadSession() {
@@ -781,16 +804,25 @@ const App = {
 
     function connect() {
       let opened = false;
-      ws = new WebSocket(wsUrl());
-      ws.addEventListener("open", () => {
+      const socket = new WebSocket(wsUrl());
+      ws = socket;
+      socket.addEventListener("open", () => {
+        if (ws !== socket) {
+          socket.close();
+          return;
+        }
         opened = true;
         backoff = 500;
         failedOpens = 0; // a successful open means the session is alive
+        if (reconnectTimer !== null) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
         reconnecting.value = false; // socket is live again — drop the overlay
         // Ask U2 to start streaming lobby updates so the join screen is live.
         sendAction("lobby", {});
       });
-      ws.addEventListener("message", (event) => {
+      socket.addEventListener("message", (event) => {
         let frame;
         try {
           frame = JSON.parse(event.data);
@@ -805,7 +837,9 @@ const App = {
           fillingBots.value = false;
         }
       });
-      ws.addEventListener("close", () => {
+      socket.addEventListener("close", () => {
+        if (ws !== socket) return;
+        ws = null;
         // Closed without ever opening this attempt: count it. A dead session
         // (server reboot / reaped) rejects the /s/<id>/ws upgrade, so the WS
         // closes without opening every time. But a phone waking from sleep also
@@ -823,14 +857,23 @@ const App = {
         }
         scheduleReconnect();
       });
-      ws.addEventListener("error", () => {
+      socket.addEventListener("error", () => {
         try {
-          ws.close();
+          socket.close();
         } catch {
           /* the close handler drives the retry */
         }
       });
     }
+
+    function retryConnectionOnFocus() {
+      if (reconnecting.value || !ws || ws.readyState !== WebSocket.OPEN) reconnectImmediately();
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") retryConnectionOnFocus();
+    });
+    window.addEventListener("focus", retryConnectionOnFocus);
 
     function sendAction(action, payload) {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;

@@ -1440,6 +1440,7 @@ body > .lobby {
   margin-top: var(--sp-6);
 }
 .lobby__spinner {
+  display: inline-block;
   width: 36px;
   height: 36px;
   border-radius: 50%;

@@ -904,6 +904,20 @@ def test_web_client_shows_blocking_reconnect_overlay_while_socket_is_down() -> N
     assert "z-index: 200;" in styles
 
 
+def test_web_client_retries_a_disconnected_socket_when_returning_to_the_foreground() -> None:
+    """A refocused tab must retry promptly without replacing a healthy socket."""
+    app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()
+
+    assert "let reconnectTimer = null;" in app
+    assert "function reconnectImmediately()" in app
+    assert "clearTimeout(reconnectTimer);" in app
+    assert "function retryConnectionOnFocus()" in app
+    assert "if (reconnecting.value || !ws || ws.readyState !== WebSocket.OPEN) reconnectImmediately();" in app
+    assert 'document.addEventListener("visibilitychange", () => {' in app
+    assert 'document.visibilityState === "visible"' in app
+    assert 'window.addEventListener("focus", retryConnectionOnFocus);' in app
+
+
 def test_web_client_animates_each_new_trick_card() -> None:
     """Every CARD_PLAYED snapshot insertion, including bot plays, gets a Vue enter animation."""
     static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
