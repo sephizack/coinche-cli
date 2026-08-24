@@ -711,6 +711,11 @@ button {
   padding-bottom: var(--sp-3);
   z-index: 25;
 }
+.hand-fan__cluster {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
 .hand-fan__inner {
   position: relative;
   display: flex;
@@ -728,8 +733,7 @@ button {
 .hand-fan .card:first-child {
   margin-left: 0;
 }
-.hand-fan .card--legal:hover,
-.hand-fan .card--legal:focus-visible {
+.hand-fan .card--pending {
   transform: translateY(-22px) scale(1.06);
   z-index: 5;
 }
@@ -761,6 +765,65 @@ button {
   color: var(--danger);
   min-height: 1.1em;
 }
+.hand-settings {
+  position: absolute;
+  bottom: var(--sp-3);
+  left: calc(100% + var(--sp-3));
+  z-index: 10;
+}
+.hand-settings__trigger {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(232, 207, 122, 0.72);
+  border-radius: 50%;
+  background: rgba(6, 40, 27, 0.92);
+  color: var(--gold-soft);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.hand-settings__trigger:hover,
+.hand-settings__trigger[aria-expanded="true"] {
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.2);
+  color: var(--gold);
+}
+.hand-settings__panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--sp-2));
+  width: min(270px, calc(100vw - var(--sp-6)));
+  padding: var(--sp-3);
+  border: 1px solid rgba(212, 175, 55, 0.58);
+  border-radius: var(--radius-card);
+  background: var(--panel-bg-solid);
+  box-shadow: var(--shadow-panel);
+  color: var(--text-on-felt);
+  font-family: system-ui, sans-serif;
+}
+.hand-settings__title {
+  margin: 0 0 var(--sp-3);
+  color: var(--gold-soft);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.hand-settings__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+.hand-settings__option + .hand-settings__option {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid rgba(212, 175, 55, 0.28);
+}
 
 /* =========================================================================
    Card (SVG) shared sizing
@@ -776,6 +839,9 @@ button {
   border: none;
   padding: 0;
   flex: 0 0 auto;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .card svg {
   width: 100%;
@@ -795,6 +861,17 @@ button {
 }
 .card--pending:hover {
   opacity: 0.85;
+}
+@media (hover: hover) and (pointer: fine) {
+  .card {
+    transition: transform var(--dur-fast) var(--ease-standard);
+  }
+  .card:hover {
+    transform: translateY(-4px);
+  }
+  .hand-fan .card--pending:hover {
+    transform: translateY(-26px) scale(1.06);
+  }
 }
 .card__spinner {
   position: absolute;
@@ -823,6 +900,11 @@ button {
 }
 .card--trump:hover {
   box-shadow: 0 0 0 3px var(--gold), 0 0 24px rgba(212, 175, 55, 0.8);
+  animation: none;
+}
+.table-wrap--trump-highlights-off .card--trump,
+.table-wrap--trump-highlights-off .card--trump:hover {
+  box-shadow: var(--shadow-card);
   animation: none;
 }
 @keyframes trump-pulse {
@@ -2510,6 +2592,9 @@ body > .lobby {
    Responsive: mobile portrait (<600) — vertical recompose, NO perspective
    ========================================================================= */
 @media (max-width: 599px) {
+  .hand-settings__panel {
+    right: 10px;
+  }
   .bot-types-dialog {
     align-items: end;
     padding: var(--sp-3);

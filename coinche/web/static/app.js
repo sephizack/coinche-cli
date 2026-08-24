@@ -578,6 +578,26 @@ const App = {
     let leavingTimer = null;
     const shakeCard = ref(null);
     const pendingCard = ref(null); // card pre-selected while waiting for our turn
+    const CARD_PRELOAD_SETTING_KEY = "coinche.preloadNextCard";
+    const cardSettingsOpen = ref(false);
+    const cardSettings = ref(null);
+    function readCardPreloadSetting() {
+      try {
+        return window.localStorage.getItem(CARD_PRELOAD_SETTING_KEY) !== "false";
+      } catch (e) {
+        return true; // localStorage unavailable — retain the default behavior
+      }
+    }
+    const preloadNextCard = ref(readCardPreloadSetting());
+    const TRUMP_HIGHLIGHT_SETTING_KEY = "coinche.highlightTrump";
+    function readTrumpHighlightSetting() {
+      try {
+        return window.localStorage.getItem(TRUMP_HIGHLIGHT_SETTING_KEY) !== "false";
+      } catch (e) {
+        return true; // localStorage unavailable — retain the default behavior
+      }
+    }
+    const highlightTrump = ref(readTrumpHighlightSetting());
     const dealing = ref(false);
     const badgeFlash = ref(false);
     const bidEffect = ref(null);
@@ -1187,9 +1207,11 @@ const App = {
       if (!s) return [];
       const pc = pendingCard.value;
       const bidding = !!s.pending_bid_request;
+      const hasPlayedThisTrick = Object.prototype.hasOwnProperty.call(s.current_trick || {}, s.seat);
+      const isOurTurn = s.whose_turn === s.seat && !hasPlayedThisTrick;
       return (s.hand || []).map((card) => ({
         card,
-        legal: !bidding,
+        legal: !bidding && (isOurTurn || preloadNextCard.value),
         illegal: false,
         pending: pc === card,
       }));
@@ -1326,7 +1348,7 @@ const App = {
         // Our turn: play immediately (server-authoritative validation).
         pendingCard.value = null;
         sendAction("play", { card });
-      } else if (s.hand && s.hand.includes(card)) {
+      } else if (preloadNextCard.value && s.hand && s.hand.includes(card)) {
         // Not our turn: toggle queue.  Clicking the same card again cancels.
         if (pendingCard.value === card) {
           pendingCard.value = null;
@@ -1612,6 +1634,23 @@ const App = {
       if (open) unread.value = 0;
     });
 
+    watch(preloadNextCard, (enabled) => {
+      try {
+        window.localStorage.setItem(CARD_PRELOAD_SETTING_KEY, String(enabled));
+      } catch (e) {
+        /* localStorage unavailable — keep the preference for this page only */
+      }
+      if (!enabled) pendingCard.value = null;
+    });
+
+    watch(highlightTrump, (enabled) => {
+      try {
+        window.localStorage.setItem(TRUMP_HIGHLIGHT_SETTING_KEY, String(enabled));
+      } catch (e) {
+        /* localStorage unavailable — keep the preference for this page only */
+      }
+    });
+
     watch(
       () => snapshot.value && snapshot.value.turn_deadline,
       (deadline) => {
@@ -1674,15 +1713,24 @@ const App = {
       if (event.key !== "Escape") return;
       botTypesInfoOpen.value = false;
       tableInfoOpen.value = false;
+      cardSettingsOpen.value = false;
+    }
+
+    function closeCardSettingsOnOutsideClick(event) {
+      if (cardSettingsOpen.value && cardSettings.value && !cardSettings.value.contains(event.target)) {
+        cardSettingsOpen.value = false;
+      }
     }
 
     onMounted(() => {
       window.addEventListener("keydown", closeInfoPanelsOnEscape);
+      window.addEventListener("click", closeCardSettingsOnOutsideClick);
       connect();
     });
     onUnmounted(() => {
       if (countdownInterval) clearInterval(countdownInterval);
       window.removeEventListener("keydown", closeInfoPanelsOnEscape);
+      window.removeEventListener("click", closeCardSettingsOnOutsideClick);
     });
 
     return {
@@ -1698,6 +1746,10 @@ const App = {
       leaveArmed,
       leaving,
       shakeCard,
+      cardSettingsOpen,
+      cardSettings,
+      preloadNextCard,
+      highlightTrump,
       dealing,
       badgeFlash,
       bidEffect,
@@ -2121,7 +2173,8 @@ const App = {
       </header>
 
       <div class="stage">
-        <main class="table-wrap" role="main" aria-label="Table de jeu">
+          <main class="table-wrap" :class="{ 'table-wrap--trump-highlights-off': !highlightTrump }"
+            role="main" aria-label="Table de jeu">
           <div class="felt-scene">
             <div class="felt">
               <div class="felt__upright">
@@ -2174,21 +2227,50 @@ const App = {
 
           <!-- Hand fan (seated players only — a spectator holds no cards) -->
           <div v-if="!isSpectator" class="hand-fan">
-            <div class="hand-fan__inner">
-              <card
-                v-for="(h, i) in handCards"
-                :key="h.card"
-                :card="h.card"
-                :legal="h.legal"
-                :illegal="h.illegal"
-                :pending="h.pending"
-                :interactive="h.legal"
-                :shake="shakeCard === h.card"
-                :trump="trumpSuit"
-                :class="{ 'deal-enter': dealing }"
-                :style="{ animationDelay: dealing ? (i * 60) + 'ms' : '0ms' }"
-                @play="playCard"
-              ></card>
+            <div class="hand-fan__cluster">
+              <div class="hand-fan__inner">
+                <card
+                  v-for="(h, i) in handCards"
+                  :key="h.card"
+                  :card="h.card"
+                  :legal="h.legal"
+                  :illegal="h.illegal"
+                  :pending="h.pending"
+                  :interactive="h.legal"
+                  :shake="shakeCard === h.card"
+                  :trump="trumpSuit"
+                  :class="{ 'deal-enter': dealing }"
+                  :style="{ animationDelay: dealing ? (i * 60) + 'ms' : '0ms' }"
+                  @play="playCard"
+                ></card>
+              </div>
+                    <div ref="cardSettings" class="hand-settings">
+                <button class="hand-settings__trigger" type="button" aria-label="Réglages des cartes"
+                        title="Réglages des cartes" :aria-expanded="cardSettingsOpen"
+                        @click="cardSettingsOpen = !cardSettingsOpen">⚙</button>
+                <section v-if="cardSettingsOpen" class="hand-settings__panel" role="dialog"
+                   aria-labelledby="hand-settings-title">
+                  <h2 id="hand-settings-title" class="hand-settings__title">Paramètres utilisateur</h2>
+                  <div class="hand-settings__option">
+                    <span>Préchargement de la carte suivante</span>
+                    <button class="table-options__chip" type="button"
+                            :class="{ 'table-options__chip--active': preloadNextCard }"
+                            :aria-pressed="preloadNextCard"
+                            @click="preloadNextCard = !preloadNextCard">
+                      {{ preloadNextCard ? 'Oui' : 'Non' }}
+                    </button>
+                  </div>
+                  <div class="hand-settings__option">
+                    <span>Mise en surbrillance des atouts</span>
+                    <button class="table-options__chip" type="button"
+                            :class="{ 'table-options__chip--active': highlightTrump }"
+                            :aria-pressed="highlightTrump"
+                            @click="highlightTrump = !highlightTrump">
+                      {{ highlightTrump ? 'Oui' : 'Non' }}
+                    </button>
+                  </div>
+                </section>
+              </div>
             </div>
           </div>
 
