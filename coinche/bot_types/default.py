@@ -1353,7 +1353,7 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
                 lower_cards = [card for card in legal_cards if card not in requested_trick_ace]
                 if lower_cards:  # pragma: no branch - a lone legal Ace returned before this point
                     return _best_discard(lower_cards, hand, trump)
-        elif led_suit == trump:
+        else:
             legal_trumps = [card for card in legal_cards if card.suit == trump]
             winning_trumps = [
                 card for card in legal_trumps if rules.trick_winner([*trick, (seat, card)], trump, led_suit) == seat

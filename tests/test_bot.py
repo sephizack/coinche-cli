@@ -856,6 +856,27 @@ def test_default_bot_keeps_nine_when_partner_trump_lead_is_lost() -> None:
     assert choose_card(game, Seat.S) == Card("7", "♠")
 
 
+def test_default_bot_overcuts_when_trump_lead_can_still_be_won() -> None:
+    # W's 10♠ beats N's initial 8♠, but S can still take the trick with 9♠.
+    # The losing-trump guard must not discard 7♠ in this case.
+    game = Game()
+    for seat, action, trump, points in [
+        (Seat.W, "pass", None, None),
+        (Seat.S, "bid", "♠", 80),
+        (Seat.E, "pass", None, None),
+        (Seat.N, "pass", None, None),
+        (Seat.W, "pass", None, None),
+    ]:
+        game.submit_bid(seat, action, trump=trump, points=points)
+
+    assert game.round_state is not None
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = [(Seat.N, Card("8", "♠")), (Seat.W, Card("10", "♠"))]
+    game.round_state.hands[Seat.S] = _cards("V♠", "9♠", "7♠", "A♥", "R♥", "D♥", "8♦", "7♣")
+
+    assert default.choose_card(game, Seat.S, sample_count=1) == Card("9", "♠")
+
+
 def test_default_bot_preserves_led_suit_ace_after_opponent_ruffs() -> None:
     game = Game()
     assert game.round_state is not None
