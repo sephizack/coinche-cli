@@ -821,6 +821,41 @@ def test_default_bot_overcuts_with_lowest_winning_trump_when_fourth_in_trick() -
     assert choose_card(game, Seat.W) == Card("9", "♠")
 
 
+def test_default_bot_keeps_nine_when_partner_trump_lead_is_lost() -> None:
+    # S declared spades. N (partner) won the first trick and asks for trump on
+    # the next one; W beats it with V♠. S must follow with a losing trump, but
+    # must preserve 9♠ and play 7♠ instead.
+    game = Game()
+    for seat, action, trump, points in [
+        (Seat.W, "pass", None, None),
+        (Seat.S, "bid", "♠", 80),
+        (Seat.E, "pass", None, None),
+        (Seat.N, "pass", None, None),
+        (Seat.W, "pass", None, None),
+    ]:
+        game.submit_bid(seat, action, trump=trump, points=points)
+
+    assert game.round_state is not None
+    game.round_state.tricks_played = 1
+    game.round_state.leader = Seat.N
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.W, Card("8", "♥")),
+                (Seat.N, Card("A", "♥")),
+                (Seat.E, Card("10", "♥")),
+                (Seat.S, Card("7", "♥")),
+            ],
+        }
+    ]
+    game.round_state.current_trick = [(Seat.N, Card("8", "♠")), (Seat.W, Card("V", "♠"))]
+    game.round_state.hands[Seat.S] = _cards("9♠", "7♠", "R♣", "V♥", "R♥", "9♥", "V♣")
+    game.next_to_act = Seat.S
+
+    assert choose_card(game, Seat.S) == Card("7", "♠")
+
+
 def test_default_bot_preserves_led_suit_ace_after_opponent_ruffs() -> None:
     game = Game()
     assert game.round_state is not None
@@ -1953,6 +1988,20 @@ def test_weighted_deal_backtracks_without_violating_known_voids() -> None:
     }
     unseen = _cards("7♥", "8♥", "7♦", "8♦", "7♣", "8♣")
     weights = {seat: {card: 1.0 for card in build_deck()} for seat in Seat}
+
+    assignment = _weighted_deal(unseen, opponents, counts, voids, weights, random.Random(0))
+
+    assert assignment is not None
+    assert all(card.suit not in voids[seat] for seat, hand in assignment.items() for card in hand)
+
+
+def test_weighted_deal_backtracks_when_a_seat_lacks_enough_eligible_cards() -> None:
+    opponents = [Seat.N, Seat.E, Seat.S]
+    counts = {Seat.N: 1, Seat.E: 2, Seat.S: 2}
+    voids = {Seat.N: {"♠"}, Seat.E: {"♥"}, Seat.S: set()}
+    unseen = _cards("7♠", "8♠", "7♥", "8♥", "9♥")
+    weights = {seat: {card: 1.0 for card in build_deck()} for seat in Seat}
+    weights[Seat.S][Card("7", "♠")] = 1_000.0
 
     assignment = _weighted_deal(unseen, opponents, counts, voids, weights, random.Random(0))
 

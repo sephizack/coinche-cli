@@ -1333,8 +1333,7 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
         opening_card, legal_cards = _choose_opening_card(game, seat, legal_cards, trump)
         if opening_card is not None:
             return opening_card
-
-    if game.round_state.current_trick:
+    else:
         trick = game.round_state.current_trick
         led_suit = trick[0][1].suit
         hand = game.get_hand(seat)
@@ -1354,6 +1353,13 @@ def choose_card(game: Game, seat: Seat, sample_count: int | None = None) -> Card
                 lower_cards = [card for card in legal_cards if card not in requested_trick_ace]
                 if lower_cards:  # pragma: no branch - a lone legal Ace returned before this point
                     return _best_discard(lower_cards, hand, trump)
+        elif led_suit == trump:
+            legal_trumps = [card for card in legal_cards if card.suit == trump]
+            winning_trumps = [
+                card for card in legal_trumps if rules.trick_winner([*trick, (seat, card)], trump, led_suit) == seat
+            ]
+            if legal_trumps and not winning_trumps:
+                return min(legal_trumps, key=lambda card: _card_strength(card, trump))
 
     # Information-set Monte-Carlo tree search
     samples = _sample_hidden_hands(game, seat, MONTE_CARLO_SAMPLES if sample_count is None else sample_count)
