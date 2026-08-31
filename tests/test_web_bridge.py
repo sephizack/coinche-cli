@@ -939,6 +939,25 @@ def test_web_client_queues_card_after_the_local_seat_has_played_this_trick() -> 
     assert "// Not our turn: toggle queue." in app
 
 
+def test_web_client_preloads_an_ordered_card_queue() -> None:
+    """Queued cards show their play order and only auto-play once per trick."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert "const pendingCards = ref([]);" in app
+    assert "pendingCards.value = [...pendingCards.value, card];" in app
+    assert "pendingCards.value = pendingCards.value.slice(0, pendingIndex);" in app
+    assert "pendingPosition: pendingCards.value.indexOf(card) + 1 || null," in app
+    assert "preloadedCardInFlight = card;" in app
+    assert "() => snapshot.value && snapshot.value.pending_play_request," in app
+    assert "if (!s || !playRequested) return;" in app
+    assert "if (receivedNewError && preloadedCardInFlight)" in app
+    assert ':pending-position="h.pendingPosition"' in app
+    assert ".card__spinner-position" in styles
+    assert "width: 40px;" in styles
+
+
 def test_web_client_keeps_bot_type_control_outside_the_nameplate() -> None:
     """Bot names retain the full nameplate width while their strategy remains selectable."""
     static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
@@ -950,6 +969,18 @@ def test_web_client_keeps_bot_type_control_outside_the_nameplate() -> None:
     assert '<button v-if="isBot" class="seat__tag"' in identity
     assert identity.index('</div>\n        <button v-if="isBot"') > identity.index('<div class="seat__nameplate">')
     assert ".seat__identity" in styles
+
+
+def test_web_client_removes_trump_class_when_highlighting_is_disabled() -> None:
+    """Disabling the setting must remove, not partially override, the trump style."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert '"card--trump": this.highlightTrump && this.isTrump' in app
+    assert ':highlight-trump="highlightTrump"' in app
+    assert "table-wrap--trump-highlights-off" not in app
+    assert ".table-wrap--trump-highlights-off" not in styles
 
 
 def test_web_client_disconnect_clears_browser_storage() -> None:

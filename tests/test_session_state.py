@@ -434,6 +434,27 @@ def test_card_played_removes_own_card_and_updates_trick():
     assert state.whose_turn == Seat.W
 
 
+def test_card_played_consumes_pending_play_request():
+    """A public card update must not expose a stale local play request."""
+    state = ClientState()
+    _join(state)
+    state.hand = ["7♥"]
+    apply_message(
+        state,
+        protocol.PLAY_REQUEST,
+        {"legal_cards": ["7♥"], "trump": "♥", "current_trick": []},
+    )
+
+    apply_message(
+        state,
+        protocol.CARD_PLAYED,
+        {"seat": "S", "card": "7♥", "current_trick": [{"seat": "S", "card": "7♥"}], "next_to_act": "W"},
+    )
+
+    assert state.pending_play_request is None
+    assert snapshot_to_dict(state)["pending_play_request"] is False
+
+
 def test_card_played_belote_and_rebelote_announced_in_system_messages():
     state = ClientState()
     _join(state)

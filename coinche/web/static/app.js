@@ -97,9 +97,10 @@ const Card = {
     legal: { type: Boolean, default: false },
     illegal: { type: Boolean, default: false },
     shake: { type: Boolean, default: false },
-    pending: { type: Boolean, default: false },
+    pendingPosition: { type: Number, default: null },
     interactive: { type: Boolean, default: false },
     trump: { type: String, default: null },
+    highlightTrump: { type: Boolean, default: true },
   },
   emits: ["play"],
   computed: {
@@ -113,15 +114,18 @@ const Card = {
       return this.trump != null && this.faceUp && this.parts.suit === this.trump;
     },
     label() {
-      return this.faceUp ? cardLabel(this.card) : "Carte face cachée";
+      if (!this.faceUp) return "Carte face cachée";
+      return this.pendingPosition == null
+        ? cardLabel(this.card)
+        : `${cardLabel(this.card)}, préchargée en position ${this.pendingPosition}`;
     },
     classes() {
       return {
         "card--legal": this.legal,
         "card--illegal": this.illegal,
         "card--shake": this.shake,
-        "card--pending": this.pending,
-        "card--trump": this.isTrump,
+        "card--pending": this.pendingPosition != null,
+        "card--trump": this.highlightTrump && this.isTrump,
       };
     },
   },
@@ -170,11 +174,12 @@ const Card = {
                 aria-hidden="true">♣</text>
         </template>
       </svg>
-      <div v-if="pending" class="card__spinner" aria-label="En attente">
+      <div v-if="pendingPosition != null" class="card__spinner" aria-label="Préchargée">
         <svg class="card__spinner-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
           <circle cx="12" cy="12" r="10" fill="none" stroke="var(--gold)" stroke-width="2.5"
                   stroke-dasharray="31.4 31.4" stroke-linecap="round" />
         </svg>
+        <span class="card__spinner-position" aria-hidden="true">{{ pendingPosition }}</span>
       </div>
     </div>
   `,
@@ -198,6 +203,7 @@ const SeatPanel = {
     botType: { type: String, default: null },
     connected: { type: Boolean, default: true },
     trump: { type: String, default: null },
+    highlightTrump: { type: Boolean, default: true },
   },
   computed: {
     seatClasses() {
@@ -227,7 +233,7 @@ const SeatPanel = {
       </div>
       <span v-if="!connected" class="seat__offline-note">déconnecté</span>
       <div class="seat__slot">
-        <card v-if="playedCard" :card="playedCard" :trump="trump"></card>
+        <card v-if="playedCard" :card="playedCard" :trump="trump" :highlight-trump="highlightTrump"></card>
         <span v-else-if="bidMark" class="bid-mark" :class="{ 'bid-mark--pass': isPass }">{{ bidMark }}</span>
       </div>
     </div>
@@ -577,7 +583,8 @@ const App = {
     const leaving = ref(false); // "leave" sent, waiting for the server to return us to the lobby
     let leavingTimer = null;
     const shakeCard = ref(null);
-    const pendingCard = ref(null); // card pre-selected while waiting for our turn
+    const pendingCards = ref([]); // cards pre-selected in their future play order
+    let preloadedCardInFlight = null;
     const CARD_PRELOAD_SETTING_KEY = "coinche.preloadNextCard";
     const cardSettingsOpen = ref(false);
     const cardSettings = ref(null);
@@ -832,6 +839,10 @@ const App = {
         if (frame.type === "state") {
           applyState(frame.snapshot); // FULL replace — idempotent, no deltas
         } else if (frame.type === "error") {
+          if (preloadedCardInFlight) {
+            pendingCards.value = [];
+            preloadedCardInFlight = null;
+          }
           showToast(frame.message || frame.code || "Erreur", "error");
           bidSending.value = false; // an error reverts any pending affordance
           fillingBots.value = false;
@@ -921,6 +932,16 @@ const App = {
     // -------- snapshot ingestion + animation triggers --------
     function applyState(snap) {
       const prev = snapshot.value;
+
+      // An auto-played card stays tracked until the authoritative state
+      // confirms it left our hand. A rejection invalidates the remaining plan.
+      const receivedNewError = snap.last_error && snap.last_error !== (prev && prev.last_error);
+      if (receivedNewError && preloadedCardInFlight) {
+        pendingCards.value = [];
+        preloadedCardInFlight = null;
+      } else if (preloadedCardInFlight && snap.hand && !snap.hand.includes(preloadedCardInFlight)) {
+        preloadedCardInFlight = null;
+      }
 
       // Deal animation: the local hand grew (a fresh deal), not a card played.
       if (
@@ -1055,10 +1076,7 @@ const App = {
       fillingBots.value = false;
 
       // Surface server errors as toast (they arrive via last_error).
-      if (
-        snap.last_error &&
-        snap.last_error !== (prev && prev.last_error)
-      ) {
+      if (receivedNewError) {
         showToast(snap.last_error, "error");
       }
 
@@ -1248,7 +1266,6 @@ const App = {
     const handCards = computed(() => {
       const s = snapshot.value;
       if (!s) return [];
-      const pc = pendingCard.value;
       const bidding = !!s.pending_bid_request;
       const hasPlayedThisTrick = Object.prototype.hasOwnProperty.call(s.current_trick || {}, s.seat);
       const isOurTurn = s.whose_turn === s.seat && !hasPlayedThisTrick;
@@ -1256,7 +1273,7 @@ const App = {
         card,
         legal: !bidding && (isOurTurn || preloadNextCard.value),
         illegal: false,
-        pending: pc === card,
+        pendingPosition: pendingCards.value.indexOf(card) + 1 || null,
       }));
     });
 
@@ -1389,15 +1406,15 @@ const App = {
       const isOurTurn = s.whose_turn === s.seat && !hasPlayedThisTrick;
       if (isOurTurn) {
         // Our turn: play immediately (server-authoritative validation).
-        pendingCard.value = null;
         sendAction("play", { card });
       } else if (preloadNextCard.value && s.hand && s.hand.includes(card)) {
-        // Not our turn: toggle queue.  Clicking the same card again cancels.
-        if (pendingCard.value === card) {
-          pendingCard.value = null;
+        // Not our turn: toggle queue. Clicking a queued card cancels it and every subsequent choice.
+        const pendingIndex = pendingCards.value.indexOf(card);
+        if (pendingIndex >= 0) {
+          pendingCards.value = pendingCards.value.slice(0, pendingIndex);
           document.activeElement?.blur();
         } else {
-          pendingCard.value = card;
+          pendingCards.value = [...pendingCards.value, card];
         }
       }
     }
@@ -1683,7 +1700,7 @@ const App = {
       } catch (e) {
         /* localStorage unavailable — keep the preference for this page only */
       }
-      if (!enabled) pendingCard.value = null;
+      if (!enabled) pendingCards.value = [];
     });
 
     watch(highlightTrump, (enabled) => {
@@ -1723,31 +1740,30 @@ const App = {
       },
     );
 
-    // Auto-play: when our turn arrives and a card was pre-selected, play it.
-    // A completed trick still names its winner as `whose_turn` during the
-    // visual pause, so wait for TRICK_CLEARED to empty the table first.
+    // Auto-play only after the server explicitly delivers a PLAY_REQUEST.
+    // CARD_PLAYED can name us as next actor before that request reaches us.
     watch(
-      () => {
+      () => snapshot.value && snapshot.value.pending_play_request,
+      (playRequested) => {
+        if (!pendingCards.value.length) return;
         const s = snapshot.value;
-        return [s ? s.whose_turn : null, s ? Object.keys(s.current_trick || {}).length : 0];
-      },
-      ([turn, trickSize]) => {
-        if (!pendingCard.value) return;
-        const s = snapshot.value;
-        if (!s || turn !== s.seat || trickSize === 4) return;
-        const card = pendingCard.value;
-        pendingCard.value = null;
+        if (!s || !playRequested) return;
+        const [card, ...remainingCards] = pendingCards.value;
+        pendingCards.value = remainingCards;
+        preloadedCardInFlight = card;
         sendAction("play", { card });
       },
     );
 
-    // Clear pending card when the hand changes (new deal / resync) and it is
-    // no longer present.
+    // Discard queued cards that no longer belong to the local hand.
     watch(
       () => snapshot.value && snapshot.value.hand,
       (hand) => {
-        if (pendingCard.value && hand && !hand.includes(pendingCard.value)) {
-          pendingCard.value = null;
+        if (hand) {
+          pendingCards.value = pendingCards.value.filter((card) => hand.includes(card));
+          if (preloadedCardInFlight && !hand.includes(preloadedCardInFlight)) {
+            preloadedCardInFlight = null;
+          }
         }
       },
     );
@@ -2216,8 +2232,7 @@ const App = {
       </header>
 
       <div class="stage">
-          <main class="table-wrap" :class="{ 'table-wrap--trump-highlights-off': !highlightTrump }"
-            role="main" aria-label="Table de jeu">
+          <main class="table-wrap" role="main" aria-label="Table de jeu">
           <div class="felt-scene">
             <div class="felt">
               <div class="felt__upright">
@@ -2236,6 +2251,7 @@ const App = {
                   :bot-type="s.botType"
                   :connected="s.connected"
                   :trump="trumpSuit"
+                  :highlight-trump="highlightTrump"
                   @change-bot-type="changeBotType(s.seatId)"
                 ></seat-panel>
 
@@ -2243,7 +2259,7 @@ const App = {
                 <transition-group name="trick-card" tag="div" class="trick-area"
                                   :class="[sweepClass, { 'trick-area--sweeping': sweepClass }]">
                   <div v-for="(tc, i) in trickCards" :key="tc.slot" class="trick-card" :class="'trick-card--' + tc.slot">
-                    <card :card="tc.card" :trump="trumpSuit"></card>
+                    <card :card="tc.card" :trump="trumpSuit" :highlight-trump="highlightTrump"></card>
                   </div>
                 </transition-group>
                 <div v-if="!trickCards.length && currentBid" class="center-bid">
@@ -2261,7 +2277,7 @@ const App = {
               <div class="last-trick__title">Dernier pli</div>
               <div class="last-trick__grid">
                 <template v-for="(c, i) in lastTrickCells" :key="i">
-                  <card v-if="c" :card="c" :trump="trumpSuit"></card>
+                  <card v-if="c" :card="c" :trump="trumpSuit" :highlight-trump="highlightTrump"></card>
                   <span v-else></span>
                 </template>
               </div>
@@ -2278,10 +2294,11 @@ const App = {
                   :card="h.card"
                   :legal="h.legal"
                   :illegal="h.illegal"
-                  :pending="h.pending"
+                  :pending-position="h.pendingPosition"
                   :interactive="h.legal"
                   :shake="shakeCard === h.card"
                   :trump="trumpSuit"
+                  :highlight-trump="highlightTrump"
                   :class="{ 'deal-enter': dealing }"
                   :style="{ animationDelay: dealing ? (i * 60) + 'ms' : '0ms' }"
                   @play="playCard"

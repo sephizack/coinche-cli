@@ -707,6 +707,9 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         action_requested = True
 
     elif msg_type == protocol.CARD_PLAYED:
+        # The previous play request is consumed. A later CARD_PLAYED may name
+        # us as next actor before the server sends our new PLAY_REQUEST.
+        state.pending_play_request = None
         state.current_trick = _trick_from_wire(payload["current_trick"])
         played_seat = Seat(payload["seat"])
         who = state.players.get(played_seat, played_seat.value)
@@ -989,7 +992,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "last_action": state.last_action,
         "last_error": state.last_error,
         "pending_bid_request": state.pending_bid_request,  # so the web can show the bid panel
-        "pending_play_request": state.whose_turn == state.seat and bool(state.legal_cards),
+        "pending_play_request": state.pending_play_request is not None,
         "turn_timeout_seconds": state.turn_timeout_seconds,
         "turn_deadline": state.turn_deadline,
         "turn_timeout_message": state.turn_timeout_message,
