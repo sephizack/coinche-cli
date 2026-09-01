@@ -7,6 +7,7 @@ from coinche.rules import (
     SCORE_MODE_POINTS_ANNOUNCED,
     SCORE_MODE_POINTS_MADE,
     SCORE_MODE_POINTS_MADE_PLUS_ANNOUNCED,
+    bid_rank,
     card_points,
     is_valid_bid,
     legal_bid_actions,
@@ -71,6 +72,10 @@ def test_is_valid_bid_rejects_sans_atout():
 def test_is_valid_bid_capot_outranks_any_numeric_bid():
     current = {"trump": "♠", "points": 180}
     assert not is_valid_bid({"trump": "♠", "points": CAPOT}, current)
+
+
+def test_bid_rank_places_capot_above_numeric_bids():
+    assert bid_rank({"trump": "♠", "points": CAPOT}) > bid_rank({"trump": "♠", "points": 160})
 
 
 def test_is_valid_bid_rejects_second_capot():

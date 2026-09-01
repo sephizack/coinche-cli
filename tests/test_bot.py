@@ -2373,6 +2373,18 @@ def test_bot_passes_when_partner_bid_capot() -> None:
     assert choose_bid(game, Seat.E) == {"action": "pass"}
 
 
+def test_bot_handles_opponent_capot_after_partner_bid() -> None:
+    # The opponent's capot is higher than W's numeric bid. Evaluating whether
+    # it was lower must use bid ranks, not compare the string to an int.
+    game = Game()
+    assert game.round_state is not None
+    game.round_state.hands[Seat.E] = _cards("V♠", "9♠", "A♠", "A♥", "A♦", "7♣", "8♣", "D♣")
+    game.submit_bid(Seat.W, "bid", trump="♠", points=80)
+    game.submit_bid(Seat.S, "bid", trump="♥", points=rules.CAPOT)
+
+    assert choose_bid(game, Seat.E) == {"action": "coinche"}
+
+
 def test_bot_supports_partner_100_bid_with_strong_hand() -> None:
     # Partner bid 100 → bot supports with strong trump + side aces.
     game = Game()

@@ -257,7 +257,7 @@ def _try_partner_support(
             for bid in options["bid_history"]
             if bid.get("action") == "bid"
             and TEAM_OF[bid["seat"]] != TEAM_OF[seat]
-            and bid["points"] < last_partner_bid["points"]
+            and rules.bid_rank(bid) < rules.bid_rank(last_partner_bid)
         )
         new_bid = _support_ceiling(
             hand,

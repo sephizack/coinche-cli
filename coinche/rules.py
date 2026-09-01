@@ -96,7 +96,7 @@ def card_points(card: Card, trump_suit: str) -> int:
 # --- Bidding legality (A5/A6) -------------------------------------------------
 
 
-def _bid_rank(bid: dict | None) -> int:
+def bid_rank(bid: dict | None) -> int:
     """Numeric rank for comparing bids; capot always outranks any numeric bid."""
     if bid is None:
         return -1
@@ -146,7 +146,7 @@ def is_valid_bid(new_bid: dict, current_highest_bid: dict | None) -> bool:
         if points < BID_MIN or points > BID_MAX or points % BID_STEP != 0:
             return False
 
-    return _bid_rank(new_bid) > _bid_rank(current_highest_bid)
+    return bid_rank(new_bid) > bid_rank(current_highest_bid)
 
 
 # --- Card-play legality --------------------------------------------------------
