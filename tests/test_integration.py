@@ -348,7 +348,33 @@ def test_turn_timeout_replaces_only_the_idle_player_with_a_bot():
     asyncio.run(scenario())
 
 
-def test_last_human_timing_out_removes_abandoned_table():
+def test_turn_timeout_is_disabled_for_a_solo_human_and_reenabled_for_two_humans():
+    async def scenario() -> None:
+        table = table_module.Table("solo-timeout", turn_timeout_seconds=0.05)
+        for seat in SEAT_JOIN_ORDER:
+            table.add_player(NAMES_BY_SEAT[seat], None)
+        for seat in ("N", "E", "S"):
+            table.replace_with_bot(table_module.Seat(seat))
+
+        assert table.connected_human_count() == 1
+        assert await server._ensure_turn_timer(table, table_module.Seat.W) is True
+        assert table.turn_timer_task is None
+        assert server._turn_time_remaining(table, table_module.Seat.W) is None
+
+        table.replace_bot(table_module.Seat.N, "Erin", None)
+        assert table.connected_human_count() == 2
+        assert await server._ensure_turn_timer(table, table_module.Seat.W) is True
+        assert table.turn_timer_task is not None
+
+        table.mark_disconnected(table_module.Seat.N)
+        await asyncio.sleep(0.1)
+        assert table.seats[table_module.Seat.W].is_bot is False
+        assert table.turn_timer_task is None
+
+    asyncio.run(scenario())
+
+
+def test_last_human_is_not_timed_out():
     async def scenario() -> None:
         srv, port = await _start_server(turn_timeout_seconds=0.05)
         conns: dict = {}
@@ -366,11 +392,14 @@ def test_last_human_timing_out_removes_abandoned_table():
                     NAMES_BY_SEAT[seat],
                 )
 
-            await _read_until(conns["W"][0], protocol.TURN_TIMEOUT)
-            assert "timeout02" not in table_module.TABLES
+            await asyncio.sleep(0.1)
+            table = table_module.TABLES["timeout02"]
+            assert table.seats[table_module.Seat.W].is_bot is False
+            assert table.connected_human_count() == 1
         finally:
             for _reader, writer in conns.values():
                 writer.close()
+            await table_module.remove_table("timeout02")
             srv.close()
             await srv.wait_closed()
 

@@ -74,6 +74,8 @@ CI (`.github/workflows/ci.yml`) runs the same checks on push/PR for Python 3.10 
   table creator's `JOIN`): sets the immutable per-turn timeout for that table.
   It must remain below the global idle-kick timeout, is returned in
   `table_options`, and remains in effect for bot fills and rematches.
+  It applies only while at least two humans are connected; a solo human has no
+  turn deadline.
   The terminal CLI and web overlay only send a value when the creator selects
   one.
 - **`LIST_TABLES`** (client→server, no payload): replies with **`TABLE_LISTING`**

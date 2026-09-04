@@ -264,8 +264,9 @@ down a now-empty table — then it is removed. This keeps abandoned sessions fro
 pinning seats forever and doubles as table housekeeping. A session with a live
 browser attached is never reaped.
 
-**Turn timeout.** A connected human who does not act for 300 seconds is
-replaced by a bot for the rest of that game. The per-turn timeout must remain
+**Turn timeout.** When at least two humans are connected to a table, a human
+who does not act for 300 seconds is replaced by a bot for the rest of that
+game. A solo human has no turn deadline. The per-turn timeout must remain
 strictly below the meta-client idle timeout: $T_{\mathrm{tour}} < T_{\mathrm{kick\ global}}$
 (defaults: $300 < 900$). `run_app.sh` validates this relation when either
 `--turn-timeout` or `--idle-timeout` is supplied.

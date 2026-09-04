@@ -633,6 +633,8 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0:
             state.turn_timeout_seconds = float(timeout)
             state.turn_deadline = time.time() + float(timeout)
+        else:
+            _clear_turn_timeout(state)
         action_requested = True
 
     elif msg_type == protocol.BID_UPDATE:
@@ -704,6 +706,8 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0:
             state.turn_timeout_seconds = float(timeout)
             state.turn_deadline = time.time() + float(timeout)
+        else:
+            _clear_turn_timeout(state)
         action_requested = True
 
     elif msg_type == protocol.CARD_PLAYED:

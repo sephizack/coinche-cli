@@ -479,17 +479,22 @@ async def _send_play_request(table: Table, seat: Seat) -> None:
     )
 
 
-def _turn_time_remaining(table: Table, seat: Seat) -> float:
+def _turn_time_remaining(table: Table, seat: Seat) -> float | None:
+    if table.connected_human_count() <= 1:
+        return None
     if table.turn_timer_seat != seat or table.turn_deadline is None:
         return table.turn_timeout_seconds
     return max(0.0, table.turn_deadline - asyncio.get_running_loop().time())
 
 
-async def _ensure_turn_timer(table: Table, seat: Seat) -> float | None:
-    """Keep one deadline for the active human seat; bots never receive one."""
+async def _ensure_turn_timer(table: Table, seat: Seat) -> bool:
+    """Keep one deadline for the active human seat when another human is present."""
     session = table.seats.get(seat)
     if session is None or session.is_bot:
-        return None
+        return False
+    if table.connected_human_count() <= 1:
+        cancel_turn_timer(table)
+        return True
     loop = asyncio.get_running_loop()
     if (
         table.turn_timer_task is not None
@@ -498,7 +503,7 @@ async def _ensure_turn_timer(table: Table, seat: Seat) -> float | None:
         and table.turn_deadline is not None
         and table.turn_deadline > loop.time()
     ):
-        return table.turn_deadline - loop.time()
+        return True
 
     cancel_turn_timer(table)
     game = table.game
@@ -507,12 +512,12 @@ async def _ensure_turn_timer(table: Table, seat: Seat) -> float | None:
     table.turn_timer_seat = seat
     table.turn_deadline = deadline
     table.turn_timer_task = asyncio.create_task(_handle_turn_timeout(table, game, seat, deadline))
-    return table.turn_timeout_seconds
+    return True
 
 
 async def _request_turn(table: Table, seat: Seat) -> None:
     """Arm the active human's deadline, then send its phase-specific request."""
-    if await _ensure_turn_timer(table, seat) is None:
+    if not await _ensure_turn_timer(table, seat):
         _schedule_bot_turns(table)
         return
     assert table.game is not None
@@ -565,6 +570,7 @@ async def _handle_turn_timeout(table: Table, game: Game, seat: Seat, deadline: f
                 or table.turn_deadline != deadline
                 or session is None
                 or session.is_bot
+                or table.connected_human_count() <= 1
             ):
                 return
             writer = session.writer
@@ -1403,11 +1409,7 @@ async def _resolve_join_inner(
             # resync intentionally omits legal_actions/legal_cards; if it's this
             # seat's turn, follow up with a normal request so it can resume acting.
             assert table.game is not None
-            if table.game.next_to_act == seat:
-                if table.game.phase == "bidding":
-                    await _request_turn(table, seat)
-                elif table.game.phase == "trick_play":
-                    await _request_turn(table, seat)
+            await _request_turn(table, table.game.next_to_act)
             _schedule_bot_turns(table)
             await notify_lobby_subscribers()
             return table, seat, None
@@ -1448,11 +1450,7 @@ async def _resolve_join_inner(
                 )
                 # resync omits legal_actions/legal_cards; if it's this seat's turn,
                 # follow up with a normal request so the newcomer can act right away.
-                if table.game.next_to_act == target_seat:
-                    if table.game.phase == "bidding":
-                        await _request_turn(table, target_seat)
-                    elif table.game.phase == "trick_play":
-                        await _request_turn(table, target_seat)
+                await _request_turn(table, table.game.next_to_act)
                 _schedule_bot_turns(table)
                 await notify_lobby_subscribers()
                 return table, target_seat, None

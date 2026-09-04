@@ -321,6 +321,10 @@ class Table:
         """True if a human is connected and can observe or act at this table."""
         return any(s is not None and not s.is_bot and s.connected for s in self.seats.values())
 
+    def connected_human_count(self) -> int:
+        """Return the number of connected human players at this table."""
+        return sum(s is not None and not s.is_bot and s.connected for s in self.seats.values())
+
     def find_disconnected_seat(self, name: str) -> Seat | None:
         """Case-insensitive lookup among disconnected seats, only when a game is live (A16)."""
         if self.game is None:

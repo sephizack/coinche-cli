@@ -408,6 +408,38 @@ def test_turn_deadline_is_local_and_timeout_blocks_actions(monkeypatch):
 
     _join(state)
     assert state.turn_timed_out is False
+
+
+def test_turn_request_without_timeout_clears_the_local_countdown(monkeypatch):
+    state = ClientState()
+    _join(state)
+    monkeypatch.setattr("coinche.session_state.time.time", lambda: 1_000.0)
+    apply_message(
+        state,
+        protocol.BID_REQUEST,
+        {
+            "legal_actions": [],
+            "current_highest_bid": None,
+            "can_coinche": False,
+            "can_surcoinche": False,
+            "turn_timeout_seconds": 42.5,
+        },
+    )
+    assert state.turn_deadline == 1042.5
+
+    apply_message(
+        state,
+        protocol.BID_REQUEST,
+        {
+            "legal_actions": [],
+            "current_highest_bid": None,
+            "can_coinche": False,
+            "can_surcoinche": False,
+            "turn_timeout_seconds": None,
+        },
+    )
+    assert state.turn_timeout_seconds is None
+    assert state.turn_deadline is None
     assert state.turn_timeout_message is None
     assert state.last_action == ""
 
