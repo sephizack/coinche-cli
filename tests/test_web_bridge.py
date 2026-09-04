@@ -395,7 +395,7 @@ def test_round_trip_initial_frame_and_seam() -> None:
                 rules.DEFAULT_SCORE_MODE,
                 bot.DEFAULT_BOT_TYPE,
                 None,
-                    None,
+                None,
             ) in link.calls
             assert ("rematch",) in link.calls
             assert ("lobby",) in link.calls
