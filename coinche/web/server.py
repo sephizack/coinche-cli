@@ -381,6 +381,7 @@ class WebOverlayServer:
                 score_mode=msg.get("score_mode", rules.DEFAULT_SCORE_MODE),
                 bot_type=msg.get("bot_type", DEFAULT_BOT_TYPE),
                 target_score=msg.get("target_score"),
+                turn_timeout_seconds=msg.get("turn_timeout_seconds"),
             )
         elif action == "continue" and self.on_round_continue is not None:
             await self.on_round_continue()

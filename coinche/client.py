@@ -48,6 +48,16 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a number") from error
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be strictly positive")
+    return parsed
+
+
 # Thread-safety flag: when set, `_read_single_key` returns "" promptly so the
 # executor's worker thread frees up.  This allows shutdown_default_executor()
 # to complete within ms rather than blocking for up to 5 minutes waiting on a
@@ -111,6 +121,7 @@ class ClientLink:
         score_mode: str = rules.DEFAULT_SCORE_MODE,
         bot_type: str = DEFAULT_BOT_TYPE,
         target_score: int | None = None,
+        turn_timeout_seconds: float | None = None,
     ) -> bool:
         payload = {"table_key": table_key, "player_name": player_name, "team_name": team_name}
         if seat is not None:
@@ -127,6 +138,8 @@ class ClientLink:
             payload["bot_type"] = bot_type
         if target_score is not None:
             payload["target_score"] = target_score
+        if turn_timeout_seconds is not None:
+            payload["turn_timeout_seconds"] = turn_timeout_seconds
         return await self._send(protocol.JOIN, payload)
 
     async def send_rematch(self) -> bool:
@@ -157,6 +170,7 @@ async def run_session(
     suppress_discord_notification: bool = False,
     score_mode: str = rules.DEFAULT_SCORE_MODE,
     target_score: int | None = None,
+    turn_timeout_seconds: float | None = None,
 ) -> str:
     """Run one connection attempt end-to-end.
 
@@ -197,6 +211,7 @@ async def run_session(
         suppress_discord_notification=suppress_discord_notification,
         score_mode=score_mode,
         target_score=target_score,
+        turn_timeout_seconds=turn_timeout_seconds,
     ):
         return "not_joined"
 
@@ -1116,6 +1131,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         help="Cumulative score to win a table you create (default: server setting).",
     )
+    parser.add_argument(
+        "--turn-timeout",
+        type=_positive_float,
+        help="Seconds a player may hold a turn at a table you create (default: server setting).",
+    )
     return parser
 
 
@@ -1150,6 +1170,7 @@ async def main(argv: list[str] | None = None) -> None:
         suppress_discord_notification=suppress_discord_notification,
         score_mode=args.score_mode,
         target_score=args.target_score,
+        turn_timeout_seconds=args.turn_timeout,
     )
     if result == "not_joined":
         return
@@ -1173,6 +1194,7 @@ async def main(argv: list[str] | None = None) -> None:
             suppress_discord_notification=suppress_discord_notification,
             score_mode=args.score_mode,
             target_score=args.target_score,
+            turn_timeout_seconds=args.turn_timeout,
         )
         if result == "game_over":
             print("Partie terminée. Au revoir !")

@@ -21,6 +21,7 @@ Client -> browser::
 from __future__ import annotations
 
 import json
+import math
 
 from coinche import bot, rules
 
@@ -111,6 +112,10 @@ def parse_browser_message(raw: str | bytes) -> dict:
         target_score = decoded["target_score"]
         if type(target_score) is not int or target_score < 1:
             raise WebProtocolError("Score cible invalide.")
+    if action == "join" and "turn_timeout_seconds" in decoded:
+        timeout = decoded["turn_timeout_seconds"]
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+            raise WebProtocolError("Délai de tour invalide.")
     if action == "join" and "bot_type" in decoded:
         bot_type = decoded["bot_type"]
         if not isinstance(bot_type, str) or not bot.is_supported_bot_type(bot_type):

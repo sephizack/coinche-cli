@@ -129,15 +129,18 @@ def test_join_creation_options_configure_the_new_table() -> None:
                     "score_mode": SCORE_MODE_POINTS_ANNOUNCED,
                     "bot_type": DEFAULT_BOT_TYPE,
                     "target_score": 1500,
+                    "turn_timeout_seconds": 42.5,
                 },
             )
-            await _read_until(reader, protocol.JOINED)
+            joined = await _read_until(reader, protocol.JOINED)
 
             table = table_module.TABLES["rules01"]
             assert table.coinche_blocks_bidding is False
             assert table.score_mode == SCORE_MODE_POINTS_ANNOUNCED
             assert table.bot_type == DEFAULT_BOT_TYPE
             assert table.target_score == 1500
+            assert table.turn_timeout_seconds == 42.5
+            assert joined["table_options"]["turn_timeout_seconds"] == 42.5
         finally:
             if writer is not None:
                 writer.close()

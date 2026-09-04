@@ -39,13 +39,14 @@ Après une modification de `pyproject.toml`, exécute `uv lock`, puis
 ## Start the server
 
 ```bash
-uv run -m coinche.server [--host HOST] [--port PORT] [--target-score N]
+uv run -m coinche.server [--host HOST] [--port PORT] [--target-score N] [--turn-timeout SECONDS]
 ```
 
 - `--host` — address to bind (default `0.0.0.0`)
 - `--port` — port to listen on (default `8765`)
 - `--target-score` — cumulative points needed to win the game (default `1000`,
   or `COINCHE_TARGET_SCORE` when set)
+- `--turn-timeout` — default per-turn timeout for new tables (default `300`)
 - `--bot-think` — minimum seconds each bot waits before announcing or playing,
   - `--bot-samples` — plausible hidden-hand distributions evaluated for each bot
     card decision (default: `100`); larger values improve consistency but make
@@ -79,7 +80,7 @@ uv run -m coinche.server --port 8765 --target-score 1000
 
 ```bash
 uv run -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
-                         [--team TEAM] [--score-mode MODE] [--target-score N] [--web-port PORT]
+                         [--team TEAM] [--score-mode MODE] [--target-score N] [--turn-timeout SECONDS] [--web-port PORT]
 ```
 
 - `--host` — server address (defaults to an interactive prompt, `127.0.0.1`)
@@ -94,6 +95,8 @@ uv run -m coinche.client [--host HOST] [--port PORT] [--table KEY] [--name NAME]
   `points_announced`, or `points_made_plus_announced` (default)
 - `--target-score` — cumulative score for a table you create (default: server
   setting)
+  - `--turn-timeout` — per-turn timeout in seconds for a table you create
+    (default: server setting)
 - `--web-port` — port for the optional **web overlay** (default `0` = pick a
   free port automatically)
 

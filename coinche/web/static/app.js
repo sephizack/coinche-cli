@@ -1208,6 +1208,7 @@ const App = {
         },
         { label: "Comptage", value: scoreModeLabel(options.score_mode) },
         { label: "Bot par défaut", value: botTypeDetail(options.bot_type || "toto").label },
+        { label: "Délai par tour", value: duration(options.turn_timeout_seconds) },
       ];
     });
 
@@ -1607,6 +1608,7 @@ const App = {
       coincheBlocksBidding: true,
       scoreMode: "points_made_plus_announced",
       targetScore: "",
+      turnTimeoutSeconds: "",
     });
     const discordNotificationsEnabled = computed({
       get: () => !tableOptions.suppressDiscordNotification,
@@ -1660,6 +1662,7 @@ const App = {
         if (tableSettings.scoreMode !== "points_made_plus_announced") payload.score_mode = tableSettings.scoreMode;
         if (tableSettings.botType !== "toto") payload.bot_type = tableSettings.botType;
         if (tableSettings.targetScore !== "") payload.target_score = tableSettings.targetScore;
+        if (tableSettings.turnTimeoutSeconds !== "") payload.turn_timeout_seconds = tableSettings.turnTimeoutSeconds;
       }
       sendAction("join", payload);
     }
@@ -1685,6 +1688,10 @@ const App = {
       }
       if (tableOptions.targetScore !== "" && (!Number.isInteger(tableOptions.targetScore) || tableOptions.targetScore < 1)) {
         showToast("Le score doit être un entier positif", "error");
+        return;
+      }
+      if (tableOptions.turnTimeoutSeconds !== "" && (!Number.isFinite(tableOptions.turnTimeoutSeconds) || tableOptions.turnTimeoutSeconds <= 0)) {
+        showToast("Le délai doit être un nombre positif", "error");
         return;
       }
       joinSpecificTable(tableKey, lobbyTeams.value.nsLabel, null, tableOptions);
@@ -2046,6 +2053,11 @@ const App = {
                 <label for="table-target-score">Score à atteindre</label>
                 <input id="table-target-score" v-model.number="tableOptions.targetScore" type="number" min="1" step="1"
                        placeholder="Défaut du serveur" data-testid="table-target-score" />
+              </div>
+              <div class="table-options__field">
+                <label for="table-turn-timeout">Délai par tour</label>
+                <input id="table-turn-timeout" v-model.number="tableOptions.turnTimeoutSeconds" type="number" min="0.1" step="0.1"
+                       placeholder="Défaut du serveur (secondes)" data-testid="table-turn-timeout" />
               </div>
               <div class="table-options__setting">
                 <span>Coincher bloque les annonces</span>

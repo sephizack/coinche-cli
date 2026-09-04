@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import socket
@@ -1305,6 +1306,7 @@ async def _resolve_join_inner(
     score_mode = payload.get("score_mode", rules.DEFAULT_SCORE_MODE)
     bot_type = payload.get("bot_type", DEFAULT_BOT_TYPE)
     table_target_score = payload.get("target_score", target_score)
+    table_turn_timeout_seconds = payload.get("turn_timeout_seconds", turn_timeout_seconds)
     if not isinstance(score_mode, str) or not rules.is_supported_score_mode(score_mode):
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "Mode de comptage inconnu.")
         return None
@@ -1313,6 +1315,15 @@ async def _resolve_join_inner(
         return None
     if type(table_target_score) is not int or table_target_score < 1:
         await _send_error(writer, protocol.MALFORMED_MESSAGE, "Score cible invalide.")
+        return None
+    if type(table_turn_timeout_seconds) not in (int, float) or not math.isfinite(table_turn_timeout_seconds):
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "Délai de tour invalide.")
+        return None
+    table_turn_timeout_seconds = float(table_turn_timeout_seconds)
+    try:
+        validate_timeout_order(table_turn_timeout_seconds, DEFAULT_GLOBAL_KICK_TIMEOUT_SECONDS)
+    except ValueError:
+        await _send_error(writer, protocol.MALFORMED_MESSAGE, "Délai de tour invalide.")
         return None
 
     preferred_seat: Seat | None = None
@@ -1373,7 +1384,7 @@ async def _resolve_join_inner(
         trick_pause_seconds=trick_pause_seconds,
         round_pause_seconds=round_pause_seconds,
         bot_think_seconds=bot_think_seconds,
-        turn_timeout_seconds=turn_timeout_seconds,
+        turn_timeout_seconds=table_turn_timeout_seconds,
     )
 
     async with table.lock:

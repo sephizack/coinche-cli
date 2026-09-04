@@ -148,3 +148,12 @@ def test_target_score_cli_option_is_strictly_positive():
     assert parser.parse_args(["--target-score", "1500"]).target_score == 1500
     with pytest.raises(SystemExit):
         parser.parse_args(["--target-score", "0"])
+
+
+def test_turn_timeout_cli_option_is_strictly_positive():
+    parser = build_arg_parser()
+
+    assert parser.parse_args([]).turn_timeout is None
+    assert parser.parse_args(["--turn-timeout", "42.5"]).turn_timeout == 42.5
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--turn-timeout", "0"])

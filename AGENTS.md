@@ -70,6 +70,12 @@ CI (`.github/workflows/ci.yml`) runs the same checks on push/PR for Python 3.10 
   including bot fills and rematches. Keep all scoring variants in the pure
   `rules.score_round` function; the client and web overlay only display and
   relay the setting.
+- **`turn_timeout_seconds` table option** (optional positive number on the
+  table creator's `JOIN`): sets the immutable per-turn timeout for that table.
+  It must remain below the global idle-kick timeout, is returned in
+  `table_options`, and remains in effect for bot fills and rematches.
+  The terminal CLI and web overlay only send a value when the creator selects
+  one.
 - **`LIST_TABLES`** (client→server, no payload): replies with **`TABLE_LISTING`**
   containing `{"tables": [{"table_key", "in_progress", "seats_filled", "players": [{"seat","name","team_name"}]}]}`.
   Sent by the client before `JOIN` to power the interactive table picker;

@@ -7,6 +7,7 @@ followed by "\\n", UTF-8 encoded.
 from __future__ import annotations
 
 import json
+import math
 
 from coinche.bot import is_supported_bot_type
 from coinche.rules import ALLOWED_TRUMPS, is_supported_score_mode
@@ -127,8 +128,8 @@ REQUIRED_FIELDS: dict[str, set[str]] = {
 # A creator can also set the optional boolean "suppress_discord_notification"
 # to keep a newly-created table out of the Discord notification channel. It
 # may also set ``coinche_blocks_bidding`` (defaults to true), ``score_mode``,
-# ``bot_type``, and a strictly positive integer ``target_score`` for a
-# newly-created table.
+# ``bot_type``, a strictly positive integer ``target_score``, and a strictly
+# positive numeric ``turn_timeout_seconds`` for a newly-created table.
 
 _VALID_BID_ACTIONS = {"pass", "bid", "coinche", "surcoinche"}
 
@@ -203,6 +204,10 @@ def _validate_client_payload(msg_type: str, payload: dict) -> None:
     if msg_type == JOIN and "bot_type" in payload:
         if not isinstance(payload["bot_type"], str) or not is_supported_bot_type(payload["bot_type"]):
             raise ProtocolError(f"Unknown bot_type: {payload['bot_type']!r}")
+    if msg_type == JOIN and "turn_timeout_seconds" in payload:
+        timeout = payload["turn_timeout_seconds"]
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+            raise ProtocolError(f"Invalid turn_timeout_seconds: {timeout!r}")
     if msg_type == SET_BOT_TYPE:
         if payload["seat"] not in {"N", "E", "S", "W"}:
             raise ProtocolError(f"Unknown seat: {payload['seat']!r}")
