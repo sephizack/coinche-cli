@@ -1941,6 +1941,170 @@ def test_defender_on_lead_tries_an_unplayed_side_suit_before_master_trump() -> N
     assert choose_card(game, Seat.S) == Card("7", "♣")
 
 
+def test_defender_leads_a_long_side_suit_to_create_a_likely_ruff() -> None:
+    # Holding four hearts makes it unlikely that hearts are evenly distributed
+    # among the other hands. S therefore opens its low heart rather than the
+    # singleton club, hoping to create a cut without assuming hidden cards.
+    game = _isolated_game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("7♥", "8♥", "V♥", "R♥", "7♣")
+
+    assert choose_card(game, Seat.S) == Card("7", "♥")
+
+
+def test_defender_prefers_a_certain_partner_ruff_to_a_more_seen_suit() -> None:
+    # N previously cut clubs, so N is certainly void in clubs and may still
+    # hold trump. Despite S holding four hearts, its club lead is the direct
+    # way to give N a chance to make a high trump pass.
+    game = _isolated_game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.E, Card("7", "♣")),
+                (Seat.S, Card("8", "♣")),
+                (Seat.W, Card("9", "♣")),
+                (Seat.N, Card("7", "♠")),
+            ],
+            "points_won": 0,
+        },
+        {
+            "winner_seat": Seat.E,
+            "trick": [
+                (Seat.E, Card("A", "♥")),
+                (Seat.S, Card("9", "♥")),
+                (Seat.W, Card("10", "♥")),
+                (Seat.N, Card("D", "♥")),
+            ],
+            "points_won": 28,
+        },
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("7♥", "8♥", "V♥", "R♥", "7♣")
+
+    assert choose_card(game, Seat.S) == Card("7", "♣")
+
+
+def test_defender_prefers_a_certain_taker_ruff_when_partner_has_no_trump() -> None:
+    # N discarded while S was not master, proving N has no trump. W then cut
+    # clubs, so S targets clubs directly to make the declaring side spend a
+    # possible trump instead of relying on the suit-exposure estimate.
+    game = _isolated_game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.W,
+            "trick": [
+                (Seat.E, Card("7", "♥")),
+                (Seat.S, Card("8", "♥")),
+                (Seat.W, Card("9", "♥")),
+                (Seat.N, Card("7", "♦")),
+            ],
+            "points_won": 0,
+        },
+        {
+            "winner_seat": Seat.W,
+            "trick": [
+                (Seat.E, Card("7", "♣")),
+                (Seat.S, Card("8", "♣")),
+                (Seat.W, Card("7", "♠")),
+                (Seat.N, Card("8", "♦")),
+            ],
+            "points_won": 0,
+        },
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("7♥", "7♣", "8♦")
+
+    assert choose_card(game, Seat.S) == Card("7", "♣")
+
+
+def test_defender_leads_the_most_seen_side_suit_to_create_a_likely_ruff() -> None:
+    # Three hearts are public and S holds the fourth. Hearts are therefore the
+    # most exposed side suit and more likely to find a void than the singleton
+    # club or diamond, even though no hidden hand is assumed.
+    game = _isolated_game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.W,
+            "trick": [
+                (Seat.E, Card("7", "♥")),
+                (Seat.S, Card("8", "♥")),
+                (Seat.W, Card("9", "♥")),
+                (Seat.N, Card("7", "♦")),
+            ],
+            "points_won": 0,
+        },
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("7♥", "7♣", "8♦")
+
+    assert choose_card(game, Seat.S) == Card("7", "♥")
+
+
+def test_defender_with_only_trumps_keeps_its_legal_opening_candidates() -> None:
+    game = _isolated_game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "EW", "seat": Seat.W, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("7♠", "8♠")
+    legal_cards = game.play_options_for(Seat.S)["legal_cards"]
+
+    opening_card, opening_candidates = default._choose_opening_card(game, Seat.S, legal_cards, "♠")
+
+    assert opening_card is None
+    assert opening_candidates == legal_cards
+
+
+def test_declarer_prefers_a_played_suit_to_an_unplayed_singleton_ten() -> None:
+    # The singleton 10♣ is not a suitable exploratory lead. With no defensive
+    # ruff heuristic active, the existing fallback develops the played hearts.
+    game = _isolated_game()
+    assert game.round_state is not None and game.bid_state is not None
+    game.round_state.trump = "♠"
+    game.bid_state.current_highest_bid = {"team": "NS", "seat": Seat.N, "trump": "♠", "points": 80}
+    game.phase = "trick_play"
+    game.next_to_act = Seat.S
+    game.round_state.trick_history = [
+        {
+            "winner_seat": Seat.N,
+            "trick": [
+                (Seat.N, Card("A", "♥")),
+                (Seat.E, Card("R", "♥")),
+                (Seat.S, Card("8", "♥")),
+                (Seat.W, Card("D", "♥")),
+            ],
+            "points_won": 29,
+        }
+    ]
+    game.round_state.current_trick = []
+    game.round_state.hands[Seat.S] = _cards("V♥", "10♣")
+
+    assert choose_card(game, Seat.S) == Card("V", "♥")
+
+
 def test_defender_holding_the_master_does_not_lead_trump_when_opponents_are_void() -> None:
     # EW took the contract; S is defending and on lead holding the ♠ Valet, the
     # outright master. But both opponents (E and W) discarded a side card when

@@ -1222,6 +1222,71 @@ def _team_auction_supports_trump(game: Game, seat: Seat, trump: str) -> bool:
     return False
 
 
+def _choose_defensive_ruff_lead(
+    game: Game,
+    seat: Seat,
+    legal_cards: list[Card],
+    trump: str,
+    contract: dict,
+) -> Card | None:
+    """Choose a defensive lead that creates a certain or likely ruff."""
+    assert game.round_state is not None
+    if contract["team"] == TEAM_OF[seat] or not _opponents_may_hold_trump(game, seat, trump):
+        return None
+
+    # Commencer par une coupe certaine. Tant que le partenaire peut encore
+    # avoir de l'atout, le faire couper peut sauver un atout fort ; une fois
+    # sec, un preneur connu sec devient la meilleure cible.
+    voids = _known_void_suits(game.round_state)
+    partner = PARTNER_OF[seat]
+    if trump not in voids[partner]:
+        certain_ruff_suits = {suit for suit in rules.ALLOWED_TRUMPS if suit != trump and suit in voids[partner]}
+    else:
+        certain_ruff_suits = {
+            suit
+            for suit in rules.ALLOWED_TRUMPS
+            if suit != trump
+            and any(
+                suit in voids[other] and trump not in voids[other]
+                for other in Seat
+                if TEAM_OF[other] == contract["team"]
+            )
+        }
+    certain_ruff_cards = [card for card in legal_cards if card.suit in certain_ruff_suits]
+    if certain_ruff_cards:
+        return min(
+            certain_ruff_cards,
+            key=lambda card: (
+                rules.card_points(card, trump),
+                _card_strength(card, trump),
+                card.suit,
+            ),
+        )
+
+    # Sans coupe certaine, une couleur déjà très visible dans la main et les
+    # plis publics a peu de chances d'être répartie entre les trois autres
+    # mains. En défense, l'ouvrir augmente donc les chances de créer une coupe.
+    played_cards = _played_cards_by_seat(game.round_state)
+    seen_by_suit = {
+        suit: sum(card.suit == suit for card in game.get_hand(seat))
+        + sum(card.suit == suit for cards in played_cards.values() for card in cards)
+        for suit in rules.ALLOWED_TRUMPS
+        if suit != trump
+    }
+    side_cards = [card for card in legal_cards if card.suit != trump]
+    if not side_cards:
+        return None
+    return min(
+        side_cards,
+        key=lambda card: (
+            -seen_by_suit[card.suit],
+            rules.card_points(card, trump),
+            _card_strength(card, trump),
+            card.suit,
+        ),
+    )
+
+
 def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump: str) -> tuple[Card | None, list[Card]]:
     """Apply the deterministic opening-lead rules before Monte-Carlo evaluation."""
     assert game.round_state is not None
@@ -1294,6 +1359,9 @@ def _choose_opening_card(game: Game, seat: Seat, legal_cards: list[Card], trump:
                 ),
                 legal_cards,
             )
+    defensive_ruff_lead = _choose_defensive_ruff_lead(game, seat, legal_cards, trump, contract)
+    if defensive_ruff_lead is not None:
+        return defensive_ruff_lead, legal_cards
     # Tenter une couleur jamais jouée si possible, sans sacrifier un 10 sec
     # uniquement pour ouvrir cette couleur.
     played_suits = {played.suit for cards in _played_cards_by_seat(game.round_state).values() for played in cards}
