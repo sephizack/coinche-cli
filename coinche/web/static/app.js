@@ -582,6 +582,7 @@ const App = {
     let leaveDisarmTimer = null;
     const leaving = ref(false); // "leave" sent, waiting for the server to return us to the lobby
     let leavingTimer = null;
+    let mobileBackEntryActive = false;
     const shakeCard = ref(null);
     const pendingCards = ref([]); // cards pre-selected in their future play order
     let preloadedCardInFlight = null;
@@ -1489,6 +1490,24 @@ const App = {
       }, 15000);
       sendAction("leave", {});
     }
+    function usesMobileLayout() {
+      return window.matchMedia("(max-width: 1023px)").matches;
+    }
+    function pushMobileBackEntry() {
+      if (!joined.value || !usesMobileLayout() || mobileBackEntryActive) return;
+      window.history.pushState(null, "");
+      mobileBackEntryActive = true;
+    }
+    function handleMobileBack() {
+      mobileBackEntryActive = false;
+      if (!joined.value || !usesMobileLayout()) return;
+      if (chatOpen.value) {
+        chatOpen.value = false;
+      } else {
+        leaveTable();
+      }
+      pushMobileBackEntry();
+    }
     function joinTable() {
       if (!lobby.name.trim() || !lobby.table.trim()) return;
       rememberName(lobby.name);
@@ -1701,6 +1720,15 @@ const App = {
       if (open) unread.value = 0;
     });
 
+    watch(joined, (inTable) => {
+      if (inTable) {
+        pushMobileBackEntry();
+      } else if (mobileBackEntryActive) {
+        mobileBackEntryActive = false;
+        window.history.back();
+      }
+    });
+
     watch(preloadNextCard, (enabled) => {
       try {
         window.localStorage.setItem(CARD_PRELOAD_SETTING_KEY, String(enabled));
@@ -1791,12 +1819,14 @@ const App = {
     onMounted(() => {
       window.addEventListener("keydown", closeInfoPanelsOnEscape);
       window.addEventListener("click", closeCardSettingsOnOutsideClick);
+      window.addEventListener("popstate", handleMobileBack);
       connect();
     });
     onUnmounted(() => {
       if (countdownInterval) clearInterval(countdownInterval);
       window.removeEventListener("keydown", closeInfoPanelsOnEscape);
       window.removeEventListener("click", closeCardSettingsOnOutsideClick);
+      window.removeEventListener("popstate", handleMobileBack);
     });
 
     return {

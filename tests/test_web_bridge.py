@@ -817,6 +817,17 @@ def test_web_client_closes_overlay_chat_on_outside_click() -> None:
     assert "@media (max-width: 1023px) {\n  .chat-scrim {" in styles
 
 
+def test_web_client_handles_mobile_back_from_a_table() -> None:
+    """Mobile back closes chat before it reuses the table-leave confirmation."""
+    app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()
+
+    assert 'window.matchMedia("(max-width: 1023px)")' in app
+    assert "function handleMobileBack()" in app
+    assert "if (chatOpen.value) {\n        chatOpen.value = false;\n      } else {\n        leaveTable();" in app
+    assert 'window.addEventListener("popstate", handleMobileBack);' in app
+    assert 'window.removeEventListener("popstate", handleMobileBack);' in app
+
+
 def test_web_client_separates_system_announcements_from_human_chat() -> None:
     static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
     app = (static_dir / "app.js").read_text()
