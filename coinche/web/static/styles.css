@@ -1289,7 +1289,7 @@ button {
 }
 .chat-panel-enter-from,
 .chat-panel-leave-to {
-  transform: translateX(100%);
+  transform: translateX(20px);
 }
 .chat-panel__header {
   display: flex;
