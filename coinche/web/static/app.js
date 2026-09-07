@@ -582,7 +582,6 @@ const App = {
     let leaveDisarmTimer = null;
     const leaving = ref(false); // "leave" sent, waiting for the server to return us to the lobby
     let leavingTimer = null;
-    let backGuardSequence = 0;
     const shakeCard = ref(null);
     const pendingCards = ref([]); // cards pre-selected in their future play order
     let preloadedCardInFlight = null;
@@ -1491,12 +1490,12 @@ const App = {
       sendAction("leave", {});
     }
     function installBackGuard() {
-      window.history.pushState({ coincheBackGuard: ++backGuardSequence }, "", window.location.href);
-      window.history.pushState({ coincheBackGuard: ++backGuardSequence }, "", window.location.href);
+      window.history.pushState({ coincheBackGuard: true }, "", window.location.href);
     }
-    function handleBack() {
+    function handleBack(event) {
+      if (event.state && event.state.coincheBackGuard) return;
       if (chatOpen.value) chatOpen.value = false;
-      installBackGuard();
+      window.history.go(1);
     }
     function joinTable() {
       if (!lobby.name.trim() || !lobby.table.trim()) return;
