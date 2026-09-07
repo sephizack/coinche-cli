@@ -817,15 +817,18 @@ def test_web_client_closes_overlay_chat_on_outside_click() -> None:
     assert "@media (max-width: 1023px) {\n  .chat-scrim {" in styles
 
 
-def test_web_client_handles_mobile_back_from_a_table() -> None:
-    """Mobile back closes chat before it reuses the table-leave confirmation."""
+def test_web_client_blocks_back_globally_and_only_closes_chat() -> None:
+    """Back navigation is neutralized everywhere and only dismisses the chat."""
     app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()
 
-    assert 'window.matchMedia("(max-width: 1023px)")' in app
-    assert "function handleMobileBack()" in app
-    assert "if (chatOpen.value) {\n        chatOpen.value = false;\n      } else {\n        leaveTable();" in app
-    assert 'window.addEventListener("popstate", handleMobileBack);' in app
-    assert 'window.removeEventListener("popstate", handleMobileBack);' in app
+    assert "function pushBackEntry()" in app
+    assert 'window.history.pushState(null, "");' in app
+    assert "function handleBack()" in app
+    assert "if (chatOpen.value) chatOpen.value = false;\n      pushBackEntry();" in app
+    assert 'window.addEventListener("popstate", handleBack);' in app
+    assert 'window.removeEventListener("popstate", handleBack);' in app
+    handler = app[app.index("function handleBack()") : app.index("function joinTable()")]
+    assert "leaveTable();" not in handler
 
 
 def test_web_client_separates_system_announcements_from_human_chat() -> None:
