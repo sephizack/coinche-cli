@@ -821,10 +821,12 @@ def test_web_client_blocks_back_globally_and_only_closes_chat() -> None:
     """Back navigation is neutralized everywhere and only dismisses the chat."""
     app = (Path(__file__).parent.parent / "coinche" / "web" / "static" / "app.js").read_text()
 
-    assert "function pushBackEntry()" in app
-    assert 'window.history.pushState(null, "");' in app
+    assert "let backGuardSequence = 0;" in app
+    assert "function installBackGuard()" in app
+    history_entry = 'window.history.pushState({ coincheBackGuard: ++backGuardSequence }, "", window.location.href);'
+    assert app.count(history_entry) == 2
     assert "function handleBack()" in app
-    assert "if (chatOpen.value) chatOpen.value = false;\n      pushBackEntry();" in app
+    assert "if (chatOpen.value) chatOpen.value = false;\n      installBackGuard();" in app
     assert 'window.addEventListener("popstate", handleBack);' in app
     assert 'window.removeEventListener("popstate", handleBack);' in app
     handler = app[app.index("function handleBack()") : app.index("function joinTable()")]

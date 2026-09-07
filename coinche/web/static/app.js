@@ -582,6 +582,7 @@ const App = {
     let leaveDisarmTimer = null;
     const leaving = ref(false); // "leave" sent, waiting for the server to return us to the lobby
     let leavingTimer = null;
+    let backGuardSequence = 0;
     const shakeCard = ref(null);
     const pendingCards = ref([]); // cards pre-selected in their future play order
     let preloadedCardInFlight = null;
@@ -1489,12 +1490,13 @@ const App = {
       }, 15000);
       sendAction("leave", {});
     }
-    function pushBackEntry() {
-      window.history.pushState(null, "");
+    function installBackGuard() {
+      window.history.pushState({ coincheBackGuard: ++backGuardSequence }, "", window.location.href);
+      window.history.pushState({ coincheBackGuard: ++backGuardSequence }, "", window.location.href);
     }
     function handleBack() {
       if (chatOpen.value) chatOpen.value = false;
-      pushBackEntry();
+      installBackGuard();
     }
     function joinTable() {
       if (!lobby.name.trim() || !lobby.table.trim()) return;
@@ -1799,7 +1801,7 @@ const App = {
       window.addEventListener("keydown", closeInfoPanelsOnEscape);
       window.addEventListener("click", closeCardSettingsOnOutsideClick);
       window.addEventListener("popstate", handleBack);
-      pushBackEntry();
+      installBackGuard();
       connect();
     });
     onUnmounted(() => {
