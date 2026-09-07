@@ -1285,10 +1285,13 @@ button {
 }
 .chat-panel-enter-active,
 .chat-panel-leave-active {
-  transition: transform 500ms var(--ease-standard);
+  transition:
+    opacity 200ms var(--ease-standard),
+    transform 500ms var(--ease-standard);
 }
 .chat-panel-enter-from,
 .chat-panel-leave-to {
+  opacity: 0;
   transform: translateX(20px);
 }
 .chat-panel__header {
