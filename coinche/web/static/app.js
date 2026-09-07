@@ -2384,17 +2384,21 @@ const App = {
         </main>
 
         <!-- Chat -->
-        <div v-if="chatOpen" class="chat-scrim" aria-hidden="true" @click="toggleChat"></div>
-        <chat-panel
-          v-if="chatOpen"
-          :messages="snapshot.chat_messages"
-          :system-messages="snapshot.system_messages"
-          :local-team="localTeam"
-          :draft="chatDraft"
-          @send="sendChat"
-          @update:draft="chatDraft = $event"
-          @close="toggleChat"
-        ></chat-panel>
+        <transition name="chat-scrim">
+          <div v-if="chatOpen" class="chat-scrim" aria-hidden="true" @click="toggleChat"></div>
+        </transition>
+        <transition name="chat-panel">
+          <chat-panel
+            v-if="chatOpen"
+            :messages="snapshot.chat_messages"
+            :system-messages="snapshot.system_messages"
+            :local-team="localTeam"
+            :draft="chatDraft"
+            @send="sendChat"
+            @update:draft="chatDraft = $event"
+            @close="toggleChat"
+          ></chat-panel>
+        </transition>
       </div>
 
       <!-- Bid panel overlay (only when the snapshot has a pending bid for me) -->
@@ -2408,19 +2412,23 @@ const App = {
 
     <!-- Result screens replace the table subtree, but discussion remains a
          live table action: keep the same component available above them. -->
-        <div v-if="chatOpen && (flags.round_over_screen || flags.game_over)" class="chat-scrim chat-scrim--overlay"
-          aria-hidden="true" @click="toggleChat"></div>
-    <chat-panel
-      v-if="chatOpen && (flags.round_over_screen || flags.game_over)"
-      class="chat-panel--overlay"
-      :messages="snapshot.chat_messages"
-      :system-messages="snapshot.system_messages"
-      :local-team="localTeam"
-      :draft="chatDraft"
-      @send="sendChat"
-      @update:draft="chatDraft = $event"
-      @close="toggleChat"
-    ></chat-panel>
+    <transition name="chat-scrim">
+      <div v-if="chatOpen && (flags.round_over_screen || flags.game_over)" class="chat-scrim chat-scrim--overlay"
+        aria-hidden="true" @click="toggleChat"></div>
+    </transition>
+    <transition name="chat-panel">
+      <chat-panel
+        v-if="chatOpen && (flags.round_over_screen || flags.game_over)"
+        class="chat-panel--overlay"
+        :messages="snapshot.chat_messages"
+        :system-messages="snapshot.system_messages"
+        :local-team="localTeam"
+        :draft="chatDraft"
+        @send="sendChat"
+        @update:draft="chatDraft = $event"
+        @close="toggleChat"
+      ></chat-panel>
+    </transition>
   `,
 };
 
