@@ -1016,8 +1016,7 @@ def test_web_client_absence_mode_passes_or_plays_after_two_seconds() -> None:
     assert ".hand-settings__trigger--random.hand-settings__trigger--active" in styles
     assert (
         ".hand-controls {\n  position: absolute;\n  bottom: var(--sp-3);\n"
-        "  left: calc(100% + var(--sp-3));\n  display: flex;\n  flex-direction: column;"
-        in styles
+        "  left: calc(100% + var(--sp-3));\n  display: flex;\n  flex-direction: column;" in styles
     )
 
 
