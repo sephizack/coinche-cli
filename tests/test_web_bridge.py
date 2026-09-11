@@ -980,11 +980,32 @@ def test_web_client_preloads_an_ordered_card_queue() -> None:
     assert "pendingPosition: pendingCards.value.indexOf(card) + 1 || null," in app
     assert "preloadedCardInFlight = card;" in app
     assert "() => snapshot.value && snapshot.value.pending_play_request," in app
-    assert "if (!s || !playRequested) return;" in app
+    assert "if (!s || !playRequested) {" in app
     assert "if (receivedNewError && preloadedCardInFlight)" in app
     assert ':pending-position="h.pendingPosition"' in app
     assert ".card__spinner-position" in styles
     assert "width: 40px;" in styles
+
+
+def test_web_client_absence_mode_passes_or_plays_after_two_seconds() -> None:
+    """The absence mode waits before passing or playing a server-authorized card."""
+    static_dir = Path(__file__).parent.parent / "coinche" / "web" / "static"
+    app = (static_dir / "app.js").read_text()
+    styles = (static_dir / "styles.css").read_text()
+
+    assert 'const RANDOM_PLAY_SETTING_KEY = "coinche.randomPlay";' in app
+    assert "const randomPlayEnabled = ref(readRandomPlaySetting());" in app
+    assert "randomPlayTimer = setTimeout(() => {" in app
+    assert "function scheduleRandomPlay()" in app
+    assert "function scheduleRandomBid()" in app
+    assert "randomBidTimer = setTimeout(() => {" in app
+    assert 'submitBid({ bid_action: "pass" });' in app
+    assert "const legalCards = current.legal_cards || [];" in app
+    assert "Math.floor(Math.random() * legalCards.length)" in app
+    assert "}, 2000);" in app
+    assert 'aria-label="Mode absence : passer aux annonces et jouer une carte au hasard"' in app
+    assert "🎲" in app
+    assert ".hand-settings__trigger--random.hand-settings__trigger--active" in styles
 
 
 def test_web_client_keeps_bot_type_control_outside_the_nameplate() -> None:

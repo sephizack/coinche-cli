@@ -766,11 +766,17 @@ button {
   color: var(--danger);
   min-height: 1.1em;
 }
-.hand-settings {
+.hand-controls {
   position: absolute;
   bottom: var(--sp-3);
   left: calc(100% + var(--sp-3));
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   z-index: 10;
+}
+.hand-settings {
+  position: relative;
 }
 .hand-settings__trigger {
   display: grid;
@@ -790,6 +796,11 @@ button {
   border-color: var(--gold);
   background: rgba(212, 175, 55, 0.2);
   color: var(--gold);
+}
+.hand-settings__trigger--random.hand-settings__trigger--active {
+  border-color: #26c6da;
+  background: rgba(38, 198, 218, 0.22);
+  color: #7fe3ef;
 }
 .hand-settings__panel {
   position: absolute;

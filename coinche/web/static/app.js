@@ -596,6 +596,17 @@ const App = {
       }
     }
     const preloadNextCard = ref(readCardPreloadSetting());
+    const RANDOM_PLAY_SETTING_KEY = "coinche.randomPlay";
+    function readRandomPlaySetting() {
+      try {
+        return window.localStorage.getItem(RANDOM_PLAY_SETTING_KEY) === "true";
+      } catch (e) {
+        return false; // localStorage unavailable — retain the safe default
+      }
+    }
+    const randomPlayEnabled = ref(readRandomPlaySetting());
+    let randomPlayTimer = null;
+    let randomBidTimer = null;
     const TRUMP_HIGHLIGHT_SETTING_KEY = "coinche.highlightTrump";
     function readTrumpHighlightSetting() {
       try {
@@ -889,6 +900,43 @@ const App = {
     function sendAction(action, payload) {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       ws.send(JSON.stringify({ action, ...(payload || {}) }));
+    }
+
+    function clearRandomPlayTimer() {
+      if (!randomPlayTimer) return;
+      clearTimeout(randomPlayTimer);
+      randomPlayTimer = null;
+    }
+
+    function clearRandomBidTimer() {
+      if (!randomBidTimer) return;
+      clearTimeout(randomBidTimer);
+      randomBidTimer = null;
+    }
+
+    function scheduleRandomBid() {
+      const s = snapshot.value;
+      if (!randomPlayEnabled.value || randomBidTimer || !s || !s.pending_bid_request) return;
+      randomBidTimer = setTimeout(() => {
+        randomBidTimer = null;
+        const current = snapshot.value;
+        if (!randomPlayEnabled.value || !current || !current.pending_bid_request) return;
+        submitBid({ bid_action: "pass" });
+      }, 2000);
+    }
+
+    function scheduleRandomPlay() {
+      const s = snapshot.value;
+      if (!randomPlayEnabled.value || randomPlayTimer || !s || !s.pending_play_request || !s.legal_cards.length) return;
+      randomPlayTimer = setTimeout(() => {
+        randomPlayTimer = null;
+        const current = snapshot.value;
+        if (!randomPlayEnabled.value || !current || !current.pending_play_request) return;
+        const legalCards = current.legal_cards || [];
+        if (!legalCards.length) return;
+        const card = legalCards[Math.floor(Math.random() * legalCards.length)];
+        sendAction("play", { card });
+      }, 2000);
     }
 
     function tryPendingJoin(snap) {
@@ -1407,6 +1455,7 @@ const App = {
       const isOurTurn = s.whose_turn === s.seat && !hasPlayedThisTrick;
       if (isOurTurn) {
         // Our turn: play immediately (server-authoritative validation).
+        clearRandomPlayTimer();
         sendAction("play", { card });
       } else if (preloadNextCard.value && s.hand && s.hand.includes(card)) {
         // Not our turn: toggle queue. Clicking a queued card cancels it and every subsequent choice.
@@ -1420,6 +1469,7 @@ const App = {
       }
     }
     function submitBid(payload) {
+      clearRandomBidTimer();
       bidSending.value = true;
       sendAction("bid", payload);
     }
@@ -1718,6 +1768,21 @@ const App = {
       if (!enabled) pendingCards.value = [];
     });
 
+    watch(randomPlayEnabled, (enabled) => {
+      try {
+        window.localStorage.setItem(RANDOM_PLAY_SETTING_KEY, String(enabled));
+      } catch (e) {
+        /* localStorage unavailable — keep the preference for this page only */
+      }
+      if (!enabled) {
+        clearRandomPlayTimer();
+        clearRandomBidTimer();
+      } else {
+        scheduleRandomPlay();
+        scheduleRandomBid();
+      }
+    });
+
     watch(highlightTrump, (enabled) => {
       try {
         window.localStorage.setItem(TRUMP_HIGHLIGHT_SETTING_KEY, String(enabled));
@@ -1755,18 +1820,36 @@ const App = {
       },
     );
 
+    // Auto-pass only after the server explicitly delivers a BID_REQUEST.
+    watch(
+      () => snapshot.value && snapshot.value.pending_bid_request,
+      (bidRequested) => {
+        if (!bidRequested) {
+          clearRandomBidTimer();
+          return;
+        }
+        scheduleRandomBid();
+      },
+    );
+
     // Auto-play only after the server explicitly delivers a PLAY_REQUEST.
     // CARD_PLAYED can name us as next actor before that request reaches us.
     watch(
       () => snapshot.value && snapshot.value.pending_play_request,
       (playRequested) => {
-        if (!pendingCards.value.length) return;
         const s = snapshot.value;
-        if (!s || !playRequested) return;
-        const [card, ...remainingCards] = pendingCards.value;
-        pendingCards.value = remainingCards;
-        preloadedCardInFlight = card;
-        sendAction("play", { card });
+        if (!s || !playRequested) {
+          clearRandomPlayTimer();
+          return;
+        }
+        if (pendingCards.value.length) {
+          const [card, ...remainingCards] = pendingCards.value;
+          pendingCards.value = remainingCards;
+          preloadedCardInFlight = card;
+          sendAction("play", { card });
+          return;
+        }
+        scheduleRandomPlay();
       },
     );
 
@@ -1805,6 +1888,8 @@ const App = {
     });
     onUnmounted(() => {
       if (countdownInterval) clearInterval(countdownInterval);
+      clearRandomPlayTimer();
+      clearRandomBidTimer();
       window.removeEventListener("keydown", closeInfoPanelsOnEscape);
       window.removeEventListener("click", closeCardSettingsOnOutsideClick);
       window.removeEventListener("popstate", handleBack);
@@ -1826,6 +1911,7 @@ const App = {
       cardSettingsOpen,
       cardSettings,
       preloadNextCard,
+      randomPlayEnabled,
       highlightTrump,
       dealing,
       badgeFlash,
@@ -2327,7 +2413,13 @@ const App = {
                   @play="playCard"
                 ></card>
               </div>
-                    <div ref="cardSettings" class="hand-settings">
+                    <div class="hand-controls">
+                      <button class="hand-settings__trigger hand-settings__trigger--random" type="button"
+                          aria-label="Mode absence : passer aux annonces et jouer une carte au hasard"
+                          title="Mode absence"
+                        :aria-pressed="randomPlayEnabled" :class="{ 'hand-settings__trigger--active': randomPlayEnabled }"
+                        @click="randomPlayEnabled = !randomPlayEnabled">🎲</button>
+                      <div ref="cardSettings" class="hand-settings">
                 <button class="hand-settings__trigger" type="button" aria-label="Réglages des cartes"
                         title="Réglages des cartes" :aria-expanded="cardSettingsOpen"
                         @click="cardSettingsOpen = !cardSettingsOpen">⚙</button>
@@ -2354,6 +2446,7 @@ const App = {
                   </div>
                 </section>
               </div>
+                </div>
             </div>
           </div>
 
