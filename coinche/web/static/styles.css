@@ -771,6 +771,7 @@ button {
   bottom: var(--sp-3);
   left: calc(100% + var(--sp-3));
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: var(--sp-2);
   z-index: 10;
