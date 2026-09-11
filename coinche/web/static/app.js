@@ -14,8 +14,8 @@
 //    snapshot; we replace the whole reactive object (idempotent, no deltas).
 //
 // The action verbs sent over the WS are exactly U2's WebActionProtocol names:
-//   play | bid | chat | join | continue | rematch | lobby | fill_bots   (card play is "play", NOT
-//   "play_card" — play_card is the game-wire type, not the browser action).
+//   play | bid | chat | join | continue | rematch | lobby | fill_bots | set_bot_type | set_away_mode
+//   (card play is "play", NOT "play_card" — play_card is the game-wire type, not the browser action).
 // =========================================================================
 
 const { createApp, ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } = Vue;
@@ -201,6 +201,7 @@ const SeatPanel = {
     isDealer: Boolean,
     isBot: Boolean,
     botType: { type: String, default: null },
+    isAway: Boolean,
     connected: { type: Boolean, default: true },
     trump: { type: String, default: null },
     highlightTrump: { type: Boolean, default: true },
@@ -223,6 +224,7 @@ const SeatPanel = {
       <div class="seat__identity">
         <div class="seat__nameplate">
           <span class="seat__name">{{ name }}</span>
+          <span v-if="isAway" class="seat__away-badge" role="img" aria-label="Mode absence actif">🎲</span>
           <span v-if="isBot && isTurn" class="seat__turn-spinner" role="status" aria-label="Le bot joue"></span>
           <span v-if="isDealer" class="seat__badge">(D)</span>
         </div>
@@ -596,15 +598,10 @@ const App = {
       }
     }
     const preloadNextCard = ref(readCardPreloadSetting());
-    const RANDOM_PLAY_SETTING_KEY = "coinche.randomPlay";
-    function readRandomPlaySetting() {
-      try {
-        return window.localStorage.getItem(RANDOM_PLAY_SETTING_KEY) === "true";
-      } catch (e) {
-        return false; // localStorage unavailable — retain the safe default
-      }
-    }
-    const randomPlayEnabled = ref(readRandomPlaySetting());
+    const randomPlayEnabled = computed(() => {
+      const s = snapshot.value;
+      return !!(s && s.seat && s.away_modes && s.away_modes[s.seat]);
+    });
     let randomPlayTimer = null;
     let randomBidTimer = null;
     const TRUMP_HIGHLIGHT_SETTING_KEY = "coinche.highlightTrump";
@@ -1271,6 +1268,7 @@ const App = {
       const conn = s.connection_status || {};
       const bots = s.bots || {};
       const botTypes = s.bot_types || {};
+      const awayModes = s.away_modes || {};
       return Object.keys(players).map((seatId) => {
         return {
           seatId,
@@ -1283,6 +1281,7 @@ const App = {
           isDealer: s.dealer_seat === seatId,
           isBot: bots[seatId] === true,
           botType: botTypes[seatId] || null,
+          isAway: awayModes[seatId] === true,
           connected: conn[seatId] !== false,
         };
       });
@@ -1472,6 +1471,9 @@ const App = {
       clearRandomBidTimer();
       bidSending.value = true;
       sendAction("bid", payload);
+    }
+    function toggleAwayMode() {
+      sendAction("set_away_mode", { enabled: !randomPlayEnabled.value });
     }
     function sendChat(text) {
       sendAction("chat", { text });
@@ -1769,11 +1771,6 @@ const App = {
     });
 
     watch(randomPlayEnabled, (enabled) => {
-      try {
-        window.localStorage.setItem(RANDOM_PLAY_SETTING_KEY, String(enabled));
-      } catch (e) {
-        /* localStorage unavailable — keep the preference for this page only */
-      }
       if (!enabled) {
         clearRandomPlayTimer();
         clearRandomBidTimer();
@@ -1912,6 +1909,7 @@ const App = {
       cardSettings,
       preloadNextCard,
       randomPlayEnabled,
+      toggleAwayMode,
       highlightTrump,
       dealing,
       badgeFlash,
@@ -2358,6 +2356,7 @@ const App = {
                   :is-dealer="s.isDealer"
                   :is-bot="s.isBot"
                   :bot-type="s.botType"
+                  :is-away="s.isAway"
                   :connected="s.connected"
                   :trump="trumpSuit"
                   :highlight-trump="highlightTrump"
@@ -2418,7 +2417,7 @@ const App = {
                           aria-label="Mode absence : passer aux annonces et jouer une carte au hasard"
                           title="Mode absence"
                         :aria-pressed="randomPlayEnabled" :class="{ 'hand-settings__trigger--active': randomPlayEnabled }"
-                        @click="randomPlayEnabled = !randomPlayEnabled">🎲</button>
+                          @click="toggleAwayMode">🎲</button>
                       <div ref="cardSettings" class="hand-settings">
                 <button class="hand-settings__trigger" type="button" aria-label="Réglages des cartes"
                         title="Réglages des cartes" :aria-expanded="cardSettingsOpen"

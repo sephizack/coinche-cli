@@ -115,6 +115,12 @@ CI (`.github/workflows/ci.yml`) runs the same checks on push/PR for Python 3.10 
   the strategy of one bot-held seat. The server validates both the type and the
   target chair, then broadcasts `BOT_TYPE_CHANGED`; the web badge displays
   `BOT <type>` and cycles through available strategies on click.
+- **`SET_AWAY_MODE`** (client→server, `{"enabled": bool}`): lets a connected
+  human toggle the absence mode for their own seat. The table stores it on the
+  session and broadcasts `AWAY_MODE_CHANGED` to every participant; joins and
+  resync snapshots include the state. The web overlay uses it to pass after two
+  seconds during bidding or play a random server-authorized card after two
+  seconds during play, and displays a `🎲` badge next to that player's name.
 - **Replace-a-bot join** (no new message type — a plain `JOIN` on an in-progress
   table that has bots). The exact inverse of `Table.replace_with_bot`: when a
   `JOIN` arrives for a running table and no disconnected seat matches for

@@ -318,6 +318,7 @@ def _players_summary(table: Table) -> list[dict]:
             "team_name": session.team_name,
             "is_bot": session.is_bot,
             "bot_type": session.bot_type,
+            "away_mode": session.away_mode,
         }
         for seat, session in table.seats.items()
         if session is not None
@@ -1023,6 +1024,23 @@ async def _dispatch(table: Table, seat: Seat, msg_type: str, payload: dict) -> N
         await table.broadcast(
             protocol.BOT_TYPE_CHANGED,
             {"seat": _seat_to_str(target_seat), "bot_type": payload["bot_type"]},
+        )
+        return
+
+    if msg_type == protocol.SET_AWAY_MODE:
+        session = table.seats.get(seat)
+        if session is None or session.is_bot:
+            await table.send_to(
+                seat,
+                protocol.ERROR,
+                {"code": protocol.MALFORMED_MESSAGE, "message": "Ce siège ne peut pas activer le mode absence"},
+            )
+            return
+        table.set_away_mode(seat, payload["enabled"])
+        logger.info("[%s] MODE ABSENCE %s -> %s", table.table_key, _seat_to_str(seat), payload["enabled"])
+        await table.broadcast(
+            protocol.AWAY_MODE_CHANGED,
+            {"seat": _seat_to_str(seat), "enabled": payload["enabled"]},
         )
         return
 

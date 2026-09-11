@@ -154,6 +154,9 @@ class ClientLink:
     async def send_set_bot_type(self, seat: str, bot_type: str) -> bool:
         return await self._send(protocol.SET_BOT_TYPE, {"seat": seat, "bot_type": bot_type})
 
+    async def send_set_away_mode(self, enabled: bool) -> bool:
+        return await self._send(protocol.SET_AWAY_MODE, {"enabled": enabled})
+
     async def send_leave(self) -> bool:
         return await self._send(protocol.LEAVE, {})
 

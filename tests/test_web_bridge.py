@@ -154,6 +154,7 @@ def test_parse_accepts_a_registered_bot_type(monkeypatch) -> None:
         {"action": "lobby"},  # no required fields
         {"action": "fill_bots"},  # no required fields
         {"action": "set_bot_type", "seat": "E", "bot_type": "noob"},
+        {"action": "set_away_mode", "enabled": True},
         {"action": "leave"},  # no required fields
     ],
 )
@@ -238,6 +239,10 @@ class FakeLink:
 
     async def send_set_bot_type(self, seat: str, bot_type: str) -> bool:
         self.calls.append(("set_bot_type", seat, bot_type))
+        return True
+
+    async def send_set_away_mode(self, enabled: bool) -> bool:
+        self.calls.append(("set_away_mode", enabled))
         return True
 
     async def send_leave(self) -> bool:
@@ -545,6 +550,7 @@ def test_on_browser_message_dispatch_direct() -> None:
             }
         )
         await server.on_browser_message({"action": "set_bot_type", "seat": "E", "bot_type": "maestro"})
+        await server.on_browser_message({"action": "set_away_mode", "enabled": True})
         await server.on_browser_message({"action": "leave"})
         assert ("play", "7♦") in link.calls
         assert ("bid", "pass", None, None) in link.calls
@@ -563,6 +569,7 @@ def test_on_browser_message_dispatch_direct() -> None:
             42.5,
         ) in link.calls
         assert ("set_bot_type", "E", "maestro") in link.calls
+        assert ("set_away_mode", True) in link.calls
         assert ("leave",) in link.calls
 
     asyncio.run(scenario())
@@ -993,8 +1000,8 @@ def test_web_client_absence_mode_passes_or_plays_after_two_seconds() -> None:
     app = (static_dir / "app.js").read_text()
     styles = (static_dir / "styles.css").read_text()
 
-    assert 'const RANDOM_PLAY_SETTING_KEY = "coinche.randomPlay";' in app
-    assert "const randomPlayEnabled = ref(readRandomPlaySetting());" in app
+    assert "const randomPlayEnabled = computed(() => {" in app
+    assert 'sendAction("set_away_mode", { enabled: !randomPlayEnabled.value });' in app
     assert "randomPlayTimer = setTimeout(() => {" in app
     assert "function scheduleRandomPlay()" in app
     assert "function scheduleRandomBid()" in app
@@ -1005,9 +1012,11 @@ def test_web_client_absence_mode_passes_or_plays_after_two_seconds() -> None:
     assert "}, 2000);" in app
     assert 'aria-label="Mode absence : passer aux annonces et jouer une carte au hasard"' in app
     assert "🎲" in app
+    assert 'v-if="isAway" class="seat__away-badge"' in app
     assert ".hand-settings__trigger--random.hand-settings__trigger--active" in styles
     assert (
-        ".hand-controls {\n  position: absolute;\n  bottom: var(--sp-3);\n  left: calc(100% + var(--sp-3));\n  display: flex;\n  flex-direction: column;"
+        ".hand-controls {\n  position: absolute;\n  bottom: var(--sp-3);\n"
+        "  left: calc(100% + var(--sp-3));\n  display: flex;\n  flex-direction: column;"
         in styles
     )
 

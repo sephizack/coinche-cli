@@ -26,6 +26,7 @@ import pytest
 from coinche import protocol, server
 from coinche import table as table_module
 from coinche.bot import DEFAULT_BOT_TYPE
+from coinche.cards import Seat
 from coinche.rules import SCORE_MODE_POINTS_ANNOUNCED
 from coinche.table import BOT_NAMES
 
@@ -311,6 +312,38 @@ def test_one_player_can_fill_the_table_with_bots():
         finally:
             if writer is not None:
                 writer.close()
+            srv.close()
+            await srv.wait_closed()
+
+    asyncio.run(scenario())
+
+
+def test_away_mode_is_broadcast_to_all_players():
+    async def scenario() -> None:
+        srv, port = await _start_server()
+        alice_writer = None
+        bob_writer = None
+        try:
+            alice_reader, alice_writer = await _connect(port)
+            await _send(alice_writer, protocol.JOIN, {"table_key": "away01", "player_name": "Alice"})
+            await _read_until(alice_reader, protocol.JOINED)
+
+            bob_reader, bob_writer = await _connect(port)
+            await _send(bob_writer, protocol.JOIN, {"table_key": "away01", "player_name": "Bob"})
+            await _read_until(bob_reader, protocol.JOINED)
+
+            await _send(alice_writer, protocol.SET_AWAY_MODE, {"enabled": True})
+
+            expected = {"seat": "N", "enabled": True}
+            assert await _read_until(alice_reader, protocol.AWAY_MODE_CHANGED) == expected
+            assert await _read_until(bob_reader, protocol.AWAY_MODE_CHANGED) == expected
+            assert table_module.TABLES["away01"].seats[Seat.N].away_mode is True
+        finally:
+            for writer in (alice_writer, bob_writer):
+                if writer is not None:
+                    writer.close()
+                    await writer.wait_closed()
+            await table_module.remove_table("away01")
             srv.close()
             await srv.wait_closed()
 

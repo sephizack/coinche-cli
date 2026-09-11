@@ -111,8 +111,10 @@ Interface web disponible : http://192.168.1.20:52341
 ```
 
 Open either URL in a browser to follow the game; pin the port with
-`--web-port 8080` if you want a stable address. The current page is a
-placeholder (the full UI ships in a later unit), but the state feed is live.
+`--web-port 8080` if you want a stable address. The web interface can enable a
+shared absence mode: it passes after two seconds during bidding, then plays a
+random legal card after two seconds during play. A `🎲` badge appears beside
+the absent player for every participant.
 
 Caveats:
 

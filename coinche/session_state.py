@@ -56,6 +56,8 @@ class ClientState:
     # Strategy type for each bot-held seat, displayed and controlled by the
     # Web overlay. The table-level setting remains the default for new bots.
     bot_types: dict[Seat, str] = field(default_factory=dict)
+    # Whether each human seat has enabled the server-authoritative absence mode.
+    away_modes: dict[Seat, bool] = field(default_factory=dict)
     team_of: dict[Seat, str] = field(default_factory=dict)
     hand: list[str] = field(default_factory=list)
     legal_cards: list[str] = field(default_factory=list)
@@ -221,6 +223,11 @@ def _bots_from_wire(entries: list[dict]) -> dict[Seat, bool]:
 def _bot_types_from_wire(entries: list[dict]) -> dict[Seat, str]:
     """Map bot-held seats to their selected strategy type from player entries."""
     return {Seat(p["seat"]): p["bot_type"] for p in entries if p.get("is_bot") and isinstance(p.get("bot_type"), str)}
+
+
+def _away_modes_from_wire(entries: list[dict]) -> dict[Seat, bool]:
+    """Map each seat to its server-authoritative absence-mode setting."""
+    return {Seat(p["seat"]): bool(p.get("away_mode", False)) for p in entries}
 
 
 def _team_names_from_wire(entries: list[dict]) -> dict[str, str]:
@@ -432,6 +439,7 @@ def _reset_to_lobby(state: ClientState) -> None:
     state.players = fresh.players
     state.bots = fresh.bots
     state.bot_types = fresh.bot_types
+    state.away_modes = fresh.away_modes
     state.team_of = fresh.team_of
     state.team_names = fresh.team_names
     state.hand = fresh.hand
@@ -516,6 +524,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.players = _players_from_wire(payload["players"])
         state.bots = _bots_from_wire(payload["players"])
         state.bot_types = _bot_types_from_wire(payload["players"])
+        state.away_modes = _away_modes_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({len(state.players)}/4)..."
@@ -538,6 +547,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.players = _players_from_wire(payload["players"])
         state.bots = _bots_from_wire(payload["players"])
         state.bot_types = _bot_types_from_wire(payload["players"])
+        state.away_modes = _away_modes_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.can_fill_bots = False
@@ -578,6 +588,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
         state.players = _players_from_wire(payload["players"])
         state.bots = _bots_from_wire(payload["players"])
         state.bot_types = _bot_types_from_wire(payload["players"])
+        state.away_modes = _away_modes_from_wire(payload["players"])
         state.team_of = {s: TEAM_OF[s] for s in state.players}
         state.team_names = _team_names_from_wire(payload["players"])
         state.status_message = f"En attente de joueurs ({payload['seats_filled']}/4)..."
@@ -593,6 +604,9 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
 
     elif msg_type == protocol.BOT_TYPE_CHANGED:
         state.bot_types[Seat(payload["seat"])] = payload["bot_type"]
+
+    elif msg_type == protocol.AWAY_MODE_CHANGED:
+        state.away_modes[Seat(payload["seat"])] = payload["enabled"]
 
     elif msg_type == protocol.SPECTATOR_COUNT:
         state.spectator_count = payload["count"]
@@ -827,6 +841,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             state.players = _players_from_wire(payload["players"])
             state.bots = _bots_from_wire(payload["players"])
             state.bot_types = _bot_types_from_wire(payload["players"])
+            state.away_modes = _away_modes_from_wire(payload["players"])
             state.team_names = _team_names_from_wire(payload["players"])
         if state.seat not in state.players:
             state.players[state.seat] = state.players.get(state.seat, "Moi")
@@ -874,6 +889,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
                 state.players[seat] = payload["name"]
             state.bots[seat] = False
             state.bot_types.pop(seat, None)
+            state.away_modes[seat] = False
         # A human just left and a bot took over this seat mid-game: the chair is
         # renamed to the bot's fresh identity (`bot_name`) and flagged as a bot,
         # so the felt relabels it and shows the bot badge. `name` still carries
@@ -883,6 +899,7 @@ def apply_message(state: ClientState, msg_type: str, payload: dict) -> ApplyResu
             if bot_name and seat in state.players:
                 state.players[seat] = bot_name
             state.bots[seat] = True
+            state.away_modes[seat] = False
             if isinstance(payload.get("bot_type"), str):
                 state.bot_types[seat] = payload["bot_type"]
             return ApplyResult(action_requested=action_requested)
@@ -958,6 +975,7 @@ def snapshot_to_dict(state: ClientState) -> dict:
         "players": {seat.value: name for seat, name in state.players.items()},
         "bots": {seat.value: is_bot for seat, is_bot in state.bots.items()},
         "bot_types": {seat.value: bot_type for seat, bot_type in state.bot_types.items()},
+        "away_modes": {seat.value: enabled for seat, enabled in state.away_modes.items()},
         "team_of": {seat.value: team for seat, team in state.team_of.items()},
         "team_names": dict(state.team_names),
         "hand": list(state.hand),  # LOCAL seat only — never other hands

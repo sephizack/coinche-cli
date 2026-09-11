@@ -141,6 +141,7 @@ class ClientSession:
     team_name: str | None = None
     is_bot: bool = False
     bot_type: str | None = None
+    away_mode: bool = False
 
 
 @dataclass
@@ -380,6 +381,7 @@ class Table:
         session.is_bot = True
         session.team_name = None
         session.bot_type = self.bot_type
+        session.away_mode = False
         return session.name
 
     def bot_seats(self) -> list[Seat]:
@@ -417,6 +419,7 @@ class Table:
         session.is_bot = False
         session.team_name = team_name
         session.bot_type = None
+        session.away_mode = False
         return self.game.snapshot_for(seat)
 
     def set_bot_type(self, seat: Seat, bot_type: str) -> None:
@@ -424,6 +427,12 @@ class Table:
         session = self.seats[seat]
         assert session is not None and session.is_bot
         session.bot_type = bot_type
+
+    def set_away_mode(self, seat: Seat, enabled: bool) -> None:
+        """Set the player-controlled absence mode for a connected human seat."""
+        session = self.seats[seat]
+        assert session is not None and not session.is_bot and session.connected
+        session.away_mode = enabled
 
     def add_spectator(self, name: str, writer: asyncio.StreamWriter | None) -> str:
         """Register a seatless watcher and return the (possibly disambiguated) name.

@@ -411,6 +411,11 @@ button {
   max-width: 110px;
   color: var(--text-on-felt);
 }
+.seat__away-badge {
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+  line-height: 1;
+}
 .seat__turn-spinner {
   width: 0.72rem;
   height: 0.72rem;

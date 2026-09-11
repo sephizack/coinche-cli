@@ -393,6 +393,8 @@ class WebOverlayServer:
             await self.link.send_fill_bots()
         elif action == "set_bot_type":
             await self.link.send_set_bot_type(msg["seat"], msg["bot_type"])
+        elif action == "set_away_mode":
+            await self.link.send_set_away_mode(msg["enabled"])
         elif action == "leave":
             await self.link.send_leave()
 

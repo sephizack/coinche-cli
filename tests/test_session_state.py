@@ -146,6 +146,26 @@ def test_bot_types_are_projected_and_updated_per_seat():
     assert snapshot_to_dict(state)["bot_types"] == {"E": "maestro"}
 
 
+def test_away_modes_are_projected_and_updated_per_seat():
+    state = ClientState()
+    apply_message(
+        state,
+        protocol.LOBBY_UPDATE,
+        {
+            "players": [
+                {"seat": "N", "name": "Alice", "away_mode": True},
+                {"seat": "E", "name": "Bob", "away_mode": False},
+            ],
+            "seats_filled": 2,
+        },
+    )
+
+    apply_message(state, protocol.AWAY_MODE_CHANGED, {"seat": "N", "enabled": False})
+
+    assert state.away_modes == {Seat.N: False, Seat.E: False}
+    assert snapshot_to_dict(state)["away_modes"] == {"N": False, "E": False}
+
+
 def test_spectator_count_is_projected_and_refreshed():
     state = ClientState()
     _join(state)

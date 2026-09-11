@@ -85,6 +85,15 @@ def test_bot_type_is_held_by_each_bot_seat():
     assert table.seats[Seat.S].bot_type == "noob"
 
 
+def test_away_mode_is_held_by_a_connected_human_seat():
+    table = Table("abcd")
+    table.add_player("Alice", FakeWriter())
+
+    table.set_away_mode(Seat.N, True)
+
+    assert table.seats[Seat.N].away_mode is True
+
+
 def test_bot_seats_lists_only_bot_held_seats_in_order():
     table = Table("abcd")
     table.add_player("Alice", FakeWriter())  # N, human
