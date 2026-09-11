@@ -1006,7 +1006,10 @@ def test_web_client_absence_mode_passes_or_plays_after_two_seconds() -> None:
     assert 'aria-label="Mode absence : passer aux annonces et jouer une carte au hasard"' in app
     assert "🎲" in app
     assert ".hand-settings__trigger--random.hand-settings__trigger--active" in styles
-    assert ".hand-controls {\n  position: absolute;\n  bottom: var(--sp-3);\n  left: calc(100% + var(--sp-3));\n  display: flex;\n  flex-direction: column;" in styles
+    assert (
+        ".hand-controls {\n  position: absolute;\n  bottom: var(--sp-3);\n  left: calc(100% + var(--sp-3));\n  display: flex;\n  flex-direction: column;"
+        in styles
+    )
 
 
 def test_web_client_keeps_bot_type_control_outside_the_nameplate() -> None:
